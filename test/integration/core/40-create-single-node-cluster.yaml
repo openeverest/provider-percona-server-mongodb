@@ -1,0 +1,32 @@
+apiVersion: kuttl.dev/v1
+kind: TestStep
+timeout: 10
+---
+apiVersion: core.openeverest.io/v1alpha1
+kind: Instance
+metadata:
+  name: test-psmdb-cluster
+spec:
+  provider: psmdb
+  components:
+    engine:
+      type: mongod
+      replicas: 1
+      resources:
+        limits:
+          cpu: "1"
+          memory: 4G
+      storage:
+        size: 25Gi
+  # engine:
+  #   replicas: 1
+  #   resources:
+  #     cpu: "1"
+  #     memory: 4G
+  #   storage:
+  #     size: 25Gi
+  #   type: psmdb
+  # proxy:
+  #   expose:
+  #     type: internal
+
