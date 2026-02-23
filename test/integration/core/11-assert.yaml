@@ -42,8 +42,8 @@ assertAll:
   - celExpr: "!has(psmdb.spec.pmm.resources.requests)"
     message: "psmdb.spec.pmm.resources.requests is not empty"
 ---
-apiVersion: everest.percona.com/v2alpha1
-kind: DataStore
+apiVersion: core.openeverest.io/v1alpha1
+kind: Instance
 metadata:
   name: test-psmdb-cluster
 spec:
