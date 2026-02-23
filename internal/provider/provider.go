@@ -200,6 +200,14 @@ func NewPSMDBProviderInterface() *PSMDBProvider {
 			SchemeFuncs: []func(*runtime.Scheme) error{
 				psmdbv1.SchemeBuilder.AddToScheme,
 			},
+			WatchConfigs: []controller.WatchConfig{
+				// Watch owned PSMDB resources - only trigger on spec changes
+				// TODO: do we need some predicate? The
+				// GenerationChangedPredicate definitely isn't correct because
+				// we need to be notified when the status changes so we can
+				// update the Instance status.
+				controller.WatchOwned(&psmdbv1.PerconaServerMongoDB{}),
+			},
 			Metadata: common.PSMDBMetadata(),
 		},
 	}
