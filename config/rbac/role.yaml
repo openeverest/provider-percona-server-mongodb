@@ -1,0 +1,51 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: percona-server-mongodb-provider-role
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - pods
+  - services
+  - secrets
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - core.openeverest.io
+  resources:
+  - providers
+  - instances
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - core.openeverest.io
+  resources:
+  - instances/status
+  verbs:
+  - get
+  - update
+  - patch
+- apiGroups:
+  - psmdb.percona.com
+  resources:
+  - perconaservermongodbs
+  - perconaservermongodbbackups
+  - perconaservermongodbrestores
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+  

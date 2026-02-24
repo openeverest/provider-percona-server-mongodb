@@ -196,6 +196,8 @@ type PSMDBProvider struct {
 func NewPSMDBProviderInterface() *PSMDBProvider {
 	return &PSMDBProvider{
 		BaseProvider: controller.BaseProvider{
+			// TODO: should provider name be configurable or constant?
+			// It has to match the name in the generated manifest provider.yaml
 			ProviderName: "psmdb",
 			SchemeFuncs: []func(*runtime.Scheme) error{
 				psmdbv1.SchemeBuilder.AddToScheme,

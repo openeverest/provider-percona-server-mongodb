@@ -17,6 +17,10 @@ CONTAINER_TOOL ?= docker
 # Image URL to use all building/pushing image targets
 IMG ?= ghcr.io/openeverest/provider-percona-server-mongodb-dev:latest
 
+# Set kuttl test name directory optionally for running specific integration test case.
+# If not set, all test cases are run.
+TEST ?=
+
 .PHONY: help
 help: ## Display this help.
 	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make \033[36m<target>\033[0m\n"} /^[a-zA-Z_0-9-]+:.*?##/ { printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2 } /^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
@@ -43,9 +47,18 @@ generate-openapi: openapi-gen ## Generate OpenAPI definitions for custom spec ty
 		--go-header-file hack/boilerplate.go.txt \
 		github.com/openeverest/provider-percona-server-mongodb/types
 
+##@ Test
+
 .PHONY: test-integration
-test-integration: ## Run integration tests against K8S cluster
-	. ./test/vars.sh && kubectl kuttl test --config ./test/integration/kuttl.yaml
+test-integration: docker-build k3d-upload-image ## Run integration tests against K8S cluster. Single test usage: make test-integration TEST=<test>
+	. ./test/vars.sh && kubectl kuttl test --config ./test/integration/kuttl.yaml $(if $(TEST),--test $(TEST))
+
+.PHONY: k3d-upload-image
+k3d-upload-image: # Upload an image to K3D testing cluster.
+	$(info Uploading image=$(IMG) to K3D testing cluster)
+	k3d image import -c provider-psmdb-test -m direct $(IMG)
+
+##@ Development
 
 .PHONY: openapi-gen
 openapi-gen: $(OPENAPI_GEN) ## Download openapi-gen locally if necessary
