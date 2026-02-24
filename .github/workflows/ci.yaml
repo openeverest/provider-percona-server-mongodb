@@ -1,0 +1,73 @@
+name: Run CI
+
+on:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+  push:
+    branches:
+      - main
+  schedule:
+    - cron: "17 0 * * *"
+
+jobs:
+  golang-build:
+    name: Build Go binary
+    timeout-minutes: 30
+    strategy:
+      fail-fast: true
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v5
+
+      - name: Set up Go release
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: 'go.mod'
+          cache: true
+
+      - name: Build binary
+        run: |
+          make build
+
+  integration-tests:
+    name: Integration tests
+    timeout-minutes: 30
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: true
+      matrix:
+        test:
+          - core
+          - shared
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v5
+
+      - name: Set up Go release
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: 'go.mod'
+          cache: true
+
+      - name: Install Kubernetes tools
+        uses: ./.github/actions/install-kubernetes-tools
+        with:
+          install-kubectl: true
+          install-kuttl: true
+          install-k3d: true
+
+      - name: Create K3D cluster
+        run: |
+          sudo modprobe br_netfilter
+          make k3d-cluster-up
+
+      - name: Run integration tests
+        run: |
+          make test-integration TEST="${{ matrix.test }}"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
