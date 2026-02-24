@@ -5,7 +5,7 @@ metadata:
   namespace: default
 spec:
   # Provider identifier
-  provider: psmdb
+  provider: percona-server-mongodb-operator
 
   # Topology configuration
   topology:

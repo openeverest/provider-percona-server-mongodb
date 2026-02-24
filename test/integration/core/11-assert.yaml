@@ -47,7 +47,7 @@ kind: Instance
 metadata:
   name: test-psmdb-cluster
 spec:
-  provider: psmdb
+  provider: percona-server-mongodb-operator
   components:
     engine:
       type: mongod

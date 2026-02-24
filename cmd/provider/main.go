@@ -33,10 +33,9 @@ func main() {
 	provider := provider.NewPSMDBProviderInterface()
 
 	r, err := reconciler.New(ctx, provider,
-		// Enable HTTP server for schema and validation endpoints
+		// Enable HTTP server for validation endpoint
 		reconciler.WithServer(reconciler.ServerConfig{
 			Port:           8082,
-			SchemaPath:     "/schema",
 			ValidationPath: "/validate",
 		}),
 	)

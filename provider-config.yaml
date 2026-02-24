@@ -1,0 +1,204 @@
+# Provider configuration for percona-server-mongodb-operator
+# This file defines versions, component mappings, topology structure, and UI schema.
+# Run `go generate ./...` to produce provider.yaml from this config + Go types.
+
+name: percona-server-mongodb-operator
+
+componentTypes:
+  mongod:
+    versions:
+    - version: "6.0.19-16"
+      image: percona/percona-server-mongodb:6.0.19-16-multi
+    - version: "6.0.21-18"
+      image: percona/percona-server-mongodb:6.0.21-18
+    - version: "7.0.18-11"
+      image: percona/percona-server-mongodb:7.0.18-11
+    - version: "8.0.4-1"
+      image: percona/percona-server-mongodb:8.0.4-1-multi
+    - version: "8.0.8-3"
+      image: percona/percona-server-mongodb:8.0.8-3
+    - version: "8.0.12-4"
+      image: percona/percona-server-mongodb:8.0.12-4
+      default: true
+  backup:
+    versions:
+    - version: "2.11.0"
+      image: percona/percona-backup-mongodb:2.11.0
+      default: true
+    - version: "2.9.1"
+      image: percona/percona-backup-mongodb:2.9.1
+  pmm:
+    versions:
+    - version: "2.44.1"
+      image: percona/pmm-server:2.44.1
+      default: true
+
+# Components map component names to their type and optional OpenAPI schema.
+# Omit 'schema' for components that have no custom configuration fields.
+components:
+  engine:
+    type: mongod
+  configServer:
+    type: mongod
+  proxy:
+    type: mongod
+  backupAgent:
+    type: backup
+  monitoring:
+    type: pmm
+
+# Topologies define deployment modes and their component requirements.
+# Omit 'schema' for topologies that have no topology-specific configuration.
+topologies:
+  replicaSet:
+    components:
+      engine:
+        defaults:
+          replicas: 3
+      backupAgent:
+        optional: true
+      monitoring:
+        optional: true
+  sharded:
+    configSchema: ShardedTopologyConfig
+    components:
+      engine:
+        defaults:
+          replicas: 3
+      proxy: {}
+      configServer: {}
+      backupAgent:
+        optional: true
+      monitoring:
+        optional: true
+
+# UI schema defines rendering hints for each topology.
+# Paths should reference fields in the Instance CR spec (e.g. spec.components.engine.version).
+# NOTE: paths are placeholders and will be corrected to match Instance CR fields.
+uiSchema:
+  replicaSet:
+    sections:
+      basicInfo:
+        label: Basic Information
+        description: Provide the basic information for your new database.
+        components:
+          version:
+            uiType: select
+            path: spec.components.engine.version
+            fieldParams:
+              label: Database Version
+      resources:
+        label: Resources
+        description: Configure the resources your new database will have access to.
+        components:
+          numberOfNodes:
+            path: spec.components.engine.replicas
+            uiType: number
+            fieldParams:
+              label: Number of nodes
+            validation:
+              min: 1
+              max: 7
+          resources:
+            uiType: group
+            groupType: line
+            components:
+              cpu:
+                path: spec.components.engine.resources.requests.cpu
+                uiType: number
+                fieldParams:
+                  label: CPU
+                validation:
+                  min: 1
+                  max: 10
+              memory:
+                path: spec.components.engine.resources.requests.memory
+                uiType: number
+                fieldParams:
+                  label: Memory
+                validation:
+                  min: 1
+                  max: 10
+              disk:
+                path: spec.components.engine.storage.size
+                uiType: number
+                fieldParams:
+                  label: Disk
+                validation:
+                  min: 10
+                  max: 100
+    sectionsOrder:
+    - basicInfo
+    - resources
+  sharded:
+    sections:
+      basicInfo:
+        label: Basic Information
+        description: Provide the basic information for your new database.
+        components:
+          version:
+            uiType: select
+            path: spec.components.engine.version
+            fieldParams:
+              label: Database Version
+      resources:
+        label: Resources
+        description: Configure the resources for your sharded cluster.
+        components:
+          shards:
+            uiType: number
+            path: spec.topology.config.numShards
+            fieldParams:
+              label: Number of shards
+              defaultValue: 2
+          numberOfNodes:
+            path: spec.components.engine.replicas
+            uiType: number
+            fieldParams:
+              label: Number of nodes per shard
+          nodesResources:
+            uiType: group
+            groupType: line
+            components:
+              cpu:
+                path: spec.components.engine.resources.requests.cpu
+                uiType: number
+                fieldParams:
+                  label: CPU
+                validation:
+                  min: 1
+                  max: 10
+              memory:
+                path: spec.components.engine.resources.requests.memory
+                uiType: number
+                fieldParams:
+                  label: Memory
+                validation:
+                  min: 1
+                  max: 10
+              disk:
+                path: spec.components.engine.storage.size
+                uiType: number
+                fieldParams:
+                  label: Disk
+                validation:
+                  min: 10
+                  max: 100
+          numberOfRouters:
+            path: spec.components.proxy.replicas
+            uiType: number
+            fieldParams:
+              label: Number of routers
+          numberOfConfigServers:
+            uiType: number
+            path: spec.components.configServer.replicas
+            fieldParams:
+              label: Number of configuration servers
+              defaultValue: 3
+        componentsOrder:
+        - shards
+        - numberOfNodes
+        - numberOfConfigServers
+    sectionsOrder:
+    - basicInfo
+    - resources

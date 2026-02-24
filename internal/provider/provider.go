@@ -27,7 +27,6 @@ import (
 	"github.com/openeverest/openeverest/v2/provider-runtime/controller"
 
 	"github.com/openeverest/provider-percona-server-mongodb/internal/common"
-	"github.com/openeverest/provider-percona-server-mongodb/types"
 )
 
 const (
@@ -110,17 +109,12 @@ func SyncPSMDB(c *controller.Context) error {
 	engine := c.Instance().Spec.Components[common.ComponentEngine]
 	// No need to check if engine is nil, it is guaranteed to be present by the validator
 
-	// Set the image: use the user-specified image if provided, otherwise use the default from metadata
+	// Set the image: use the user-specified image if provided, otherwise use the default from the provider spec
 	if engine.Image != "" {
 		// User explicitly specified an image
 		psmdb.Spec.Image = engine.Image
-	} else if metadata := c.Metadata(); metadata != nil {
-		// Look up the default image for the component type from the registered metadata
-		psmdb.Spec.Image = metadata.GetDefaultImage("mongod")
-	} else {
-		// Fallback: metadata not available, use PSMDBMetadata() directly
-		// This can happen in tests or when using NewContext instead of NewContextWithMetadata
-		psmdb.Spec.Image = common.PSMDBMetadata().GetDefaultImage(engine.Type)
+	} else if spec, err := c.ProviderSpec(); err == nil {
+		psmdb.Spec.Image = controller.GetDefaultImageForComponent(spec, common.ComponentEngine)
 	}
 	psmdb.Spec.ImagePullPolicy = corev1.PullIfNotPresent
 
@@ -185,18 +179,18 @@ func CleanupPSMDB(c *controller.Context) error {
 	return nil
 }
 
-// PSMDBProvider implements the sdk.ProviderInterface interface.
-//
-// TODO: configure watch provider.
+// PSMDBProvider implements the ProviderInterface.
 type PSMDBProvider struct {
 	controller.BaseProvider
 }
 
 // NewPSMDBProviderInterface creates a new PSMDB provider.
+// The provider name must match the Provider CR name so the runtime
+// can automatically fetch schemas and version metadata from it.
 func NewPSMDBProviderInterface() *PSMDBProvider {
 	return &PSMDBProvider{
 		BaseProvider: controller.BaseProvider{
-			ProviderName: "psmdb",
+			ProviderName: "percona-server-mongodb-operator",
 			SchemeFuncs: []func(*runtime.Scheme) error{
 				psmdbv1.SchemeBuilder.AddToScheme,
 			},
@@ -208,7 +202,6 @@ func NewPSMDBProviderInterface() *PSMDBProvider {
 				// update the Instance status.
 				controller.WatchOwned(&psmdbv1.PerconaServerMongoDB{}),
 			},
-			Metadata: common.PSMDBMetadata(),
 		},
 	}
 }
@@ -233,28 +226,6 @@ func (p *PSMDBProvider) Cleanup(c *controller.Context) error {
 	return CleanupPSMDB(c)
 }
 
-// ComponentSchemas returns the custom spec types for each component.
-func (p *PSMDBProvider) ComponentSchemas() map[string]interface{} {
-	return map[string]interface{}{
-		common.ComponentEngine:       &types.MongodCustomSpec{},
-		common.ComponentConfigServer: &types.MongodCustomSpec{},
-		common.ComponentProxy:        &types.MongosCustomSpec{},
-		common.ComponentBackupAgent:  &types.BackupCustomSpec{},
-		common.ComponentMonitoring:   &types.PMMCustomSpec{},
-	}
-}
-
-// Topologies returns the supported deployment topologies and their configuration schemas.
-func (p *PSMDBProvider) Topologies() map[string]controller.TopologyDefinition {
-	return common.PSMDBTopologyDefinitions()
-}
-
-// GlobalSchema returns the provider-level global configuration schema.
-func (p *PSMDBProvider) GlobalSchema() interface{} {
-	return &types.GlobalConfig{}
-}
-
 // Compile-time interface checks
 var _ controller.ProviderInterface = (*PSMDBProvider)(nil)
-var _ controller.MetadataProvider = (*PSMDBProvider)(nil)
-var _ controller.SchemaProvider = (*PSMDBProvider)(nil)
+var _ controller.WatchProvider = (*PSMDBProvider)(nil)
