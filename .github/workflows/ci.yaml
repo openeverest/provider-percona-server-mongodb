@@ -63,7 +63,6 @@ jobs:
 
       - name: Create K3D cluster
         run: |
-          sudo modprobe br_netfilter
           make k3d-cluster-up
 
       - name: Run integration tests

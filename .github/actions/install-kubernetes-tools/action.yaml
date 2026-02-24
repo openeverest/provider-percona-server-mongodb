@@ -33,7 +33,7 @@ inputs:
 runs:
   using: "composite"
   steps:
-    - name: Install TOOLS_PATH
+    - name: Create tools directory
       run: |
         mkdir -p ${{ inputs.tools-path }}
         echo ${{ inputs.tools-path }} >> $GITHUB_PATH
