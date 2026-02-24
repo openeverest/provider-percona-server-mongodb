@@ -50,11 +50,11 @@ generate-openapi: openapi-gen ## Generate OpenAPI definitions for custom spec ty
 ##@ Test
 
 .PHONY: test-integration
-test-integration: docker-build k3d-upload-image ## Run integration tests against K8S cluster. Specific test usage: make test-integration TEST=<test>
+test-integration: docker-build k3d-upload-image ## Run integration tests against K8S cluster. Single test usage: make test-integration TEST=<test>
 	. ./test/vars.sh && kubectl kuttl test --config ./test/integration/kuttl.yaml $(if $(TEST),--test $(TEST))
 
 .PHONY: k3d-upload-image
-k3d-upload-image:
+k3d-upload-image: # Upload an image to K3D testing cluster.
 	$(info Uploading image=$(IMG) to K3D testing cluster)
 	k3d image import -c provider-psmdb-test -m direct $(IMG)
 

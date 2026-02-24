@@ -1,9 +1,9 @@
----
+# TODO: use kustomize
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: percona-server-mongodb-provider
-  namespace: default
+  namespace: default # TODO: use a specific namespace for the provider
   labels:
     app: percona-server-mongodb-provider
 spec:
@@ -21,11 +21,3 @@ spec:
       - name: provider
         image: ghcr.io/openeverest/provider-percona-server-mongodb-dev:latest
         imagePullPolicy: IfNotPresent
-        ports:
-        - containerPort: 8080
-          name: http
-        env:
-        - name: POD_NAMESPACE
-          valueFrom:
-            fieldRef:
-              fieldPath: metadata.namespace
