@@ -26,7 +26,9 @@ import (
 
 func main() {
 	output := flag.String("output", "", "Output file path (default: stdout)")
-	name := flag.String("name", "percona-server-mongodb-operator", "Provider name")
+	// TODO: should provider name be configurable or constant?
+	// It has to match the name defined in provider.NewPSMDBProviderInterface().
+	name := flag.String("name", "psmdb", "Provider name")
 	namespace := flag.String("namespace", "", "Namespace (empty for cluster-scoped)")
 	flag.Parse()
 

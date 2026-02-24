@@ -1,0 +1,31 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: percona-server-mongodb-provider
+  namespace: default
+  labels:
+    app: percona-server-mongodb-provider
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: percona-server-mongodb-provider
+  template:
+    metadata:
+      labels:
+        app: percona-server-mongodb-provider
+    spec:
+      serviceAccountName: percona-server-mongodb-provider
+      containers:
+      - name: provider
+        image: ghcr.io/openeverest/provider-percona-server-mongodb-dev:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8080
+          name: http
+        env:
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
