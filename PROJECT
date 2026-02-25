@@ -7,6 +7,6 @@ domain: openeverest.io
 layout:
 - go.kubebuilder.io/v4
 multigroup: true
-projectName: gen
+projectName: provider-percona-server-mongodb
 repo: github.com/openeverest/provider-percona-server-mongodb
 version: "3"
