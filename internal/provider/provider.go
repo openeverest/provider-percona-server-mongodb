@@ -113,7 +113,11 @@ func SyncPSMDB(c *controller.Context) error {
 	if engine.Image != "" {
 		// User explicitly specified an image
 		psmdb.Spec.Image = engine.Image
-	} else if spec, err := c.ProviderSpec(); err == nil {
+	} else {
+		spec, err := c.ProviderSpec()
+		if err != nil {
+			return err
+		}
 		psmdb.Spec.Image = controller.GetDefaultImageForComponent(spec, common.ComponentEngine)
 	}
 	psmdb.Spec.ImagePullPolicy = corev1.PullIfNotPresent
