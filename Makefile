@@ -123,9 +123,15 @@ CONTROLLER_TOOLS_VERSION ?= v0.20.1
 .PHONY: kustomize
 kustomize: $(KUSTOMIZE) ## Download kustomize locally if necessary.
 $(KUSTOMIZE): $(LOCALBIN)
-	$(call go-install-tool,$(KUSTOMIZE),sigs.k8s.io/kustomize/kustomize/v5,$(KUSTOMIZE_VERSION))
+ifeq (,$(wildcard $(KUSTOMIZE)))
+	GOBIN=$(LOCALBIN) GOOS=$(OS) GOARCH=$(ARCH) go install sigs.k8s.io/kustomize/kustomize/v5@$(KUSTOMIZE_VERSION)
+	mv $(LOCALBIN)/kustomize $(KUSTOMIZE)
+endif
 
 .PHONY: controller-gen
 controller-gen: $(CONTROLLER_GEN) ## Download controller-gen locally if necessary.
 $(CONTROLLER_GEN): $(LOCALBIN)
-	$(call go-install-tool,$(CONTROLLER_GEN),sigs.k8s.io/controller-tools/cmd/controller-gen,$(CONTROLLER_TOOLS_VERSION))
+ifeq (,$(wildcard $(CONTROLLER_GEN)))
+	GOBIN=$(LOCALBIN) GOOS=$(OS) GOARCH=$(ARCH) go install sigs.k8s.io/controller-tools/cmd/controller-gen@$(CONTROLLER_TOOLS_VERSION)
+	mv $(LOCALBIN)/controller-gen $(CONTROLLER_GEN)
+endif

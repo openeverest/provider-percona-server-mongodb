@@ -26,6 +26,7 @@ import (
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
 	corev1alpha "github.com/openeverest/openeverest/v2/api/core/v1alpha1"
+	"github.com/openeverest/provider-percona-server-mongodb/internal/controller/provider"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -36,7 +37,9 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
-	corecontroller "github.com/openeverest/provider-percona-server-mongodb/internal/controller/core"
+	providerv1alpha "github.com/openeverest/openeverest/v2/api/core/v1alpha1"
+
+	instacev1alpha "github.com/openeverest/openeverest/v2/api/core/v1alpha1"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -49,6 +52,8 @@ func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 
 	utilruntime.Must(corev1alpha.AddToScheme(scheme))
+	utilruntime.Must(providerv1alpha.AddToScheme(scheme))
+	utilruntime.Must(instacev1alpha.AddToScheme(scheme))
 	// +kubebuilder:scaffold:scheme
 }
 
@@ -178,13 +183,21 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := (&corecontroller.ProviderReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
-	}).SetupWithManager(mgr); err != nil {
+	// Adds PSMDB provider controller to the manager
+
+	// if err := (&provider.ProviderReconciler{
+	// 	Client: mgr.GetClient(),
+	// 	Scheme: mgr.GetScheme(),
+	// }).SetupWithManager(mgr); err != nil {
+	// 	setupLog.Error(err, "Failed to create controller", "controller", "Provider")
+	// 	os.Exit(1)
+	// }
+
+	if err := provider.NewPSMDBProviderInterface().SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "Provider")
 		os.Exit(1)
 	}
+
 	// +kubebuilder:scaffold:builder
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {

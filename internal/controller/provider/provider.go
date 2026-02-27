@@ -95,6 +95,8 @@ func ValidatePSMDB(c *controller.Context) error {
 	return nil
 }
 
+// +kubebuilder:rbac:groups=psmdb.percona.com,resources=perconaservermongodbs,verbs=get;list;watch;create;update;patch;delete
+
 // SyncPSMDB creates or updates the PerconaServerMongoDB resource based on the Instance spec.
 func SyncPSMDB(c *controller.Context) error {
 	l := log.FromContext(c.Context())
@@ -183,16 +185,11 @@ func CleanupPSMDB(c *controller.Context) error {
 	return nil
 }
 
-// PSMDBProvider implements the ProviderInterface.
-type PSMDBProvider struct {
-	controller.BaseProvider
-}
-
 // NewPSMDBProviderInterface creates a new PSMDB provider.
 // The provider name must match the Provider CR name so the runtime
 // can automatically fetch schemas and version metadata from it.
-func NewPSMDBProviderInterface() *PSMDBProvider {
-	return &PSMDBProvider{
+func NewPSMDBProviderInterface() *ProviderReconciler {
+	return &ProviderReconciler{
 		BaseProvider: controller.BaseProvider{
 			ProviderName: "percona-server-mongodb",
 			SchemeFuncs: []func(*runtime.Scheme) error{
@@ -203,7 +200,7 @@ func NewPSMDBProviderInterface() *PSMDBProvider {
 				// TODO: do we need some predicate? The
 				// GenerationChangedPredicate definitely isn't correct because
 				// we need to be notified when the status changes so we can
-				// update the Instance status.
+				// update the Instance stattus.
 				controller.WatchOwned(&psmdbv1.PerconaServerMongoDB{}),
 			},
 		},
@@ -211,25 +208,25 @@ func NewPSMDBProviderInterface() *PSMDBProvider {
 }
 
 // Validate validates the Instance spec.
-func (p *PSMDBProvider) Validate(c *controller.Context) error {
+func (p *ProviderReconciler) Validate(c *controller.Context) error {
 	return ValidatePSMDB(c)
 }
 
 // Sync ensures all resources exist and are configured correctly.
-func (p *PSMDBProvider) Sync(c *controller.Context) error {
+func (p *ProviderReconciler) Sync(c *controller.Context) error {
 	return SyncPSMDB(c)
 }
 
 // Status computes the current status of the cluster.
-func (p *PSMDBProvider) Status(c *controller.Context) (controller.Status, error) {
+func (p *ProviderReconciler) Status(c *controller.Context) (controller.Status, error) {
 	return StatusPSMDB(c)
 }
 
 // Cleanup handles deletion of the cluster and any necessary cleanup.
-func (p *PSMDBProvider) Cleanup(c *controller.Context) error {
+func (p *ProviderReconciler) Cleanup(c *controller.Context) error {
 	return CleanupPSMDB(c)
 }
 
 // Compile-time interface checks
-var _ controller.ProviderInterface = (*PSMDBProvider)(nil)
-var _ controller.WatchProvider = (*PSMDBProvider)(nil)
+var _ controller.ProviderInterface = (*ProviderReconciler)(nil)
+var _ controller.WatchProvider = (*ProviderReconciler)(nil)

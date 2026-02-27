@@ -9,4 +9,13 @@ layout:
 multigroup: true
 projectName: provider-percona-server-mongodb
 repo: github.com/openeverest/provider-percona-server-mongodb
+resources:
+- controller: true
+  domain: openeverest.io
+  external: true
+  group: provider
+  kind: Provider
+  module: github.com/openeverest/openeverest/v2@33d4751fea28637af435e2f3fc6ab41596a49c1f
+  path: github.com/openeverest/openeverest/v2/api/core/v1alpha1
+  version: v1alpha
 version: "3"
