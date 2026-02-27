@@ -12,10 +12,6 @@ CONTAINER_TOOL ?= docker
 # Image URL to use all building/pushing image targets
 IMG ?= ghcr.io/openeverest/provider-percona-server-mongodb-dev:latest
 
-# Set kuttl test name directory optionally for running specific integration test case.
-# If not set, all test cases are run.
-TEST ?=
-
 .PHONY: help
 help: ## Display this help.
 	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make \033[36m<target>\033[0m\n"} /^[a-zA-Z_0-9-]+:.*?##/ { printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2 } /^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
@@ -45,8 +41,8 @@ generate-openapi: openapi-gen ## Generate OpenAPI definitions for custom spec ty
 ##@ Test
 
 .PHONY: test-integration
-test-integration: docker-build k3d-upload-image ## Run integration tests against K8S cluster. Single test usage: make test-integration TEST=<test>
-	. ./test/vars.sh && kubectl kuttl test --config ./test/integration/kuttl.yaml $(if $(TEST),--test $(TEST))
+test-integration: ## Run integration tests against K8S cluster
+	. ./test/vars.sh && kubectl kuttl test --config ./test/integration/kuttl.yaml
 
 .PHONY: k3d-upload-image
 k3d-upload-image: # Upload an image to K3D testing cluster.
@@ -77,14 +73,15 @@ uninstall: manifests kustomize ## TODO: handle CRDs locally, gitsubmodules?
 	kubectl delete -f https://raw.githubusercontent.com/openeverest/openeverest/v2/config/crd/bases/core.openeverest.io_instances.yaml
 	kubectl delete -f https://raw.githubusercontent.com/percona/percona-server-mongodb-operator/v1.21.1/deploy/bundle.yaml
 
-.PHONY: deploy
-deploy: manifests kustomize ## Deploy controller to the K8s cluster specified in ~/.kube/config.
-	cd config/manager && "$(KUSTOMIZE)" edit set image controller=${IMG}
-	"$(KUSTOMIZE)" build config/default | "$(KUBECTL)" apply -f -
+# TODO build manager image
+# .PHONY: deploy
+# deploy: manifests kustomize ## Deploy controller to the K8s cluster specified in ~/.kube/config.
+# 	cd config/manager && "$(KUSTOMIZE)" edit set image controller=${IMG}
+# 	"$(KUSTOMIZE)" build config/default | "$(KUBECTL)" apply -f -
 
-.PHONY: undeploy
-undeploy: kustomize ## Undeploy controller from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
-	"$(KUSTOMIZE)" build config/default | "$(KUBECTL)" delete --ignore-not-found=$(ignore-not-found) -f -
+# .PHONY: undeploy
+# undeploy: kustomize ## Undeploy controller from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
+# 	"$(KUSTOMIZE)" build config/default | "$(KUBECTL)" delete --ignore-not-found=$(ignore-not-found) -f -
 
 .PHONY: k3d-cluster-up
 k3d-cluster-up: ## Create a K8S cluster for testing.

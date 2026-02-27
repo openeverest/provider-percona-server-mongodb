@@ -4,21 +4,6 @@ artifactsDir: /tmp/
 startKIND: false
 skipDelete: false
 skipClusterDelete: true
-commands:
-  # Deploy CRDs
-  - command: kubectl apply --server-side --wait -f https://raw.githubusercontent.com/openeverest/openeverest/v2/config/crd/bases/core.openeverest.io_providers.yaml
-  - command: kubectl apply --server-side --wait -f https://raw.githubusercontent.com/openeverest/openeverest/v2/config/crd/bases/core.openeverest.io_instances.yaml
-  - command: kubectl apply --server-side --wait -f https://raw.githubusercontent.com/percona/percona-server-mongodb-operator/v${PSMDB_OPERATOR_VERSION}/deploy/crd.yaml
-  - command: kubectl apply --server-side -f provider.yaml
-  # Deploy Provider
-  - command: make -f ${OPERATOR_ROOT_PATH}/Makefile deploy
-  # Wait for CRDs
-  - command: kubectl wait --for condition=established --timeout=10s crd instances.core.openeverest.io
-  - command: kubectl wait --for condition=established --timeout=10s crd providers.core.openeverest.io
-  - command: kubectl wait --for condition=established --timeout=10s crd perconaservermongodbs.psmdb.percona.com
-  # Wait for Provider
-  - command: kubectl wait --for jsonpath='{.metadata.name}' --timeout=10s provider/psmdb
-  - command: kubectl wait --for condition=available --timeout=10s deployment/provider-psmdb-controller-manager -n provider-psmdb-system
 testDirs:
   - test/integration
 

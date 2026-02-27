@@ -27,7 +27,7 @@ This directory contains a implementation of a Percona Server MongoDB (PSMDB) pro
 make run
 ```
 
-### Create a Test Instance
+### Create a Test
 
 ```bash
 kubectl apply -f examples/instance-simple.yaml
@@ -44,9 +44,23 @@ kubectl get instance
 
 The `test/integration/` directory contains kuttl tests that verify the provider's behavior.
 
+### Prerequisites for Tests
+
+1. SDK CRDs installed (see Quick Start above)
+2. Provider running in the background:
+   ```bash
+   make run
+   ```
+
+### Running the Tests
+
 ```bash
+# From the examples directory:
 make test-integration
 
 # Or run directly:
+cd examples
 . ./test/vars.sh && kubectl kuttl test --config ./test/integration/kuttl.yaml
 ```
+
+**Note:** The tests assume the provider is already running and will create/update/delete Instance resources to verify correct behavior.
