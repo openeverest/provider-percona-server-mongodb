@@ -28,12 +28,12 @@ import (
 // configureBackup configures the backup component based on the instance spec and metadata defaults.
 func configureBackup(c *controller.Context) psmdbv1.BackupSpec {
 	// TODO: Implement proper backup configuration
-	var backupImage string
-	if metadata := c.Metadata(); metadata != nil {
-		backupImage = metadata.GetDefaultImage("backup")
-	} else {
-		backupImage = common.PSMDBMetadata().GetDefaultImage("backup")
+	spec, err := c.ProviderSpec()
+	if err != nil {
+		// FIXME: return error
+		// return err
 	}
+	backupImage := controller.GetDefaultImageForComponent(spec, common.ComponentBackupAgent)
 
 	return psmdbv1.BackupSpec{
 		Enabled: true,

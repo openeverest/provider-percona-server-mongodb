@@ -1,12 +1,7 @@
-## Tool Versions
-OPENAPI_GEN_VERSION ?= v0.0.0-20250910181357-589584f1c912
-
 ## Location to install dependencies to
 LOCALBIN ?= $(shell pwd)/bin
 $(LOCALBIN):
 	mkdir -p $(LOCALBIN)
-
-OPENAPI_GEN ?= $(LOCALBIN)/openapi-gen
 
 # CONTAINER_TOOL defines the container tool to be used for building images.
 # Be aware that the target commands are only tested with Docker which is
@@ -30,7 +25,7 @@ run: gen ## Run the provider locally
 	go run cmd/provider/main.go
 
 .PHONY: gen
-gen: generate-openapi generate-manifest ## Generate code.
+gen: ## Generate code (including provider.yaml from provider-config.yaml + Go types).
 	go generate ./...
 
 .PHONY: generate-manifest
@@ -67,12 +62,6 @@ manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and Cust
 .PHONY: generate
 generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
 	"$(CONTROLLER_GEN)" object:headerFile="hack/boilerplate.go.txt" paths="./..."
-
-.PHONY: openapi-gen
-openapi-gen: $(OPENAPI_GEN) ## Download openapi-gen locally if necessary
-$(OPENAPI_GEN): $(LOCALBIN)
-	test -s $(LOCALBIN)/openapi-gen || \
-	GOBIN=$(LOCALBIN) go install k8s.io/kube-openapi/cmd/openapi-gen@$(OPENAPI_GEN_VERSION)
 
 .PHONY: install
 install: manifests kustomize ## TODO: handle CRDs locally, gitsubmodules?
