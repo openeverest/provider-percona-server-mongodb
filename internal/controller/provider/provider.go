@@ -200,7 +200,7 @@ func NewPSMDBProviderInterface() *ProviderReconciler {
 				// TODO: do we need some predicate? The
 				// GenerationChangedPredicate definitely isn't correct because
 				// we need to be notified when the status changes so we can
-				// update the Instance stattus.
+				// update the Instance status.
 				controller.WatchOwned(&psmdbv1.PerconaServerMongoDB{}),
 			},
 		},
