@@ -1,0 +1,32 @@
+# Component type version catalog.
+# Add new versions here when upstream releases are available.
+# Mark exactly one version per type as `default: true`.
+
+componentTypes:
+  mongod:
+    versions:
+    - version: "6.0.19-16"
+      image: percona/percona-server-mongodb:6.0.19-16-multi
+    - version: "6.0.21-18"
+      image: percona/percona-server-mongodb:6.0.21-18
+    - version: "7.0.18-11"
+      image: percona/percona-server-mongodb:7.0.18-11
+    - version: "8.0.4-1"
+      image: percona/percona-server-mongodb:8.0.4-1-multi
+    - version: "8.0.8-3"
+      image: percona/percona-server-mongodb:8.0.8-3
+    - version: "8.0.12-4"
+      image: percona/percona-server-mongodb:8.0.12-4
+      default: true
+  backup:
+    versions:
+    - version: "2.11.0"
+      image: percona/percona-backup-mongodb:2.11.0
+      default: true
+    - version: "2.9.1"
+      image: percona/percona-backup-mongodb:2.9.1
+  pmm:
+    versions:
+    - version: "2.44.1"
+      image: percona/pmm-server:2.44.1
+      default: true

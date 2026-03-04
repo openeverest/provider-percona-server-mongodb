@@ -12,6 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package providerperconaservermongodb
+// Package replicaset contains custom spec types for the replica set topology.
+//
+// Add fields to ReplicaSetTopologyConfig and reference it via configSchema in
+// topology.yaml when this topology needs custom configuration.
+//
+// +k8s:openapi-gen=true
+package replicaset
 
-//go:generate go tool provider-sdk generate
+// ReplicaSetTopologyConfig defines configuration for replica set topology.
+// Currently empty — add fields here when the replica set topology needs
+// custom configuration beyond what the base Instance spec provides.
+type ReplicaSetTopologyConfig struct{}

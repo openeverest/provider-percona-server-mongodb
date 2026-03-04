@@ -24,8 +24,8 @@ import (
 	corev1alpha1 "github.com/openeverest/openeverest/v2/api/core/v1alpha1"
 	"github.com/openeverest/openeverest/v2/provider-runtime/controller"
 
+	"github.com/openeverest/provider-percona-server-mongodb/definition/topologies/sharded"
 	"github.com/openeverest/provider-percona-server-mongodb/internal/common"
-	"github.com/openeverest/provider-percona-server-mongodb/types"
 )
 
 // configureReplset configures a single replset based on the provided parameters.
@@ -105,7 +105,7 @@ func configureReplsets(c *controller.Context) []*psmdbv1.ReplsetSpec {
 	}
 
 	numShards := 2 // default
-	var shardedConfig types.ShardedTopologyConfig
+	var shardedConfig sharded.ShardedTopologyConfig
 	if c.TryDecodeTopologyConfig(&shardedConfig) && shardedConfig.NumShards > 0 {
 		numShards = int(shardedConfig.NumShards)
 	}

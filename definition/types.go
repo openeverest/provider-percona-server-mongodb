@@ -12,6 +12,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package providerperconaservermongodb
+// Package definition contains shared types used across the provider definition.
+//
+// +k8s:openapi-gen=true
+package definition
 
-//go:generate go tool provider-sdk generate
+// TopologyType defines the type of deployment topology.
+type TopologyType string
+
+const (
+// TopologyTypeReplicaSet represents a replica set topology.
+TopologyTypeReplicaSet TopologyType = "replicaSet"
+// TopologyTypeSharded represents a sharded cluster topology.
+TopologyTypeSharded TopologyType = "sharded"
+)
+
+// GlobalConfig defines global configuration that applies to the entire cluster.
+type GlobalConfig struct{}

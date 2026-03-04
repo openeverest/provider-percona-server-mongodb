@@ -12,6 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package providerperconaservermongodb
+// Package sharded contains custom spec types for the sharded cluster topology.
+//
+// The ShardedTopologyConfig struct is referenced by topology.yaml via configSchema
+// and is converted to an OpenAPI schema during generation.
+//
+// +k8s:openapi-gen=true
+package sharded
 
-//go:generate go tool provider-sdk generate
+// ShardedTopologyConfig defines configuration for sharded cluster topology.
+type ShardedTopologyConfig struct {
+	// NumShards specifies the initial number of shards.
+	// +k8s:validation:minimum=1
+	// +default=2
+	// +optional
+	NumShards int32 `json:"numShards,omitempty"`
+}
