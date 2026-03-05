@@ -7,31 +7,31 @@ name: percona-server-mongodb
 componentTypes:
   mongod:
     versions:
-    - version: "6.0.19-16"
-      image: percona/percona-server-mongodb:6.0.19-16-multi
-    - version: "6.0.21-18"
-      image: percona/percona-server-mongodb:6.0.21-18
-    - version: "7.0.18-11"
-      image: percona/percona-server-mongodb:7.0.18-11
-    - version: "8.0.4-1"
-      image: percona/percona-server-mongodb:8.0.4-1-multi
-    - version: "8.0.8-3"
-      image: percona/percona-server-mongodb:8.0.8-3
-    - version: "8.0.12-4"
-      image: percona/percona-server-mongodb:8.0.12-4
-      default: true
+      - version: "6.0.19-16"
+        image: percona/percona-server-mongodb:6.0.19-16-multi
+      - version: "6.0.21-18"
+        image: percona/percona-server-mongodb:6.0.21-18
+      - version: "7.0.18-11"
+        image: percona/percona-server-mongodb:7.0.18-11
+      - version: "8.0.4-1"
+        image: percona/percona-server-mongodb:8.0.4-1-multi
+      - version: "8.0.8-3"
+        image: percona/percona-server-mongodb:8.0.8-3
+      - version: "8.0.12-4"
+        image: percona/percona-server-mongodb:8.0.12-4
+        default: true
   backup:
     versions:
-    - version: "2.11.0"
-      image: percona/percona-backup-mongodb:2.11.0
-      default: true
-    - version: "2.9.1"
-      image: percona/percona-backup-mongodb:2.9.1
+      - version: "2.11.0"
+        image: percona/percona-backup-mongodb:2.11.0
+        default: true
+      - version: "2.9.1"
+        image: percona/percona-backup-mongodb:2.9.1
   pmm:
     versions:
-    - version: "2.44.1"
-      image: percona/pmm-server:2.44.1
-      default: true
+      - version: "2.44.1"
+        image: percona/pmm-server:2.44.1
+        default: true
 
 # Components map component names to their type and optional OpenAPI schema.
 # Omit 'schema' for components that have no custom configuration fields.
@@ -78,127 +78,244 @@ topologies:
 uiSchema:
   replicaSet:
     sections:
-      basicInfo:
-        label: Basic Information
-        description: Provide the basic information for your new database.
+      databaseVersion:
+        label: "Database Version"
+        description: "Provide the information about the database version you want to use."
         components:
           version:
             uiType: select
-            path: spec.components.engine.version
+            path: "spec.engine.version"
             fieldParams:
-              label: Database Version
-      resources:
-        label: Resources
-        description: Configure the resources your new database will have access to.
-        components:
-          numberOfNodes:
-            path: spec.components.engine.replicas
-            uiType: number
-            fieldParams:
-              label: Number of nodes
+              label: "Database Version"
+              optionsPath: "spec.componentTypes.mongod.versions"
+              optionsPathConfig:
+                labelPath: "version"
+                valuePath: "version"
             validation:
-              min: 1
-              max: 7
-          resources:
+              required: true
+      resources:
+        label: "Resources"
+        description: "Configure the resources your new database will have access to."
+        components:
+          nodes:
             uiType: group
-            groupType: line
             components:
-              cpu:
-                path: spec.components.engine.resources.requests.cpu
+              numberOfnodes:
+                path: "spec.components.engine.replicas"
                 uiType: number
                 fieldParams:
-                  label: CPU
+                  label: "Number of nodes"
+                  defaultValue: 3
                 validation:
+                  required: true
                   min: 1
-                  max: 10
-              memory:
-                path: spec.components.engine.resources.requests.memory
-                uiType: number
-                fieldParams:
-                  label: Memory
-                validation:
-                  min: 1
-                  max: 10
-              disk:
-                path: spec.components.engine.storage.size
-                uiType: number
-                fieldParams:
-                  label: Disk
-                validation:
-                  min: 10
-                  max: 100
+                  int: true
+                  celExpressions:
+                    - celExpr: "spec.components.engine.replicas % 2 == 1"
+                      message: "The number of nodes must be odd"
+
+              resources:
+                uiType: group
+                groupType: line
+                components:
+                  cpu:
+                    path: "spec.components.engine.resources.limits.cpu"
+                    uiType: number
+                    fieldParams:
+                      label: "CPU"
+                      defaultValue: 1
+                      step: 0.1
+                    validation:
+                      min: 0.6
+                      required: true
+
+                  memory:
+                    path: "spec.components.engine.resources.limits.memory"
+                    uiType: number
+                    fieldParams:
+                      label: "Memory"
+                      defaultValue: 4
+                      step: 0.001
+                      badge: "Gi"
+                      badgeToApi: true
+                    validation:
+                      min: 0.512
+                      required: true
+
+                  disk:
+                    path: "spec.components.engine.storage.size"
+                    uiType: number
+                    fieldParams:
+                      label: "Disk"
+                      defaultValue: 25
+                      badge: "Gi"
+                      badgeToApi: true
+                    validation:
+                      min: 1
+                      int: true
+                      required: true
+      advanced:
+        label: "Advanced configuration"
+        description: "Configure advanced settings for your database"
+        components:
+          storageClass:
+            uiType: select
+            path: spec.components.engine.storage.storageClass
+            fieldParams:
+              label: "Storage class"
+              defaultValue: "local-path"
+              options:
+                - label: "local-path"
+                  value: "local-path"
     sectionsOrder:
-    - basicInfo
-    - resources
+      - databaseVersion
+      - resources
+      - advanced
   sharded:
     sections:
-      basicInfo:
-        label: Basic Information
-        description: Provide the basic information for your new database.
+      databaseVersion:
+        label: "Database Version"
+        description: "Provide the information about the database version you want to use."
         components:
           version:
             uiType: select
-            path: spec.components.engine.version
+            path: "spec.engine.version"
             fieldParams:
-              label: Database Version
+              label: "Database Version"
+              optionsPath: "spec.componentTypes.mongod.versions"
+              optionsPathConfig:
+                labelPath: "version"
+                valuePath: "version"
+            validation:
+              required: true
       resources:
-        label: Resources
-        description: Configure the resources for your sharded cluster.
+        label: "Resources"
+        description: "Some description about resources"
         components:
           shards:
             uiType: number
-            path: spec.topology.config.numShards
+            path: "spec.sharding.shards"
             fieldParams:
-              label: Number of shards
-              defaultValue: 2
-          numberOfNodes:
-            path: spec.components.engine.replicas
+              label: "Nº of shards"
+              defaultValue: 1
+          numberOfnodes:
+            path: "spec.components.engine.replicas"
             uiType: number
             fieldParams:
-              label: Number of nodes per shard
+              label: "Number of nodes"
+              defaultValue: 3
+            validation:
+              required: true
+              min: 1
+              int: true
+              celExpressions:
+                - celExpr: "spec.components.engine.replicas % 2 == 1"
+                  message: "The number of nodes must be odd"
           nodesResources:
             uiType: group
             groupType: line
             components:
               cpu:
-                path: spec.components.engine.resources.requests.cpu
+                path: "spec.components.engine.resources.limits.cpu"
                 uiType: number
                 fieldParams:
-                  label: CPU
+                  label: "CPU"
+                  defaultValue: 1
+                  step: 0.1
+                validation:
+                  min: 0.6
+                  required: true
+              memory:
+                path: "spec.components.engine.resources.limits.memory"
+                uiType: number
+                fieldParams:
+                  label: "Memory"
+                  defaultValue: 4
+                  step: 0.001
+                  badge: "Gi"
+                  badgeToApi: true
+                validation:
+                  min: 0.512
+                  required: true
+              disk:
+                path: "spec.components.engine.storage.size"
+                uiType: number
+                fieldParams:
+                  label: "Disk"
+                  defaultValue: 25
+                  badge: "Gi"
+                  badgeToApi: true
+                  validation:
+                    min: 1
+                    int: true
+                    required: true
+          numberOfRouters:
+            path: "spec.components.proxy.replicas"
+            uiType: number
+            fieldParams:
+              label: "Number of routers"
+          routersResources:
+            uiType: group
+            groupType: line
+            components:
+              cpu:
+                path: "spec.components.proxy.resources.limits.cpu"
+                uiType: number
+                fieldParams:
+                  label: "CPU"
                 validation:
                   min: 1
                   max: 10
               memory:
-                path: spec.components.engine.resources.requests.memory
+                path: "spec.components.proxy.resources.limits.memory"
                 uiType: number
                 fieldParams:
-                  label: Memory
+                  label: "Memory"
                 validation:
                   min: 1
                   max: 10
-              disk:
-                path: spec.components.engine.storage.size
-                uiType: number
-                fieldParams:
-                  label: Disk
-                validation:
-                  min: 10
-                  max: 100
-          numberOfRouters:
-            path: spec.components.proxy.replicas
-            uiType: number
-            fieldParams:
-              label: Number of routers
           numberOfConfigServers:
             uiType: number
-            path: spec.components.configServer.replicas
+            path: "spec.components.configServer.replicas"
             fieldParams:
-              label: Number of configuration servers
+              label: "Nº of configuration servers"
               defaultValue: 3
+            validation:
+              celExpressions:
+                - celExpr: "!(spec.components.engine.replicas > 1 && spec.components.configServer.replicas == 1)"
+                  message: "The number of configuration servers cannot be 1 if the number of database nodes is greater than 1"
         componentsOrder:
-        - shards
-        - numberOfNodes
-        - numberOfConfigServers
+          - shards
+          - numberOfnodes
+          - nodesResources
+          - numberOfRouters
+          - routersResources
+          - numberOfConfigServers
+      advanced:
+        label: "Advanced configuration"
+        description: "Configure advanced settings for your database"
+        components:
+          storageClass:
+            uiType: select
+            path: spec.components.engine.storage.storageClass
+            fieldParams:
+              label: "Storage class"
+              defaultValue: "local-path"
+              options:
+                - label: "local-path"
+                  value: "local-path"
+          configuration:
+            uiType: text
+            path: spec.components.engine.configuration
+            fieldParams:
+              label: "Advanced configuration"
+              multiline: true
+              minRows: 3
+              maxRows: 8
+        componentsOrder:
+          - storageClass
+          - configuration
     sectionsOrder:
-    - basicInfo
-    - resources
+      - databaseVersion
+      - resources
+      - advanced
