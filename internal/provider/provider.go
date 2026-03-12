@@ -157,12 +157,42 @@ func StatusPSMDB(c *controller.Context) (controller.Status, error) {
 	}
 	switch psmdb.Status.State {
 	case psmdbv1.AppStateReady:
-		return controller.Running(), nil
+		details, err := buildConnectionDetails(c, psmdb)
+		if err != nil {
+			return controller.Failed("Failed to build connection details: " + err.Error()), nil
+		}
+		return controller.RunningWithConnectionDetails(details), nil
 	case psmdbv1.AppStateError:
 		return controller.Failed(psmdb.Status.Message), nil
 	default:
 		return controller.Creating("Cluster is being created"), nil
 	}
+}
+
+// buildConnectionDetails reads the PSMDB Users secret and combines it with host info
+// to produce a set of well-known connection details.
+func buildConnectionDetails(c *controller.Context, psmdb *psmdbv1.PerconaServerMongoDB) (controller.ConnectionDetails, error) {
+	secretName := "everest-secrets-" + c.Name()
+	secret := &corev1.Secret{}
+	if err := c.Get(secret, secretName); err != nil {
+		return controller.ConnectionDetails{}, fmt.Errorf("failed to get credentials secret %s: %w", secretName, err)
+	}
+
+	host := psmdb.Status.Host
+	port := "27017"
+
+	username := string(secret.Data[psmdbv1.EnvMongoDBDatabaseAdminUser])
+	password := string(secret.Data[psmdbv1.EnvMongoDBDatabaseAdminPassword])
+
+	return controller.ConnectionDetails{
+		Type:     "mongodb",
+		Provider: "percona-server-mongodb",
+		Host:     host,
+		Port:     port,
+		Username: username,
+		Password: password,
+		URI:      fmt.Sprintf("mongodb://%s:%s@%s:%s/admin?ssl=false", username, password, host, port),
+	}, nil
 }
 
 // CleanupPSMDB handles deletion of the PSMDB cluster.
