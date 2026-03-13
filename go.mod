@@ -4,7 +4,7 @@ go 1.25.5
 
 require (
 	github.com/AlekSi/pointer v1.2.0
-	github.com/openeverest/openeverest/v2 v2.0.0-20260312113939-8d06844ba9de
+	github.com/openeverest/openeverest/v2 v2.0.0-20260313155204-92e5992358ed
 	github.com/percona/percona-server-mongodb-operator v1.22.0
 	k8s.io/api v0.35.0
 	k8s.io/apimachinery v0.35.0
@@ -83,7 +83,7 @@ require (
 	github.com/mxk/go-flowrate v0.0.0-20140419014527-cca7078d478f // indirect
 	github.com/oasdiff/yaml v0.0.0-20250309154309-f31be36b4037 // indirect
 	github.com/oasdiff/yaml3 v0.0.0-20250309153720-d2182401db90 // indirect
-	github.com/openeverest/provider-sdk v0.0.0-20260312141041-0b62c15907e7 // indirect
+	github.com/openeverest/provider-sdk v0.0.0-20260313152200-825baa2fffe4 // indirect
 	github.com/percona/percona-backup-mongodb v1.8.1-0.20251104101930-05ab6d7e1004 // indirect
 	github.com/perimeterx/marshmallow v1.1.5 // indirect
 	github.com/pierrec/lz4 v2.6.1+incompatible // indirect
