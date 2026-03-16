@@ -126,6 +126,7 @@ psmdb-operator:
     create: true
   serviceAccount:
     create: true
+  watchAllNamespaces: true
   disableTelemetry: false
   logStructured: false
   logLevel: INFO
