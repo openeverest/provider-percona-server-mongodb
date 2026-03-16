@@ -42,10 +42,10 @@ func configureMongos(c *controller.Context) *psmdbv1.MongosSpec {
 
 	if proxy.Resources != nil && proxy.Resources.Limits != nil {
 		if !proxy.Resources.Limits.Cpu().IsZero() {
-			mongosSpec.MultiAZ.Resources.Limits[corev1.ResourceCPU] = *proxy.Resources.Limits.Cpu()
+			mongosSpec.Resources.Limits[corev1.ResourceCPU] = *proxy.Resources.Limits.Cpu()
 		}
 		if !proxy.Resources.Limits.Memory().IsZero() {
-			mongosSpec.MultiAZ.Resources.Limits[corev1.ResourceMemory] = *proxy.Resources.Limits.Memory()
+			mongosSpec.Resources.Limits[corev1.ResourceMemory] = *proxy.Resources.Limits.Memory()
 		}
 	}
 

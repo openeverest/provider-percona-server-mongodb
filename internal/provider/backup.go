@@ -29,8 +29,7 @@ import (
 func configureBackup(c *controller.Context) psmdbv1.BackupSpec {
 	// TODO: Implement proper backup configuration
 	spec, err := c.ProviderSpec()
-	if err != nil {
-		// FIXME: return error
+	if err != nil { //nolint:staticcheck // FIXME: handle error properly
 		// return err
 	}
 	backupImage := controller.GetDefaultImageForComponent(spec, common.ComponentBackupAgent)

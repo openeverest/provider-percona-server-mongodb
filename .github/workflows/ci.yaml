@@ -16,6 +16,22 @@ permissions:
   contents: read
 
 jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.11.3
+
   build:
     name: Build
     runs-on: ubuntu-latest
@@ -105,7 +121,7 @@ jobs:
 
   test-integration-core:
     name: Integration / core
-    needs: [build, verify]
+    needs: [lint, build, verify]
     uses: ./.github/workflows/integration-test.yaml
     with:
       make_target: test-integration-core
@@ -114,7 +130,7 @@ jobs:
 
   test-integration-sharded:
     name: Integration / sharded
-    needs: [build, verify]
+    needs: [lint, build, verify]
     uses: ./.github/workflows/integration-test.yaml
     with:
       make_target: test-integration-sharded

@@ -70,15 +70,15 @@ func configureReplset(name string, replicas *int32, resources *corev1.ResourceRe
 
 	if resources != nil && resources.Limits != nil {
 		if !resources.Limits.Cpu().IsZero() {
-			rsSpec.MultiAZ.Resources.Limits[corev1.ResourceCPU] = *resources.Limits.Cpu()
+			rsSpec.Resources.Limits[corev1.ResourceCPU] = *resources.Limits.Cpu()
 		}
 		if !resources.Limits.Memory().IsZero() {
-			rsSpec.MultiAZ.Resources.Limits[corev1.ResourceMemory] = *resources.Limits.Memory()
+			rsSpec.Resources.Limits[corev1.ResourceMemory] = *resources.Limits.Memory()
 		}
 	}
 
 	if storageSize != nil && !storageSize.Size.IsZero() {
-		rsSpec.VolumeSpec.PersistentVolumeClaim.PersistentVolumeClaimSpec.Resources.Requests[corev1.ResourceStorage] = storageSize.Size
+		rsSpec.VolumeSpec.PersistentVolumeClaim.Resources.Requests[corev1.ResourceStorage] = storageSize.Size
 	}
 
 	return rsSpec

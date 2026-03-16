@@ -39,6 +39,10 @@ help: ## Display this help.
 
 ##@ Development
 
+.PHONY: lint
+lint: ## Run golangci-lint.
+	go tool golangci-lint run ./...
+
 .PHONY: run
 run: generate ## Run the provider locally.
 	go run cmd/provider/main.go
