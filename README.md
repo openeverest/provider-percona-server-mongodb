@@ -12,7 +12,7 @@ This directory contains a implementation of a Percona Server MongoDB (PSMDB) pro
    make k3d-cluster-up
    ```
 
-2. Regenerate generated manifests/specs after editing definition files (including topology YAMLs):
+2. Generate Provider CR manifests (if changed):
 
    ```bash
    make generate
