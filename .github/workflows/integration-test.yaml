@@ -1,0 +1,69 @@
+---
+# Reusable workflow — run one kuttl integration test suite inside a k3d cluster.
+# Called by ci.yaml; not triggered directly.
+name: Integration test
+
+on:
+  workflow_call:
+    inputs:
+      make_target:
+        description: 'Make target for the kuttl suite (e.g. test-integration-core)'
+        type: string
+        required: true
+      suite:
+        description: 'Human-readable suite name used for artifact naming'
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+env:
+  IMG: provider-percona-server-mongodb:ci
+
+jobs:
+  run:
+    name: ${{ inputs.suite }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Kubernetes tooling
+        uses: ./.github/actions/setup-k8s-tools
+        with:
+          install-k3d: 'true'
+          install-kuttl: 'true'
+
+      - name: Create k3d cluster
+        run: |
+          sudo modprobe br_netfilter
+          make k3d-cluster-up
+
+      - name: Build provider image
+        run: make docker-build
+
+      - name: Import image into k3d
+        run: make load-image
+
+      - name: Install CRDs
+        run: make install-crds
+
+      - name: Deploy provider
+        run: make deploy-provider-ci
+
+      - name: Run ${{ inputs.make_target }}
+        run: make ${{ inputs.make_target }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload kuttl artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kuttl-${{ inputs.suite }}-${{ github.run_id }}
+          path: |
+            /tmp/kuttl-report*.xml
+            /tmp/kuttl-test*
+          retention-days: 7

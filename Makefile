@@ -12,6 +12,10 @@ CONTAINER_TOOL ?= docker
 # Image URL to use all building/pushing image targets
 IMG ?= ghcr.io/openeverest/provider-percona-server-mongodb-dev:latest
 
+# Split IMG into repository and tag for Helm values
+_IMG_REPO = $(firstword $(subst :, ,$(IMG)))
+_IMG_TAG  = $(lastword $(subst :, ,$(IMG)))
+
 # controller-gen version
 CONTROLLER_TOOLS_VERSION ?= v0.18.0
 CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen-$(CONTROLLER_TOOLS_VERSION)
@@ -22,6 +26,12 @@ YQ ?= $(LOCALBIN)/yq-$(YQ_VERSION)
 
 # Helm chart directory
 CHART_DIR ?= charts/provider-percona-server-mongodb
+
+# k3d cluster name (must match dev/k3d_config.yaml metadata.name)
+K3D_CLUSTER_NAME ?= provider-psmdb-test
+
+# PSMDB operator version used for CRD installation in CI
+PSMDB_OPERATOR_VERSION ?= 1.21.1
 
 .PHONY: help
 help: ## Display this help.
@@ -64,8 +74,39 @@ verify: ## Verify that generated files are up-to-date (for CI).
 ##@ Testing
 
 .PHONY: test-integration
-test-integration: ## Run integration tests against K8S cluster.
+test-integration: ## Run all integration tests against K8S cluster.
 	. ./test/vars.sh && kubectl kuttl test --config ./test/integration/kuttl.yaml
+
+.PHONY: test-integration-core
+test-integration-core: ## Run core (replicaSet lifecycle) integration tests.
+	. ./test/vars.sh && kubectl kuttl test --config ./test/integration/kuttl-core.yaml
+
+.PHONY: test-integration-sharded
+test-integration-sharded: ## Run sharded topology integration tests.
+	. ./test/vars.sh && kubectl kuttl test --config ./test/integration/kuttl-sharded.yaml
+
+.PHONY: load-image
+load-image: ## Import the provider image (IMG) into the k3d cluster.
+	k3d image import ${IMG} -c ${K3D_CLUSTER_NAME}
+
+.PHONY: install-crds
+install-crds: ## Install OpenEverest and PSMDB CRDs into the cluster.
+	kubectl apply -f https://raw.githubusercontent.com/openeverest/openeverest/v2/config/crd/bases/core.openeverest.io_providers.yaml
+	kubectl apply -f https://raw.githubusercontent.com/openeverest/openeverest/v2/config/crd/bases/core.openeverest.io_instances.yaml
+	curl -fsSL https://raw.githubusercontent.com/percona/percona-server-mongodb-operator/v$(PSMDB_OPERATOR_VERSION)/deploy/crd.yaml \
+		| kubectl apply --server-side -f -
+
+.PHONY: deploy-provider-ci
+deploy-provider-ci: ## Deploy the provider via Helm for CI (IMG must already be imported into k3d).
+	helm repo add percona https://percona.github.io/percona-helm-charts/
+	helm dependency build $(CHART_DIR)
+	helm upgrade --install provider-percona-server-mongodb $(CHART_DIR) \
+		--create-namespace \
+		--namespace provider-system \
+		--set image.repository=$(_IMG_REPO) \
+		--set image.tag=$(_IMG_TAG) \
+		--set image.pullPolicy=Never \
+		--wait --timeout 2m
 
 ##@ Deployment (legacy — prefer Helm targets)
 
