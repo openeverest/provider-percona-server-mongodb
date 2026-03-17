@@ -48,6 +48,49 @@ jobs:
       - name: Check generated files are up-to-date
         run: make verify
 
+  copyright:
+    name: Copyright headers
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # Only meaningful on PRs — push to main is already vetted.
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Check copyright headers on changed files
+        run: |
+          FILES=$(git diff --name-only --diff-filter=ACM \
+            "origin/${{ github.base_ref }}"...HEAD \
+            | grep -E '\.(go|ts|tsx)$' || true)
+
+          if [[ -z "$FILES" ]]; then
+            echo "No source files changed — skipping copyright check."
+            exit 0
+          fi
+
+          echo "Checking:"
+          echo "$FILES"
+
+          # The fixer exits 1 when it modifies files; capture that separately.
+          echo "$FILES" | xargs python3 hack/add_copyright.py || true
+
+          if ! git diff --quiet; then
+            echo ""
+            echo "::error::Missing copyright headers. Run the following and commit:"
+            echo "  python3 hack/add_copyright.py <changed-files>"
+            echo ""
+            git diff
+            exit 1
+          fi
+
+          echo "All copyright headers are present."
+
   helm-lint:
     name: Helm lint
     runs-on: ubuntu-latest
