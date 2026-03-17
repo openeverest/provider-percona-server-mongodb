@@ -48,6 +48,18 @@ jobs:
       - name: Check generated files are up-to-date
         run: make verify
 
+  helm-lint:
+    name: Helm lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/setup-helm@v4
+
+      - name: Lint Helm chart
+        run: helm lint charts/provider-percona-server-mongodb
+
   test-integration-core:
     name: Integration / core
     needs: [build, verify]
