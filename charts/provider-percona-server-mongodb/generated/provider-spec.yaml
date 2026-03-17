@@ -100,9 +100,9 @@ spec:
                   labelPath: version
                   valuePath: version
               path:
-                - spec.components.mongod.versions
-                - spec.components.proxy.versions
-                - spec.components.configServer.versions
+                - spec.components.engine.version
+                - spec.components.proxy.version
+                - spec.components.configServer.version
               uiType: select
               validation:
                 required: true
@@ -209,9 +209,9 @@ spec:
                   labelPath: version
                   valuePath: version
               path:
-                - spec.components.mongod.versions
-                - spec.components.proxy.versions
-                - spec.components.configServer.versions
+                - spec.components.engine.version
+                - spec.components.proxy.version
+                - spec.components.configServer.version
               uiType: select
               validation:
                 required: true
