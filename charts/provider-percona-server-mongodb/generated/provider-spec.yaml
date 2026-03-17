@@ -95,14 +95,14 @@ spec:
             version:
               fieldParams:
                 label: Database Version
-                optionsPath:
-                  - spec.components.mongod.versions
-                  - spec.components.proxy.versions
-                  - spec.components.configServer.versions
+                optionsPath: spec.componentTypes.mongod.versions
                 optionsPathConfig:
                   labelPath: version
                   valuePath: version
-              path: spec.engine.version
+              path:
+                - spec.components.mongod.versions
+                - spec.components.proxy.versions
+                - spec.components.configServer.versions
               uiType: select
               validation:
                 required: true
@@ -204,14 +204,14 @@ spec:
             version:
               fieldParams:
                 label: Database Version
-                optionsPath:
-                  - spec.components.mongod.versions
-                  - spec.components.proxy.versions
-                  - spec.components.configServer.versions
+                optionsPath: spec.componentTypes.mongod.versions
                 optionsPathConfig:
                   labelPath: version
                   valuePath: version
-              path: spec.engine.version
+              path:
+                - spec.components.mongod.versions
+                - spec.components.proxy.versions
+                - spec.components.configServer.versions
               uiType: select
               validation:
                 required: true

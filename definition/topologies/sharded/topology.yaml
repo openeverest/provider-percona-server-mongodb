@@ -26,13 +26,13 @@ ui:
       components:
         version:
           uiType: select
-          path: "spec.engine.version"
+          path:
+            - spec.components.engine.versions
+            - spec.components.proxy.versions
+            - spec.components.configServer.versions
           fieldParams:
             label: "Database Version"
-            optionsPath:
-              - spec.components.mongod.versions
-              - spec.components.proxy.versions
-              - spec.components.configServer.versions
+            optionsPath: spec.componentTypes.mongod.versions
             optionsPathConfig:
               labelPath: "version"
               valuePath: "version"

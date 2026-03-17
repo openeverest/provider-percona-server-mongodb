@@ -7,13 +7,15 @@ This directory contains a implementation of a Percona Server MongoDB (PSMDB) pro
 ### Prerequisites
 
 1. A Kubernetes cluster:
+
    ```
    make k3d-cluster-up
    ```
 
-2. Generate Provider CR manifests (if changed):
+2. Regenerate generated manifests/specs after editing definition files (including topology YAMLs):
+
    ```bash
-   make gen
+   make generate
    ```
 
 3. Install CRDs:
