@@ -18,55 +18,107 @@ config:
 # Paths reference fields in the Instance CR spec.
 ui:
   sections:
-    basicInfo:
-      label: Basic Information
-      description: Provide the basic information for your new database.
+    databaseVersion:
+      label: "Database Version"
+      description: "Provide the information about the database version you want to use."
       components:
         version:
           uiType: select
-          path: spec.components.engine.version
+          path: "spec.engine.version"
           fieldParams:
-            label: Database Version
-    resources:
-      label: Resources
-      description: Configure the resources your new database will have access to.
-      components:
-        numberOfNodes:
-          path: spec.components.engine.replicas
-          uiType: number
-          fieldParams:
-            label: Number of nodes
+            label: "Database Version"
+            optionsPath:
+              - spec.components.mongod.versions
+              - spec.components.proxy.versions
+              - spec.components.configServer.versions
+            optionsPathConfig:
+              labelPath: "version"
+              valuePath: "version"
           validation:
-            min: 1
-            max: 7
-        resources:
+            required: true
+    resources:
+      label: "Resources"
+      description: "Configure the resources your new database will have access to."
+      components:
+        nodes:
           uiType: group
-          groupType: line
           components:
-            cpu:
-              path: spec.components.engine.resources.requests.cpu
+            numberOfnodes:
+              path: "spec.components.engine.replicas"
               uiType: number
               fieldParams:
-                label: CPU
+                label: "Number of nodes"
+                defaultValue: 3
               validation:
+                required: true
                 min: 1
-                max: 10
-            memory:
-              path: spec.components.engine.resources.requests.memory
-              uiType: number
-              fieldParams:
-                label: Memory
-              validation:
-                min: 1
-                max: 10
-            disk:
-              path: spec.components.engine.storage.size
-              uiType: number
-              fieldParams:
-                label: Disk
-              validation:
-                min: 10
-                max: 100
+                int: true
+                celExpressions:
+                  - celExpr: "spec.components.engine.replicas % 2 == 1"
+                    message: "The number of nodes must be odd"
+            resources:
+              uiType: group
+              groupType: line
+              components:
+                cpu:
+                  path: "spec.components.engine.resources.limits.cpu"
+                  uiType: number
+                  fieldParams:
+                    label: "CPU"
+                    defaultValue: 1
+                    step: 0.1
+                  validation:
+                    min: 0.6
+                    required: true
+                memory:
+                  path: "spec.components.engine.resources.limits.memory"
+                  uiType: number
+                  fieldParams:
+                    label: "Memory"
+                    defaultValue: 4
+                    step: 0.001
+                    badge: "Gi"
+                    badgeToApi: true
+                  validation:
+                    min: 0.512
+                    required: true
+                disk:
+                  path: "spec.components.engine.storage.size"
+                  uiType: number
+                  fieldParams:
+                    label: "Disk"
+                    defaultValue: 25
+                    badge: "Gi"
+                    badgeToApi: true
+                  validation:
+                    min: 1
+                    int: true
+                    required: true
+    advanced:
+      label: "Advanced configuration"
+      description: "Configure advanced settings for your database"
+      components:
+        storageClass:
+          uiType: select
+          path: spec.components.engine.storage.storageClass
+          fieldParams:
+            label: "Storage class"
+            defaultValue: "local-path"
+            options:
+              - label: "local-path"
+                value: "local-path"
+        configuration:
+          uiType: text
+          path: spec.components.engine.configuration
+          fieldParams:
+            label: "Advanced configuration"
+            multiline: true
+            minRows: 3
+            maxRows: 8
+      componentsOrder:
+        - storageClass
+        - configuration
   sectionsOrder:
-  - basicInfo
-  - resources
+    - databaseVersion
+    - resources
+    - advanced
