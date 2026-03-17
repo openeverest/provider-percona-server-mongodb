@@ -16,8 +16,41 @@ permissions:
   contents: read
 
 jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # Compile directly — `make build` runs generation which is checked by the
+      # verify job; we only want to know the code compiles here.
+      - name: Compile binary
+        run: go build -o /dev/null ./cmd/provider
+
+  verify:
+    name: Verify generated files
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Check generated files are up-to-date
+        run: make verify
+
   test-integration-core:
     name: Integration / core
+    needs: [build, verify]
     uses: ./.github/workflows/integration-test.yaml
     with:
       make_target: test-integration-core
@@ -26,6 +59,7 @@ jobs:
 
   test-integration-sharded:
     name: Integration / sharded
+    needs: [build, verify]
     uses: ./.github/workflows/integration-test.yaml
     with:
       make_target: test-integration-sharded
