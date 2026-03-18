@@ -160,7 +160,9 @@ ui:
           path: spec.components.engine.configuration
           fieldParams:
             label: "Advanced configuration"
-            defaultValue: "operationProfiling:\n  mode: slowOp\n"
+            defaultValues: |2
+                operationProfiling:
+                  mode: slowOps
             multiline: true
             minRows: 3
             maxRows: 8
