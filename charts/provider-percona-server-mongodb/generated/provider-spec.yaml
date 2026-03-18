@@ -70,6 +70,9 @@ spec:
           components:
             configuration:
               fieldParams:
+                defaultValues: |2
+                    operationProfiling:
+                      mode: slowOps
                 label: Advanced configuration
                 maxRows: 8
                 minRows: 3

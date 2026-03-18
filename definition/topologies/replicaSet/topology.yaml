@@ -112,6 +112,9 @@ ui:
           path: spec.components.engine.configuration
           fieldParams:
             label: "Advanced configuration"
+            defaultValues: |2
+                operationProfiling:
+                  mode: slowOps
             multiline: true
             minRows: 3
             maxRows: 8
