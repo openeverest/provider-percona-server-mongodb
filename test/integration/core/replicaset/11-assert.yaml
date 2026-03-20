@@ -1,7 +1,7 @@
 apiVersion: kuttl.dev/v1
 kind: TestAssert
 timeout: 5
-# timeout: 30
+#timeout: 30
 collectors:
   - command: kubectl get in/test-psmdb-cluster -n ${NAMESPACE} -o yaml
   - command: kubectl get psmdb/test-psmdb-cluster -n ${NAMESPACE} -o yaml
@@ -21,14 +21,14 @@ resourceRefs:
     name: test-psmdb-cluster
     ref: psmdb
 assertAll:
-  # - celExpr: "has(in.metadata.finalizers)"
-  #   message: "in doesn't have finalizers"
+  # - celExpr: "has(db.metadata.finalizers)"
+  #   message: "db doesn't have finalizers"
 
-  # - celExpr: "'everest.percona.com/upstream-cluster-cleanup' in in.metadata.finalizers"
-  #   message: "'everest.percona.com/upstream-cluster-cleanup' is absent in in.metadata.finalizers"
+  # - celExpr: "'everest.percona.com/upstream-cluster-cleanup' in db.metadata.finalizers"
+  #   message: "'everest.percona.com/upstream-cluster-cleanup' is absent in db.metadata.finalizers"
 
-  # - celExpr: "'foregroundDeletion' in in.metadata.finalizers"
-  #   message: "foregroundDeletion' is absent in in.metadata.finalizers"
+  # - celExpr: "'foregroundDeletion' in db.metadata.finalizers"
+  #   message: "foregroundDeletion' is absent in db.metadata.finalizers"
 
   - celExpr: "!has(psmdb.spec.pmm.enabled)"
     message: "psmdb.spec.pmm.enabled is not empty"
@@ -51,7 +51,7 @@ spec:
   components:
     engine:
       type: mongod
-      replicas: 1
+      replicas: 3
       resources:
         limits:
           cpu: "1"
@@ -59,7 +59,7 @@ spec:
       storage:
         size: 25Gi
   # engine:
-  #   replicas: 1
+  #   replicas: 3
   #   resources:
   #     cpu: "1"
   #     memory: 4G
@@ -113,7 +113,7 @@ spec:
         limits:
           cpu: "1"
           memory: 4G
-      size: 1
+      size: 3
       volumeSpec:
         persistentVolumeClaim:
           resources:
@@ -134,4 +134,17 @@ spec:
     setFCV: true
 status:
   state: ready
-
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: test-psmdb-cluster-conn
+type: Opaque
+data:
+  type: bW9uZ29kYg==
+  provider: cGVyY29uYS1zZXJ2ZXItbW9uZ29kYg==
+  host: dGVzdC1wc21kYi1jbHVzdGVyLWhvc3Q=
+  port: MjcwMTc=
+  username: dGVzdC11c2Vy
+  password: dGVzdC1wYXNzd29yZA==
+  uri: bW9uZ29kYjovL3Rlc3QtdXNlcjp0ZXN0LXBhc3N3b3JkQHRlc3QtcHNtZGItY2x1c3Rlci1ob3N0OjI3MDE3L2FkbWluP3NzbD1mYWxzZQ==

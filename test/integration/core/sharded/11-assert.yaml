@@ -233,4 +233,17 @@ spec:
     setFCV: true
 status:
   state: ready
-
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: test-psmdb-cluster-conn
+type: Opaque
+data:
+  type: bW9uZ29kYg==
+  provider: cGVyY29uYS1zZXJ2ZXItbW9uZ29kYg==
+  host: dGVzdC1wc21kYi1jbHVzdGVyLWhvc3Q=
+  port: MjcwMTc=
+  username: dGVzdC11c2Vy
+  password: dGVzdC1wYXNzd29yZA==
+  uri: bW9uZ29kYjovL3Rlc3QtdXNlcjp0ZXN0LXBhc3N3b3JkQHRlc3QtcHNtZGItY2x1c3Rlci1ob3N0OjI3MDE3L2FkbWluP3NzbD1mYWxzZQ==

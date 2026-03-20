@@ -82,12 +82,16 @@ test-integration: ## Run all integration tests against K8S cluster.
 	. ./test/vars.sh && kubectl kuttl test --config ./test/integration/kuttl.yaml
 
 .PHONY: test-integration-core
-test-integration-core: ## Run core (replicaSet lifecycle) integration tests.
+test-integration-core: ## Run core integration tests.
 	. ./test/vars.sh && kubectl kuttl test --config ./test/integration/kuttl-core.yaml
 
-.PHONY: test-integration-sharded
-test-integration-sharded: ## Run sharded topology integration tests.
-	. ./test/vars.sh && kubectl kuttl test --config ./test/integration/kuttl-sharded.yaml
+.PHONY: test-integration-core-replicaset
+test-integration-core-replicaset: ## Run core replicaset integration tests.
+	. ./test/vars.sh && kubectl kuttl test --config ./test/integration/kuttl-core.yaml --test "replicaset"
+
+.PHONY: test-integration-core-sharded
+test-integration-core-sharded: ## Run core sharded integration tests.
+	. ./test/vars.sh && kubectl kuttl test --config ./test/integration/kuttl-core.yaml --test "sharded"
 
 .PHONY: load-image
 load-image: ## Import the provider image (IMG) into the k3d cluster.
@@ -110,6 +114,7 @@ deploy-provider-ci: ## Deploy the provider via Helm for CI (IMG must already be 
 		--set image.repository=$(_IMG_REPO) \
 		--set image.tag=$(_IMG_TAG) \
 		--set image.pullPolicy=Never \
+		--set psmdb-operator.replicaCount=0 \
 		--wait --timeout 2m
 
 ##@ Deployment (legacy — prefer Helm targets)

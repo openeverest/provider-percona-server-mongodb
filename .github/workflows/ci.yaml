@@ -119,20 +119,20 @@ jobs:
       - name: Lint Helm chart
         run: helm lint charts/provider-percona-server-mongodb
 
-  test-integration-core:
-    name: Integration / core
+  test-integration-core-replicaset:
+    name: Integration / core replicaset
     needs: [lint, build, verify]
     uses: ./.github/workflows/integration-test.yaml
     with:
-      make_target: test-integration-core
+      make_target: test-integration-core-replicaset
       suite: core
     secrets: inherit
 
-  test-integration-sharded:
-    name: Integration / sharded
+  test-integration-core-sharded:
+    name: Integration / core sharded
     needs: [lint, build, verify]
     uses: ./.github/workflows/integration-test.yaml
     with:
-      make_target: test-integration-sharded
+      make_target: test-integration-core-sharded
       suite: sharded
     secrets: inherit

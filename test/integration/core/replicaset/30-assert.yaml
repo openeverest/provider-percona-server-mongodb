@@ -13,4 +13,6 @@ collectors:
 commands:
   - command: kubectl wait --for=delete in/test-psmdb-cluster -n $NAMESPACE
   - command: kubectl wait --for=delete psmdb/test-psmdb-cluster -n $NAMESPACE
+  - command: kubectl wait --for=delete secret/everest-secrets-test-psmdb-cluster -n $NAMESPACE
+  - command: kubectl wait --for=delete secret/test-psmdb-cluster-conn -n $NAMESPACE
 

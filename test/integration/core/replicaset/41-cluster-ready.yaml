@@ -1,0 +1,14 @@
+apiVersion: kuttl.dev/v1
+kind: TestStep
+timeout: 10
+commands:
+  - command: kubectl patch psmdb/test-psmdb-cluster  --subresource status -n $NAMESPACE -p '{"status":{"state":"ready", "size":1, "ready":1, "host":"test-psmdb-cluster-host"}}' --type=merge
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: everest-secrets-test-psmdb-cluster
+type: Opaque
+data:
+  MONGODB_DATABASE_ADMIN_USER: dGVzdC11c2Vy
+  MONGODB_DATABASE_ADMIN_PASSWORD: dGVzdC1wYXNzd29yZA==
