@@ -22,8 +22,12 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
+	corev1alpha1 "github.com/openeverest/openeverest/v2/api/core/v1alpha1"
+	monitoringv1alpha1 "github.com/openeverest/openeverest/v2/api/monitoring/v1alpha1"
 	"github.com/openeverest/openeverest/v2/provider-runtime/controller"
 
 	"github.com/openeverest/provider-percona-server-mongodb/internal/common"
@@ -90,6 +94,10 @@ func ValidatePSMDB(c *controller.Context) error {
 	l := log.FromContext(c.Context())
 	l.Info("Validating PSMDB cluster", "cluster", c.Name())
 
+	if err := validateMonitoring(c); err != nil {
+		return fmt.Errorf("monitoring validation failed: %w", err)
+	}
+
 	// TODO: Add actual validation logic
 	// Example: Check for required components, validate storage sizes, etc.
 	return nil
@@ -131,8 +139,17 @@ func SyncPSMDB(c *controller.Context) error {
 
 	psmdb.Spec.Backup = configureBackup(c)
 
+	usersSecretName := "everest-secrets-" + c.Name()
+
+	pmmSpec, err := configureMonitoring(c, &psmdb.Spec, usersSecretName)
+	if err != nil {
+		return err
+	} else if pmmSpec != nil {
+		psmdb.Spec.PMM = *pmmSpec
+	}
+
 	psmdb.Spec.Secrets = &psmdbv1.SecretsSpec{
-		Users:         "everest-secrets-" + c.Name(),
+		Users:         usersSecretName,
 		EncryptionKey: c.Name() + "-mongodb-encryption-key",
 		SSLInternal:   c.Name() + "-ssl-internal",
 	}
@@ -216,28 +233,52 @@ func CleanupPSMDB(c *controller.Context) error {
 // PSMDBProvider implements the ProviderInterface.
 type PSMDBProvider struct {
 	controller.BaseProvider
+	client client.Client
+}
+
+// SetClient injects the Kubernetes client into the provider.
+// Must be called after reconciler.New() and before r.Start().
+// TODO: this is not great, change the way manager is configured
+// so injection is not necessary.
+func (p *PSMDBProvider) SetClient(c client.Client) {
+	p.client = c
 }
 
 // NewPSMDBProviderInterface creates a new PSMDB provider.
 // The provider name must match the Provider CR name so the runtime
 // can automatically fetch schemas and version metadata from it.
+// Call SetClient on the returned provider before starting the reconciler
+// so the MonitoringConfig watch handler can list referencing Instances.
 func NewPSMDBProviderInterface() *PSMDBProvider {
-	return &PSMDBProvider{
-		BaseProvider: controller.BaseProvider{
-			ProviderName: "percona-server-mongodb",
-			SchemeFuncs: []func(*runtime.Scheme) error{
-				psmdbv1.SchemeBuilder.AddToScheme,
-			},
-			WatchConfigs: []controller.WatchConfig{
-				// Watch owned PSMDB resources - only trigger on spec changes
-				// TODO: do we need some predicate? The
-				// GenerationChangedPredicate definitely isn't correct because
-				// we need to be notified when the status changes so we can
-				// update the Instance status.
-				controller.WatchOwned(&psmdbv1.PerconaServerMongoDB{}),
-			},
+	p := &PSMDBProvider{}
+
+	p.BaseProvider = controller.BaseProvider{
+		ProviderName: "percona-server-mongodb",
+		SchemeFuncs: []func(*runtime.Scheme) error{
+			psmdbv1.SchemeBuilder.AddToScheme,
+			monitoringv1alpha1.SchemeBuilder.AddToScheme,
+		},
+		WatchConfigs: []controller.WatchConfig{
+			// Watch owned PSMDB resources - only trigger on spec changes
+			// TODO: do we need some predicate? The
+			// GenerationChangedPredicate definitely isn't correct because
+			// we need to be notified when the status changes so we can
+			// update the Instance status.
+			controller.WatchOwned(&psmdbv1.PerconaServerMongoDB{}),
+			controller.WatchExternal(&monitoringv1alpha1.MonitoringConfig{},
+				handler.EnqueueRequestsFromMapFunc(enqueueMonitoringConfig(p)),
+				monitoringConfigPredicate(),
+			),
+			// Watch secrets referenced by MonitoringConfig resources
+			// TODO: Can this watch removed? After all, MontoringConfig owns this secret.
+			controller.WatchExternal(&corev1.Secret{},
+				handler.EnqueueRequestsFromMapFunc(enqueueMonitoringConfigSecret(p)),
+				monitoringConfigPredicate(),
+			),
 		},
 	}
+
+	return p
 }
 
 // Validate validates the Instance spec.
@@ -260,6 +301,24 @@ func (p *PSMDBProvider) Cleanup(c *controller.Context) error {
 	return CleanupPSMDB(c)
 }
 
+// FieldIndexes implements controller.FieldIndexProvider.
+// It registers indexes used by watchers.
+func (p *PSMDBProvider) FieldIndexes() []controller.FieldIndex {
+	return []controller.FieldIndex{
+		{
+			Object:    &corev1alpha1.Instance{},
+			FieldPath: monitoringConfigPath,
+			Extractor: extractMonitoringConfigName,
+		},
+		{
+			Object:    &monitoringv1alpha1.MonitoringConfig{},
+			FieldPath: credentialsSecretPath,
+			Extractor: extractMonitoringConfigSecretName,
+		},
+	}
+}
+
 // Compile-time interface checks
 var _ controller.ProviderInterface = (*PSMDBProvider)(nil)
 var _ controller.WatchProvider = (*PSMDBProvider)(nil)
+var _ controller.FieldIndexProvider = (*PSMDBProvider)(nil)

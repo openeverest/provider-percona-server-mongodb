@@ -4,7 +4,8 @@ go 1.25.5
 
 require (
 	github.com/AlekSi/pointer v1.2.0
-	github.com/openeverest/openeverest/v2 v2.0.0-20260313155204-92e5992358ed
+	github.com/hashicorp/go-version v1.8.0
+	github.com/openeverest/openeverest/v2 v2.0.0-20260323144943-c0b90b1cf25c
 	github.com/percona/percona-server-mongodb-operator v1.22.0
 	k8s.io/api v0.35.0
 	k8s.io/apimachinery v0.35.0
@@ -143,7 +144,6 @@ require (
 	github.com/gostaticanalysis/forcetypeassert v0.2.0 // indirect
 	github.com/gostaticanalysis/nilerr v0.1.2 // indirect
 	github.com/hashicorp/go-immutable-radix/v2 v2.1.0 // indirect
-	github.com/hashicorp/go-version v1.8.0 // indirect
 	github.com/hashicorp/golang-lru/v2 v2.0.7 // indirect
 	github.com/hexops/gotextdiff v1.0.3 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect

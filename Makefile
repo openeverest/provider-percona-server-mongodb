@@ -93,6 +93,10 @@ test-integration-core-replicaset: ## Run core replicaset integration tests.
 test-integration-core-sharded: ## Run core sharded integration tests.
 	. ./test/vars.sh && kubectl kuttl test --config ./test/integration/kuttl-core.yaml --test "sharded"
 
+.PHONY: test-integration-monitoring-pmm
+test-integration-monitoring-pmm: ## Run PMM integration tests.
+	. ./test/vars.sh && kubectl kuttl test --config ./test/integration/kuttl-monitoring.yaml
+
 .PHONY: load-image
 load-image: ## Import the provider image (IMG) into the k3d cluster.
 	k3d image import ${IMG} -c ${K3D_CLUSTER_NAME}
@@ -101,6 +105,7 @@ load-image: ## Import the provider image (IMG) into the k3d cluster.
 install-crds: ## Install OpenEverest and PSMDB CRDs into the cluster.
 	kubectl apply -f https://raw.githubusercontent.com/openeverest/openeverest/v2/config/crd/bases/core.openeverest.io_providers.yaml
 	kubectl apply -f https://raw.githubusercontent.com/openeverest/openeverest/v2/config/crd/bases/core.openeverest.io_instances.yaml
+	kubectl apply -f https://raw.githubusercontent.com/openeverest/openeverest/v2/config/crd/bases/monitoring.openeverest.io_monitoringconfigs.yaml
 	curl -fsSL https://raw.githubusercontent.com/percona/percona-server-mongodb-operator/v$(PSMDB_OPERATOR_VERSION)/deploy/crd.yaml \
 		| kubectl apply --server-side -f -
 

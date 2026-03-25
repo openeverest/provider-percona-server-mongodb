@@ -31,7 +31,12 @@ type MongodCustomSpec struct{}
 type MongosCustomSpec struct{}
 
 // PMMCustomSpec defines custom configuration for PMM monitoring.
-type PMMCustomSpec struct{}
+type PMMCustomSpec struct {
+	// MonitoringConfigName specifies the name of the MonitoringConfig resource
+	// to use for configuring PMM monitoring.
+	// If not specified, monitoring will not be configured.
+	MonitoringConfigName *string `json:"monitoringConfigName,omitempty"`
+}
 
 // BackupCustomSpec defines custom configuration for backup agents.
 type BackupCustomSpec struct{}

@@ -38,6 +38,11 @@ package provider
 // +kubebuilder:rbac:groups=psmdb.percona.com,resources=perconaservermongodbrestores/status,verbs=get
 
 // =============================================================================
+// MONITORING RESOURCES
+// =============================================================================
+// +kubebuilder:rbac:groups=monitoring.openeverest.io,resources=monitoringconfigs,verbs=get;list;watch
+
+// =============================================================================
 // CORE KUBERNETES RESOURCES
 // =============================================================================
 // +kubebuilder:rbac:groups="",resources=secrets;configmaps;services,verbs=get;list;watch;create;update;patch;delete

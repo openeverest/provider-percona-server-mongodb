@@ -79,6 +79,14 @@ rules:
   - list
   - watch
 - apiGroups:
+  - monitoring.openeverest.io
+  resources:
+  - monitoringconfigs
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
   - psmdb.percona.com
   resources:
   - perconaservermongodbbackups

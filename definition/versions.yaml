@@ -28,5 +28,5 @@ componentTypes:
   pmm:
     versions:
     - version: "2.44.1"
-      image: percona/pmm-server:2.44.1
+      image: percona/pmm-client:2.44.1
       default: true
