@@ -18,6 +18,8 @@ package main
 import (
 	"os"
 
+	psmdbv1 "github.com/percona/percona-server-mongodb-operator/pkg/apis/psmdb/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 
 	"github.com/openeverest/openeverest/v2/provider-runtime/reconciler"
@@ -30,9 +32,13 @@ func main() {
 	l := ctrl.Log.WithName("setup")
 	ctx := ctrl.SetupSignalHandler()
 
+	mgr, err := reconciler.SetupManager([]func(*runtime.Scheme) error{
+		psmdbv1.SchemeBuilder.AddToScheme,
+	})
+
 	provider := provider.NewPSMDBProviderInterface()
 
-	r, err := reconciler.New(ctx, provider,
+	r, err := reconciler.New(ctx, mgr, provider,
 		// Enable HTTP server for validation endpoint
 		reconciler.WithServer(reconciler.ServerConfig{
 			Port:           8082,

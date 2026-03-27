@@ -20,7 +20,6 @@ import (
 	psmdbv1 "github.com/percona/percona-server-mongodb-operator/pkg/apis/psmdb/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
@@ -225,9 +224,6 @@ func NewPSMDBProviderInterface() *PSMDBProvider {
 	return &PSMDBProvider{
 		BaseProvider: controller.BaseProvider{
 			ProviderName: "percona-server-mongodb",
-			SchemeFuncs: []func(*runtime.Scheme) error{
-				psmdbv1.SchemeBuilder.AddToScheme,
-			},
 			WatchConfigs: []controller.WatchConfig{
 				// Watch owned PSMDB resources - only trigger on spec changes
 				// TODO: do we need some predicate? The

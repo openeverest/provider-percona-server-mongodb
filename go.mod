@@ -4,7 +4,7 @@ go 1.25.5
 
 require (
 	github.com/AlekSi/pointer v1.2.0
-	github.com/openeverest/openeverest/v2 v2.0.0-20260313155204-92e5992358ed
+	github.com/openeverest/openeverest/v2 v2.0.0-20260327065023-5c5a104152c9
 	github.com/percona/percona-server-mongodb-operator v1.22.0
 	k8s.io/api v0.35.0
 	k8s.io/apimachinery v0.35.0
