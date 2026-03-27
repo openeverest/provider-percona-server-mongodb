@@ -36,6 +36,11 @@ func main() {
 		psmdbv1.SchemeBuilder.AddToScheme,
 	})
 
+	if err != nil {
+		l.Error(err, "unable to create manager")
+		os.Exit(1)
+	}
+
 	provider := provider.NewPSMDBProviderInterface()
 
 	r, err := reconciler.New(ctx, mgr, provider,
