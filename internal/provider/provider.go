@@ -108,6 +108,8 @@ func SyncPSMDB(c *controller.Context) error {
 	l := log.FromContext(c.Context())
 	l.Info("Syncing PSMDB cluster", "cluster", c.Name())
 
+	defer l.Info("PSMDB cluster synced", "cluster", c.Name())
+
 	psmdb := &psmdbv1.PerconaServerMongoDB{
 		ObjectMeta: c.ObjectMeta(c.Name()),
 		Spec:       defaultSpec(),
@@ -141,10 +143,20 @@ func SyncPSMDB(c *controller.Context) error {
 
 	usersSecretName := "everest-secrets-" + c.Name()
 
-	pmmSpec, err := configureMonitoring(c, &psmdb.Spec, usersSecretName)
+	// Fetch the current PSMDB from the cluster to inform monitoring resource
+	// calculations. The current spec is nil when the resource doesn't exist yet
+	// (first reconciliation for a new instance).
+	var currentSpec *psmdbv1.PerconaServerMongoDBSpec
+	currentPSMDB := &psmdbv1.PerconaServerMongoDB{}
+	if err := c.Get(currentPSMDB, c.Name()); err == nil {
+		currentSpec = &currentPSMDB.Spec
+	}
+
+	pmmSpec, err := configureMonitoring(c, currentSpec, usersSecretName)
 	if err != nil {
 		return err
-	} else if pmmSpec != nil {
+	}
+	if pmmSpec != nil {
 		psmdb.Spec.PMM = *pmmSpec
 	}
 
@@ -157,7 +169,7 @@ func SyncPSMDB(c *controller.Context) error {
 	if err := c.Apply(psmdb); err != nil {
 		return err
 	}
-	fmt.Println("PSMDB cluster synced:", c.Name())
+
 	return nil
 }
 

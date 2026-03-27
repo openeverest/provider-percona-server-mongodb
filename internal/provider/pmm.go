@@ -15,13 +15,13 @@
 package provider
 
 import (
-	"github.com/openeverest/provider-percona-server-mongodb/internal/common"
 	psmdbv1 "github.com/percona/percona-server-mongodb-operator/pkg/apis/psmdb/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 
-	corev1alpha1 "github.com/openeverest/openeverest/v2/api/core/v1alpha1"
 	"github.com/openeverest/openeverest/v2/provider-runtime/controller"
+
+	"github.com/openeverest/provider-percona-server-mongodb/internal/common"
 )
 
 const (
@@ -96,21 +96,20 @@ var (
 	}
 )
 
-// getPMMResources returns the PMM resources to be used for instance.
-// The logic is as follows:
-//  1. If this is a new instance, use the resources specified in
-//     the monitoring component, if any.
-//     Otherwise, use the default resources based on the engine component size.
-//  2. If this is an existing instance and the engine component size
-//     has changed, use the resources specified in the monitoring component, if any.
-//     Otherwise, use the default resources based on the new engine component size.
-//  3. If this is an existing instance and PMM was enabled before,
-//     use the resources specified in the monitoring component, if any.
-//     Otherwise, use the current PMM resources.
-//  4. If this is an existing instance and PMM was not enabled before,
-//     use the resources specified in the monitoring component, if any.
-//     Otherwise, use the default resources based on the engine component size.
-func getPMMResources(c *controller.Context, curPsmdbSpec *psmdbv1.PerconaServerMongoDBSpec,
+// getPMMResources returns the PMM resource requirements for the instance.
+//
+// The calculation depends on the cluster lifecycle state:
+//
+//  1. New instance (currentSpec is nil): calculate defaults from engine memory
+//     size, merged with any user-specified overrides from the monitoring component.
+//  2. Existing instance, engine size category changed: recalculate defaults from
+//     the new engine memory size, merged with any user overrides.
+//  3. Existing instance, PMM was already enabled: preserve current PMM resources,
+//     merged with any user overrides (allows resource tuning without resizing).
+//  4. Existing instance, PMM was not enabled before: same as new instance.
+func getPMMResources(
+	c *controller.Context,
+	currentSpec *psmdbv1.PerconaServerMongoDBSpec,
 ) corev1.ResourceRequirements {
 	monitoring := c.Instance().Spec.Components[common.ComponentMonitoring]
 
@@ -125,37 +124,34 @@ func getPMMResources(c *controller.Context, curPsmdbSpec *psmdbv1.PerconaServerM
 		engineMemoryLimits = engine.Resources.Limits[corev1.ResourceMemory]
 	}
 
-	if c.Instance().Status.Phase == corev1alpha1.InstancePhaseCreating {
-		// This is new instance.
-		// Monitoring component may contain custom PMM resources -> merge them with defaults.
-		// If none are specified, default resources will be used.
-		return mergeResources(requested, calculatePMMResources(engineMemoryLimits))
+	defaultResources := calculatePMMResources(engineMemoryLimits)
+
+	// New instance: no existing PSMDB to compare against.
+	if currentSpec == nil {
+		return mergeResources(requested, defaultResources)
 	}
 
-	// Fetch current instance size
+	// Find the primary replset to compare engine size categories.
 	var currentReplSet psmdbv1.ReplsetSpec
-	for _, replset := range curPsmdbSpec.Replsets {
+	for _, replset := range currentSpec.Replsets {
 		if replset.Name == rsName(0) {
 			currentReplSet = *replset
 			break
 		}
 	}
 
+	// Engine size category changed: recalculate PMM resources for the new tier.
 	if !equalSize(engineMemoryLimits, *currentReplSet.Resources.Requests.Memory()) {
-		// Engine component size has changed -> need to update PMM resources.
-		// Monitoring component may contain custom PMM resources -> merge them with defaults.
-		return mergeResources(requested, calculatePMMResources(engineMemoryLimits))
+		return mergeResources(requested, defaultResources)
 	}
 
-	if curPsmdbSpec.PMM.Enabled {
-		// Instance is not new and PMM was enabled before.
-		// Monitoring component may contain new custom PMM resources -> merge them with previously used PMM resources.
-		return mergeResources(requested, curPsmdbSpec.PMM.Resources)
+	// PMM was already enabled: preserve current resources, allowing user overrides.
+	if currentSpec.PMM.Enabled {
+		return mergeResources(requested, currentSpec.PMM.Resources)
 	}
 
-	// Instance is not new and PMM was not enabled before. Now it is being enabled.
-	// Monitoring component may contain custom PMM resources -> merge them with defaults.
-	return mergeResources(requested, calculatePMMResources(engineMemoryLimits))
+	// PMM is being enabled for the first time on an existing instance.
+	return mergeResources(requested, defaultResources)
 }
 
 // equalSize checks if two memory sizes fall into the same predefined size category.

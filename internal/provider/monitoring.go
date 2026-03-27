@@ -39,66 +39,114 @@ import (
 )
 
 const (
-	// monitoringConfigPath is the path to the monitoring config name in the Instance.
+	// monitoringConfigPath is the field index path for looking up Instances
+	// by their referenced MonitoringConfig name.
 	monitoringConfigPath = ".spec.components.monitoring.monitoringConfigName"
 
-	// credentialsSecretPath is the path to the secret name in the MonitoringConfig.
+	// credentialsSecretPath is the field index path for looking up MonitoringConfigs
+	// by their referenced credentials Secret name.
 	credentialsSecretPath = ".spec.credentialsSecretName"
 )
 
-// configureMonitoring creates the PMM spec configuration for PSMDB.
-// It updates user secrets with PMM token if monitoring is enabled.
-// Returns nil if no update is needed.
-func configureMonitoring(c *controller.Context, psmdb *psmdbv1.PerconaServerMongoDBSpec, usersSecretName string) (*psmdbv1.PMMSpec, error) {
-	spec, err := c.ProviderSpec()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get provider spec: %w", err)
-	}
-
+// resolveMonitoringConfig looks up the MonitoringConfig referenced by the
+// instance's monitoring component custom spec. It returns nil without error when
+// the monitoring component is absent, the monitoringConfigName is not set, or
+// the monitoringConfigName is explicitly empty (monitoring disabled).
+func resolveMonitoringConfig(c *controller.Context) (*monitoringv1alpha1.MonitoringConfig, error) {
 	monitoring, ok := c.Instance().Spec.Components[common.ComponentMonitoring]
 	if !ok {
-		// do not update if monitoring component is not specified
 		return nil, nil
 	}
 
 	var customSpec components.PMMCustomSpec
 	if err := c.DecodeComponentCustomSpec(monitoring, &customSpec); err != nil {
-		return nil, fmt.Errorf("failed to decode monitoring component custom spec: %w", err)
+		return nil, fmt.Errorf("decode monitoring custom spec: %w", err)
 	}
 
-	// do not update if monitoring config name is not specified
-	if customSpec.MonitoringConfigName == nil {
+	if customSpec.MonitoringConfigName == nil || *customSpec.MonitoringConfigName == "" {
 		return nil, nil
 	}
 
-	// if monitoring config name key is present but empty, disable monitoring
-	if *customSpec.MonitoringConfigName == "" {
-		return &psmdbv1.PMMSpec{
-			Enabled: false,
-		}, nil
+	mc := &monitoringv1alpha1.MonitoringConfig{}
+	if err := c.Get(mc, *customSpec.MonitoringConfigName); err != nil {
+		return nil, fmt.Errorf("get MonitoringConfig %q: %w", *customSpec.MonitoringConfigName, err)
 	}
 
-	var mc = &monitoringv1alpha1.MonitoringConfig{}
-	if err := c.Get(mc, *customSpec.MonitoringConfigName); err != nil {
-		return nil, fmt.Errorf("failed to get monitoring config: %w", err)
+	return mc, nil
+}
+
+// isMonitoringDisabled checks whether monitoring has been explicitly disabled
+// by setting the monitoringConfigName to an empty string.
+func isMonitoringDisabled(c *controller.Context) bool {
+	monitoring, ok := c.Instance().Spec.Components[common.ComponentMonitoring]
+	if !ok {
+		return false
+	}
+
+	var customSpec components.PMMCustomSpec
+	if !c.TryDecodeComponentCustomSpec(monitoring, &customSpec) {
+		return false
+	}
+
+	return customSpec.MonitoringConfigName != nil && *customSpec.MonitoringConfigName == ""
+}
+
+// configureMonitoring builds the PMMSpec for the PSMDB resource based on the
+// instance's monitoring component configuration. The reconciliation handles:
+//
+//  1. Monitoring explicitly disabled (empty monitoringConfigName): returns a
+//     PMMSpec with Enabled=false to turn off PMM.
+//  2. Monitoring not configured (component absent or name not set): returns nil,
+//     leaving PMM at its default disabled state.
+//  3. Monitoring enabled: resolves the MonitoringConfig, copies the PMM API key
+//     to the users secret, and returns a fully configured PMMSpec with resource
+//     requirements calculated from the current cluster state.
+//
+// The currentSpec parameter should be the PSMDB spec currently running in the
+// cluster (nil if the resource does not exist yet). It is used to calculate
+// appropriate PMM resource requirements based on the cluster's current state.
+func configureMonitoring(
+	c *controller.Context,
+	currentSpec *psmdbv1.PerconaServerMongoDBSpec,
+	usersSecretName string,
+) (*psmdbv1.PMMSpec, error) {
+	// Monitoring explicitly disabled: ensure PMM is turned off.
+	if isMonitoringDisabled(c) {
+		return &psmdbv1.PMMSpec{Enabled: false}, nil
+	}
+
+	// Resolve the referenced MonitoringConfig. Returns nil if monitoring
+	// is not configured (component absent or monitoringConfigName not set).
+	mc, err := resolveMonitoringConfig(c)
+	if err != nil {
+		return nil, fmt.Errorf("resolve monitoring config: %w", err)
+	}
+
+	if mc == nil {
+		return nil, nil
+	}
+
+	spec, err := c.ProviderSpec()
+	if err != nil {
+		return nil, fmt.Errorf("get provider spec: %w", err)
 	}
 
 	u, err := url.Parse(mc.Spec.PMM.URL)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse PMM URL %s: %w", mc.Spec.PMM.URL, err)
+		return nil, fmt.Errorf("parse PMM URL %q: %w", mc.Spec.PMM.URL, err)
 	}
 
+	// Copy the PMM API key from the MonitoringConfig credentials secret
+	// to the PSMDB users secret so the PMM sidecar can authenticate.
 	if err := copySecretData(c, mc.Spec.CredentialsSecretName, usersSecretName, "apiKey", "PMM_SERVER_TOKEN"); err != nil {
-		return nil, fmt.Errorf("failed to apply PMM token to user secrets: %w", err)
+		return nil, fmt.Errorf("copy PMM API key to users secret: %w", err)
 	}
-
-	pmmImage := controller.GetDefaultImageForComponent(spec, common.ComponentMonitoring)
 
 	return &psmdbv1.PMMSpec{
 		Enabled:    true,
 		ServerHost: u.Host,
-		Image:      pmmImage,
-		Resources:  getPMMResources(c, psmdb),
+		Image:      controller.GetDefaultImageForComponent(spec, common.ComponentMonitoring),
+		Resources:  getPMMResources(c, currentSpec),
 	}, nil
 }
 
@@ -130,51 +178,41 @@ func copySecretData(c *controller.Context, source, dest, sourceKey, destKey stri
 	return c.Apply(destSecret)
 }
 
-// validateMonitoring validates the monitoring image version is compatible
-// with the PMM server version.
+// validateMonitoring validates that the PMM client image version is compatible
+// with the PMM server version. The major versions must match.
+// See: https://docs.percona.com/percona-operator-for-mongodb/monitoring-tutorial.html#considerations
 func validateMonitoring(c *controller.Context) error {
-	monitoring, ok := c.Instance().Spec.Components[common.ComponentMonitoring]
-	if !ok {
-		// monitoring is not enabled, nothing to do
+	mc, err := resolveMonitoringConfig(c)
+	if err != nil {
+		return fmt.Errorf("resolve monitoring config: %w", err)
+	}
+
+	if mc == nil {
 		return nil
-	}
-
-	var customSpec components.PMMCustomSpec
-	if err := c.DecodeComponentCustomSpec(monitoring, &customSpec); err != nil {
-		return fmt.Errorf("failed to decode monitoring component custom spec: %w", err)
-	}
-
-	if customSpec.MonitoringConfigName == nil || *customSpec.MonitoringConfigName == "" {
-		return nil
-	}
-
-	var mc = &monitoringv1alpha1.MonitoringConfig{}
-	if err := c.Get(mc, *customSpec.MonitoringConfigName); err != nil {
-		return fmt.Errorf("failed to get monitoring config %s: %w", *customSpec.MonitoringConfigName, err)
 	}
 
 	if mc.Status.PMMServerVersion == "" {
-		// PMM is not running or server version is not reported yet.
-		// Do we prevent using monitoring image with unknown compatibility?
+		// PMM server version not yet reported; skip compatibility check.
 		return nil
 	}
 
+	monitoring := c.Instance().Spec.Components[common.ComponentMonitoring]
+
 	serverVersion, err := goversion.NewVersion(string(mc.Status.PMMServerVersion))
 	if err != nil {
-		return fmt.Errorf("failed to parse PMM server version: %w", err)
+		return fmt.Errorf("parse PMM server version %q: %w", mc.Status.PMMServerVersion, err)
 	}
 
 	clientVersion, err := goversion.NewVersion(monitoring.Version)
 	if err != nil {
-		return fmt.Errorf("failed to parse monitoring image version: %w", err)
+		return fmt.Errorf("parse monitoring image version %q: %w", monitoring.Version, err)
 	}
 
-	serverMajor := serverVersion.Segments()[0]
-	clientMajor := clientVersion.Segments()[0]
-
-	// https://docs.percona.com/percona-operator-for-mongodb/monitoring-tutorial.html#considerations
-	if clientMajor != serverMajor {
-		return fmt.Errorf("monitoring image version %s is not compatible with PMM server version %s", monitoring.Version, mc.Status.PMMServerVersion)
+	if clientVersion.Segments()[0] != serverVersion.Segments()[0] {
+		return fmt.Errorf(
+			"PMM client version %s is incompatible with server version %s: major versions must match",
+			monitoring.Version, mc.Status.PMMServerVersion,
+		)
 	}
 
 	return nil
