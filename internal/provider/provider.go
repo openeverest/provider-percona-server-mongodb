@@ -182,7 +182,7 @@ func StatusPSMDB(c *controller.Context) (controller.Status, error) {
 	// to ensure we only get it once during the reconcile?
 	psmdb := &psmdbv1.PerconaServerMongoDB{}
 	if err := c.Get(psmdb, c.Name()); err != nil {
-		return controller.Creating("Waiting for PerconaServerMongoDB"), nil
+		return controller.Provisioning("Waiting for PerconaServerMongoDB"), nil
 	}
 	switch psmdb.Status.State {
 	case psmdbv1.AppStateReady:
@@ -190,11 +190,11 @@ func StatusPSMDB(c *controller.Context) (controller.Status, error) {
 		if err != nil {
 			return controller.Failed("Failed to build connection details: " + err.Error()), nil
 		}
-		return controller.RunningWithConnectionDetails(details), nil
+		return controller.ReadyWithConnectionDetails(details), nil
 	case psmdbv1.AppStateError:
 		return controller.Failed(psmdb.Status.Message), nil
 	default:
-		return controller.Creating("Cluster is being created"), nil
+		return controller.Provisioning("Cluster is being created"), nil
 	}
 }
 
