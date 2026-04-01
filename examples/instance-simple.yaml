@@ -33,7 +33,7 @@ spec:
       # version: 2.44.1
 
 # status:
-#   phase: Running
+#   phase: Ready
 #   connectionURL: mongodb://psmdb-simple:27017
 #   credentialSecretRef:
 #     name: psmdb-simple-credentials

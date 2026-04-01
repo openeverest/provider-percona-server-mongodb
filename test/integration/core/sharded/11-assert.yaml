@@ -101,7 +101,7 @@ spec:
 #       type: internal
 status:
   # status: ready
-  phase: Running
+  phase: Ready
 ---
 apiVersion: psmdb.percona.com/v1
 kind: PerconaServerMongoDB
