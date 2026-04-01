@@ -112,7 +112,7 @@ ui:
           path: spec.components.engine.configuration
           fieldParams:
             label: "Advanced configuration"
-            defaultValues: |2
+            defaultValue: |2
                 operationProfiling:
                   mode: slowOps
             multiline: true

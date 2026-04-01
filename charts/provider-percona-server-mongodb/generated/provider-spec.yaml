@@ -70,7 +70,7 @@ spec:
           components:
             configuration:
               fieldParams:
-                defaultValues: |2
+                defaultValue: |2
                     operationProfiling:
                       mode: slowOps
                 label: Advanced configuration
@@ -179,7 +179,7 @@ spec:
           components:
             configuration:
               fieldParams:
-                defaultValues: |2
+                defaultValue: |2
                     operationProfiling:
                       mode: slowOps
                 label: Advanced configuration
