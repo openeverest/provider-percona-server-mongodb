@@ -70,10 +70,10 @@ spec:
           components:
             configuration:
               fieldParams:
-                defaultValue: |2
-                    operationProfiling:
-                      mode: slowOps
-                label: Advanced configuration
+                defaultValue: |
+                  operationProfiling:
+                    mode: slowOps
+                label: Engine configuration
                 maxRows: 8
                 minRows: 3
                 multiline: true
@@ -179,10 +179,10 @@ spec:
           components:
             configuration:
               fieldParams:
-                defaultValue: |2
-                    operationProfiling:
-                      mode: slowOps
-                label: Advanced configuration
+                defaultValue: |
+                  operationProfiling:
+                    mode: slowOps
+                label: Engine configuration
                 maxRows: 8
                 minRows: 3
                 multiline: true

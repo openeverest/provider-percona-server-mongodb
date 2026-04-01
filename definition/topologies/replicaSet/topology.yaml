@@ -111,10 +111,10 @@ ui:
           uiType: text
           path: spec.components.engine.configuration
           fieldParams:
-            label: "Advanced configuration"
+            label: "Engine configuration"
             defaultValue: |2
-                operationProfiling:
-                  mode: slowOps
+              operationProfiling:
+                mode: slowOps
             multiline: true
             minRows: 3
             maxRows: 8
