@@ -70,7 +70,7 @@ spec:
         key: pmm.yaml
 
 # status:
-#   phase: Running
+#   phase: Ready
 #   connectionURL: mongodb://psmdb-cluster:27017
 #   credentialSecretRef:
 #     name: psmdb-cluster-credentials
