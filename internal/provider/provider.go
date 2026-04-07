@@ -132,15 +132,6 @@ func SyncPSMDB(c *controller.Context) error {
 	}
 	psmdb.Spec.ImagePullPolicy = corev1.PullIfNotPresent
 
-	psmdb.Spec.Replsets = configureReplsets(c)
-	if c.Instance().Spec.Topology != nil && c.Instance().Spec.Topology.Type == "sharded" {
-		psmdb.Spec.Sharding.Enabled = true
-		psmdb.Spec.Sharding.ConfigsvrReplSet = configureConfigServerReplset(c)
-		psmdb.Spec.Sharding.Mongos = configureMongos(c)
-	}
-
-	psmdb.Spec.Backup = configureBackup(c)
-
 	usersSecretName := "everest-secrets-" + c.Name()
 
 	// Fetch the current PSMDB from the cluster to inform monitoring resource
@@ -151,6 +142,26 @@ func SyncPSMDB(c *controller.Context) error {
 	if err := c.Get(currentPSMDB, c.Name()); err == nil {
 		currentSpec = &currentPSMDB.Spec
 	}
+
+	var sidecars []corev1.Container
+
+	exporterContainer, err := configureExporter(c, usersSecretName)
+	if err != nil {
+		return fmt.Errorf("failed to configure exporter: %w", err)
+	}
+
+	if exporterContainer != nil {
+		sidecars = append(sidecars, *exporterContainer)
+	}
+
+	psmdb.Spec.Replsets = configureReplsets(c, sidecars)
+	if c.Instance().Spec.Topology != nil && c.Instance().Spec.Topology.Type == "sharded" {
+		psmdb.Spec.Sharding.Enabled = true
+		psmdb.Spec.Sharding.ConfigsvrReplSet = configureConfigServerReplset(c, sidecars)
+		psmdb.Spec.Sharding.Mongos = configureMongos(c)
+	}
+
+	psmdb.Spec.Backup = configureBackup(c)
 
 	pmmSpec, err := configureMonitoring(c, currentSpec, usersSecretName)
 	if err != nil {

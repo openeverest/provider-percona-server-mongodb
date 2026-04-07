@@ -24,8 +24,10 @@ const (
 	ComponentProxy        = "proxy"
 	ComponentBackupAgent  = "backupAgent"
 	ComponentMonitoring   = "monitoring"
+	ComponentExporter     = "exporter"
 
-	ComponentTypeMongod = "mongod"
-	ComponentTypeBackup = "backup"
-	ComponentTypePMM    = "pmm"
+	ComponentTypeMongod     = "mongod"
+	ComponentTypeBackup     = "backup"
+	ComponentTypePMM        = "pmm"
+	ComponentTypePrometheus = "prometheus"
 )

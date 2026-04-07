@@ -40,3 +40,9 @@ type PMMCustomSpec struct {
 
 // BackupCustomSpec defines custom configuration for backup agents.
 type BackupCustomSpec struct{}
+
+// ExporterCustomSpec defines custom configuration for exporter.
+type ExporterCustomSpec struct {
+	// Enabled indicates whether the exporter component should be enabled.
+	Enabled bool `json:"enabled,omitempty"`
+}
