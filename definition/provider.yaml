@@ -21,3 +21,5 @@ components:
     type: backup
   monitoring:
     type: pmm
+  prometheus:
+    type: exporter

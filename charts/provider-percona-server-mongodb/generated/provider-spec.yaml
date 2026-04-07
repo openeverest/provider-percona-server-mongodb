@@ -9,6 +9,11 @@ spec:
           version: 2.11.0
         - image: percona/percona-backup-mongodb:2.9.1
           version: 2.9.1
+    exporter:
+      versions:
+        - default: true
+          image: percona/mongodb_exporter:0.47.2
+          version: 0.47.2
     mongod:
       versions:
         - image: percona/percona-server-mongodb:6.0.19-16-multi
@@ -38,6 +43,8 @@ spec:
       type: mongod
     monitoring:
       type: pmm
+    prometheus:
+      type: exporter
     proxy:
       type: mongod
   topologies:
