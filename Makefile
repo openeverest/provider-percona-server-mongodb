@@ -97,6 +97,10 @@ test-integration-core-sharded: ## Run core sharded integration tests.
 test-integration-monitoring-pmm: ## Run PMM integration tests.
 	. ./test/vars.sh && kubectl kuttl test --config ./test/integration/kuttl-monitoring.yaml
 
+.PHONY: test-e2e
+test-e2e: ## Run Playwright E2E tests against a running Everest UI (http://localhost:8080).
+	cd test/e2e && npm ci && npx playwright test
+
 .PHONY: load-image
 load-image: ## Import the provider image (IMG) into the k3d cluster.
 	k3d image import ${IMG} -c ${K3D_CLUSTER_NAME}
