@@ -53,7 +53,7 @@ func configureExporter(c *controller.Context, secretName string) (*corev1.Contai
 
 	// TODO: handle disabling exporter
 
-	return &corev1.Container{
+	container := &corev1.Container{
 		Name:  c.Name() + "-metrics-exporter",
 		Image: controller.GetDefaultImageForComponent(spec, common.ComponentExporter),
 		Args:  []string{"--discovering-mode", "--compatible-mode", "--collect-all", "--mongodb.uri=$(MONGODB_URI)"},
@@ -96,5 +96,15 @@ func configureExporter(c *controller.Context, secretName string) (*corev1.Contai
 				Value: "mongodb://$(MONGODB_USER):$(MONGODB_PASSWORD)@$(POD_NAME)",
 			},
 		},
-	}, nil
+	}
+
+	if err := configurePrometheus(c); err != nil {
+		return nil, fmt.Errorf("failed to configure Prometheus: %w", err)
+	}
+
+	if err := configurePodMonitor(c); err != nil {
+		return nil, fmt.Errorf("failed to configure pod monitor: %w", err)
+	}
+
+	return container, nil
 }
