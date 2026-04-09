@@ -123,7 +123,6 @@ func configurePodMonitor(c *controller.Context) error {
 			Labels: map[string]string{
 				"provider":   "percona-server-mongodb",
 				"managed-by": "openeverest",
-				"release":    "prometheus", // required for the prometheus-operator to discover this PodMonitor
 			},
 		},
 		Spec: monitoringv1.PodMonitorSpec{
