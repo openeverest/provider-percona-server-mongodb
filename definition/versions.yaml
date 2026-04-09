@@ -30,7 +30,7 @@ componentTypes:
     - version: "2.44.1"
       image: percona/pmm-client:2.44.1
       default: true
-  exporter:
+  prometheus:
     versions:
     - version: "0.47.2"
       image: percona/mongodb_exporter:0.47.2

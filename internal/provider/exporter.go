@@ -25,10 +25,11 @@ import (
 )
 
 // configureExporter returns a sidecar container configuration for MongoDB Exporter.
-// It exposes metrics on localhost:9216/metrics.
+// It exposes metrics on localhost:9216/metrics and creates a Prometheus PodMonitor
+// to scrape metrics.
 // It returns the container configuration if exporter is enabled or nil if disabled.
 func configureExporter(c *controller.Context, secretName string) (*corev1.Container, error) {
-	exporter, ok := c.Instance().Spec.Components[common.ComponentExporter]
+	exporter, ok := c.Instance().Spec.Components[common.ComponentMetricsExporter]
 	if !ok {
 		return nil, nil
 	}
@@ -51,14 +52,19 @@ func configureExporter(c *controller.Context, secretName string) (*corev1.Contai
 		return nil, err
 	}
 
-	// TODO: handle disabling exporter
-
 	container := &corev1.Container{
-		Name:  c.Name() + "-metrics-exporter",
-		Image: controller.GetDefaultImageForComponent(spec, common.ComponentExporter),
+		Name:  "exporter",
+		Image: controller.GetDefaultImageForComponent(spec, common.ComponentMetricsExporter),
 		Args:  []string{"--discovering-mode", "--compatible-mode", "--collect-all", "--mongodb.uri=$(MONGODB_URI)"},
 		// Use environment variables to pass MongoDB credentials and connection info to the exporter container.
 		// https://github.com/percona/mongodb_exporter?tab=readme-ov-file#mongodb-authentication
+		Ports: []corev1.ContainerPort{
+			{
+				Name:          "metrics",
+				ContainerPort: 9216,
+				Protocol:      corev1.ProtocolTCP,
+			},
+		},
 		Env: []corev1.EnvVar{
 			{
 				Name: "MONGODB_USER",
@@ -93,13 +99,9 @@ func configureExporter(c *controller.Context, secretName string) (*corev1.Contai
 			},
 			{
 				Name:  "MONGODB_URI",
-				Value: "mongodb://$(MONGODB_USER):$(MONGODB_PASSWORD)@$(POD_NAME)",
+				Value: "mongodb://$(POD_NAME)",
 			},
 		},
-	}
-
-	if err := configurePrometheus(c); err != nil {
-		return nil, fmt.Errorf("failed to configure Prometheus: %w", err)
 	}
 
 	if err := configurePodMonitor(c); err != nil {

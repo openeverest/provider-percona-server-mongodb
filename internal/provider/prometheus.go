@@ -31,19 +31,20 @@ func configurePodMonitor(c *controller.Context) error {
 			Name:      c.Name() + "-monitor",
 			Namespace: c.Namespace(),
 			Labels: map[string]string{
-				"provider":   "provider-percona-server-mongodb",
+				"provider":   "percona-server-mongodb",
 				"managed-by": "openeverest",
+				"release":    "prometheus", // required for the prometheus-operator to discover this PodMonitor
 			},
 		},
 		Spec: monitoringv1.PodMonitorSpec{
 			Selector: metav1.LabelSelector{
 				MatchLabels: map[string]string{
-					"app": c.Name(),
+					"app.kubernetes.io/instance": c.Name(),
 				},
 			},
 			PodMetricsEndpoints: []monitoringv1.PodMetricsEndpoint{
 				{
-					Port: pointer.ToString("9216"),
+					Port: pointer.ToString("metrics"),
 					Path: "/metrics",
 				},
 			},
@@ -56,32 +57,6 @@ func configurePodMonitor(c *controller.Context) error {
 
 	if err := controllerutil.SetControllerReference(c.Instance(), podMonitor, c.Client().Scheme()); err != nil {
 		return fmt.Errorf("failed to set controller reference for PodMonitor %w:", err)
-	}
-
-	return nil
-}
-
-// configurePrometheus sets up a Prometheus instance.
-//
-// TODO: This should be setup globally for the cluster.
-func configurePrometheus(c *controller.Context) error {
-	prometheus := &monitoringv1.Prometheus{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "prometheus",
-		},
-		Spec: monitoringv1.PrometheusSpec{
-			CommonPrometheusFields: monitoringv1.CommonPrometheusFields{
-				PodMonitorSelector: &metav1.LabelSelector{
-					MatchLabels: map[string]string{
-						"provider": "provider-percona-server-mongodb",
-					},
-				},
-			},
-		},
-	}
-
-	if err := c.Apply(prometheus); err != nil {
-		return fmt.Errorf("failed to apply Prometheus %w:", err)
 	}
 
 	return nil

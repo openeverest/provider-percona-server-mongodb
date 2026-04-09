@@ -19,12 +19,12 @@ package common
 // These are used throughout the reconciliation code to reference
 // components by name consistently.
 const (
-	ComponentEngine       = "engine"
-	ComponentConfigServer = "configServer"
-	ComponentProxy        = "proxy"
-	ComponentBackupAgent  = "backupAgent"
-	ComponentMonitoring   = "monitoring"
-	ComponentExporter     = "exporter"
+	ComponentEngine          = "engine"
+	ComponentConfigServer    = "configServer"
+	ComponentProxy           = "proxy"
+	ComponentBackupAgent     = "backupAgent"
+	ComponentMonitoring      = "monitoring"
+	ComponentMetricsExporter = "metricsExporter"
 
 	ComponentTypeMongod     = "mongod"
 	ComponentTypeBackup     = "backup"

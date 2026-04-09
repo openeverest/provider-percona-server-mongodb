@@ -18,6 +18,7 @@ import (
 	"fmt"
 
 	psmdbv1 "github.com/percona/percona-server-mongodb-operator/pkg/apis/psmdb/v1"
+	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -280,6 +281,7 @@ func NewPSMDBProviderInterface() *PSMDBProvider {
 		SchemeFuncs: []func(*runtime.Scheme) error{
 			psmdbv1.SchemeBuilder.AddToScheme,
 			monitoringv1alpha1.SchemeBuilder.AddToScheme,
+			monitoringv1.SchemeBuilder.AddToScheme,
 		},
 		WatchConfigs: []controller.WatchConfig{
 			// Watch owned PSMDB resources - only trigger on spec changes
