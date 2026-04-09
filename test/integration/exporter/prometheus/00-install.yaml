@@ -1,0 +1,6 @@
+apiVersion: kuttl.dev/v1
+kind: TestStep
+timeout: 10
+commands:
+  - script: "curl -fsSL https://raw.githubusercontent.com/percona/percona-server-mongodb-operator/v${PSMDB_OPERATOR_VERSION}/deploy/operator.yaml | sed 's/replicas: [0-9]/replicas: 0/g' | kubectl apply -n ${NAMESPACE} -f -"
+  # - script: helm upgrade prometheus prometheus-community/kube-prometheus-stack --namespace monitoring --set-json prometheus.prometheusSpec.podMonitorSelector={}

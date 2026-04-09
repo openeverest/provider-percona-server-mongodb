@@ -1,0 +1,17 @@
+apiVersion: kuttl.dev/v1
+kind: TestAssert
+timeout: 30
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: percona-server-mongodb-operator
+spec:
+  replicas: 0
+# ---
+# apiVersion: monitoring.coreos.com/v1
+# kind: Prometheus
+# metadata:
+#   name: prometheus-kube-prometheus-prometheus
+# spec:
+#   podMonitorSelector: {}

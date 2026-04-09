@@ -1,0 +1,125 @@
+apiVersion: kuttl.dev/v1
+kind: TestAssert
+timeout: 5
+collectors:
+  - command: kubectl get in/test-psmdb-cluster -n ${NAMESPACE} -o yaml
+  - command: kubectl get psmdb/test-psmdb-cluster -n ${NAMESPACE} -o yaml
+resourceRefs:
+  - apiVersion: core.openeverest.io/v1alpha1
+    kind: Instance
+    name: test-psmdb-cluster
+    ref: in
+  - apiVersion: psmdb.percona.com/v1
+    kind: PerconaServerMongoDB
+    name: test-psmdb-cluster
+    ref: psmdb
+---
+apiVersion: core.openeverest.io/v1alpha1
+kind: Instance
+metadata:
+  name: test-psmdb-cluster
+spec:
+  provider: percona-server-mongodb
+  components:
+    engine:
+      type: mongod
+      replicas: 3
+      resources:
+        limits:
+          cpu: "1"
+          memory: 4G
+      storage:
+        size: 25Gi
+    metricsExporter:
+      customSpec:
+        enabled: true
+---
+apiVersion: psmdb.percona.com/v1
+kind: PerconaServerMongoDB
+metadata:
+  name: test-psmdb-cluster
+spec:
+  imagePullPolicy: IfNotPresent
+  multiCluster:
+    enabled: false
+  replsets:
+  - arbiter:
+      enabled: false
+      resources: {}
+      size: 0
+    expose:
+      enabled: true
+      type: ClusterIP
+    name: rs0
+    nonvoting:
+      enabled: false
+      resources: {}
+      size: 0
+    podDisruptionBudget:
+      maxUnavailable: 1
+    resources:
+      limits:
+        cpu: "1"
+        memory: 4G
+    size: 3
+    volumeSpec:
+      persistentVolumeClaim:
+        resources:
+          requests:
+            storage: 25Gi
+    sidecars:
+    - args:
+      - --discovering-mode
+      - --compatible-mode
+      - --collect-all
+      - --mongodb.uri=$(MONGODB_URI)
+      env:
+      - name: MONGODB_USER
+        valueFrom:
+          secretKeyRef:
+            key: MONGODB_CLUSTER_MONITOR_USER
+            name: everest-secrets-test-psmdb-cluster
+      - name: MONGODB_PASSWORD
+        valueFrom:
+          secretKeyRef:
+            key: MONGODB_CLUSTER_MONITOR_PASSWORD
+            name: everest-secrets-test-psmdb-cluster
+      - name: POD_NAME
+        valueFrom:
+          fieldRef:
+            apiVersion: v1
+            fieldPath: metadata.name
+      - name: MONGODB_URI
+        value: mongodb://$(POD_NAME)
+      image: percona/mongodb_exporter:0.47.2
+      name: exporter
+      ports:
+      - containerPort: 9216
+        name: metrics
+        protocol: TCP
+      resources: {}
+  secrets:
+    encryptionKey: test-psmdb-cluster-mongodb-encryption-key
+    sslInternal: test-psmdb-cluster-ssl-internal
+    users: everest-secrets-test-psmdb-cluster
+  sharding:
+    balancer: {}
+    enabled: false
+  unsafeFlags: {}
+  updateStrategy: SmartUpdate
+  upgradeOptions:
+    apply: disabled
+    schedule: 0 4 * * *
+    setFCV: true
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: test-psmdb-cluster-monitor
+spec:
+  podMetricsEndpoints:
+  - path: /metrics
+    port: metrics
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: test-psmdb-cluster

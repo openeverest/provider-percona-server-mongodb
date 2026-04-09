@@ -1,0 +1,24 @@
+apiVersion: kuttl.dev/v1
+kind: TestStep
+timeout: 10
+---
+apiVersion: core.openeverest.io/v1alpha1
+kind: Instance
+metadata:
+  name: test-psmdb-cluster
+spec:
+  provider: percona-server-mongodb
+  components:
+    engine:
+      type: mongod
+      replicas: 3
+      resources:
+        limits:
+          cpu: "1"
+          memory: 4G
+      storage:
+        size: 25Gi
+    metricsExporter:
+      customSpec:
+        enabled: true
+
