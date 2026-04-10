@@ -24,16 +24,13 @@ ui:
       components:
         version:
           uiType: select
-          path:
-            - spec.components.engine.version
-            - spec.components.proxy.version
-            - spec.components.configServer.version
+          path: spec.version
           fieldParams:
             label: "Database Version"
-            optionsPath: spec.componentTypes.mongod.versions
+            optionsPath: spec.versions
             optionsPathConfig:
-              labelPath: "version"
-              valuePath: "version"
+              labelPath: "name"
+              valuePath: "name"
           validation:
             required: true
     resources:

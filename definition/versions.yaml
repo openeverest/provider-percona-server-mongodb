@@ -30,3 +30,51 @@ componentTypes:
     - version: "2.44.1"
       image: percona/pmm-client:2.44.1
       default: true
+
+# Version bundles — curated sets of component versions known to work together.
+# Users set spec.version on an Instance to select a bundle.
+# The bundle with default: true is used when spec.version is omitted.
+versions:
+- name: "8.0.12"
+  default: true
+  components:
+    engine: "8.0.12-4"
+    configServer: "8.0.12-4"
+    proxy: "8.0.12-4"
+    backupAgent: "2.11.0"
+    monitoring: "2.44.1"
+- name: "8.0.8"
+  components:
+    engine: "8.0.8-3"
+    configServer: "8.0.8-3"
+    proxy: "8.0.8-3"
+    backupAgent: "2.11.0"
+    monitoring: "2.44.1"
+- name: "8.0.4"
+  components:
+    engine: "8.0.4-1"
+    configServer: "8.0.4-1"
+    proxy: "8.0.4-1"
+    backupAgent: "2.11.0"
+    monitoring: "2.44.1"
+- name: "7.0.18"
+  components:
+    engine: "7.0.18-11"
+    configServer: "7.0.18-11"
+    proxy: "7.0.18-11"
+    backupAgent: "2.11.0"
+    monitoring: "2.44.1"
+- name: "6.0.21"
+  components:
+    engine: "6.0.21-18"
+    configServer: "6.0.21-18"
+    proxy: "6.0.21-18"
+    backupAgent: "2.11.0"
+    monitoring: "2.44.1"
+- name: "6.0.19"
+  components:
+    engine: "6.0.19-16"
+    configServer: "6.0.19-16"
+    proxy: "6.0.19-16"
+    backupAgent: "2.11.0"
+    monitoring: "2.44.1"
