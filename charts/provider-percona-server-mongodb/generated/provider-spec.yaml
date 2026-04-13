@@ -107,14 +107,11 @@ spec:
                 modes:
                   edit:
                     disabled: true
-                optionsPath: spec.componentTypes.mongod.versions
+                optionsPath: spec.versions
                 optionsPathConfig:
-                  labelPath: version
-                  valuePath: version
-              path:
-                - spec.components.engine.version
-                - spec.components.proxy.version
-                - spec.components.configServer.version
+                  labelPath: name
+                  valuePath: name
+              path: spec.version
               uiType: select
               validation:
                 required: true
@@ -139,7 +136,7 @@ spec:
                     modes:
                       edit:
                         celExpressions:
-                          - celExpr: '!(spec.components.engine.replicas == 1 && original.spec.components.engine.replicas > 1)'
+                          - celExpr: "!(spec.components.engine.replicas == 1 && original.spec.components.engine.replicas > 1)"
                             message: Cannot scale down to a single node
                     required: true
                 resources:
@@ -239,14 +236,11 @@ spec:
                 modes:
                   edit:
                     disabled: true
-                optionsPath: spec.componentTypes.mongod.versions
+                optionsPath: spec.versions
                 optionsPathConfig:
-                  labelPath: version
-                  valuePath: version
-              path:
-                - spec.components.engine.version
-                - spec.components.proxy.version
-                - spec.components.configServer.version
+                  labelPath: name
+                  valuePath: name
+              path: spec.version
               uiType: select
               validation:
                 required: true
@@ -307,7 +301,7 @@ spec:
                 celExpressions:
                   - celExpr: spec.components.configServer.replicas % 2 == 1
                     message: The number of configuration servers must be odd
-                  - celExpr: '!(spec.components.engine.replicas > 1 && spec.components.configServer.replicas == 1)'
+                  - celExpr: "!(spec.components.engine.replicas > 1 && spec.components.configServer.replicas == 1)"
                     message: The number of configuration servers cannot be 1 if the number of database nodes is greater than 1
                 int: true
                 max: 7
@@ -334,7 +328,7 @@ spec:
                 modes:
                   edit:
                     celExpressions:
-                      - celExpr: '!(spec.components.engine.replicas == 1 && original.spec.components.engine.replicas > 1)'
+                      - celExpr: "!(spec.components.engine.replicas == 1 && original.spec.components.engine.replicas > 1)"
                         message: Cannot scale down to a single node
                 required: true
             routersResources:
@@ -391,3 +385,47 @@ spec:
         - databaseVersion
         - resources
         - advanced
+  versions:
+    - components:
+        backupAgent: 2.11.0
+        configServer: 8.0.12-4
+        engine: 8.0.12-4
+        monitoring: 2.44.1
+        proxy: 8.0.12-4
+      default: true
+      name: 8.0.12
+    - components:
+        backupAgent: 2.11.0
+        configServer: 8.0.8-3
+        engine: 8.0.8-3
+        monitoring: 2.44.1
+        proxy: 8.0.8-3
+      name: 8.0.8
+    - components:
+        backupAgent: 2.11.0
+        configServer: 8.0.4-1
+        engine: 8.0.4-1
+        monitoring: 2.44.1
+        proxy: 8.0.4-1
+      name: 8.0.4
+    - components:
+        backupAgent: 2.11.0
+        configServer: 7.0.18-11
+        engine: 7.0.18-11
+        monitoring: 2.44.1
+        proxy: 7.0.18-11
+      name: 7.0.18
+    - components:
+        backupAgent: 2.11.0
+        configServer: 6.0.21-18
+        engine: 6.0.21-18
+        monitoring: 2.44.1
+        proxy: 6.0.21-18
+      name: 6.0.21
+    - components:
+        backupAgent: 2.11.0
+        configServer: 6.0.19-16
+        engine: 6.0.19-16
+        monitoring: 2.44.1
+        proxy: 6.0.19-16
+      name: 6.0.19
