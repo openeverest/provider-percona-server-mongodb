@@ -70,24 +70,30 @@ spec:
           components:
             configuration:
               fieldParams:
-                defaultValue: |
-                  operationProfiling:
-                    mode: slowOps
                 label: Engine configuration
                 maxRows: 8
                 minRows: 3
                 multiline: true
+                placeholder: |
+                  operationProfiling:
+                    mode: slowOps
+                    slowOpThresholdMs: 200
               path: spec.components.engine.configuration
               uiType: text
             storageClass:
               fieldParams:
                 defaultValue: local-path
                 label: Storage class
+                modes:
+                  edit:
+                    disabled: true
                 options:
                   - label: local-path
                     value: local-path
               path: spec.components.engine.storage.storageClass
               uiType: select
+              validation:
+                required: true
           componentsOrder:
             - storageClass
             - configuration
@@ -98,6 +104,9 @@ spec:
             version:
               fieldParams:
                 label: Database Version
+                modes:
+                  edit:
+                    disabled: true
                 optionsPath: spec.componentTypes.mongod.versions
                 optionsPathConfig:
                   labelPath: version
@@ -127,6 +136,11 @@ spec:
                         message: The number of nodes must be odd
                     int: true
                     min: 1
+                    modes:
+                      edit:
+                        celExpressions:
+                          - celExpr: '!(spec.components.engine.replicas == 1 && original.spec.components.engine.replicas > 1)'
+                            message: Cannot scale down to a single node
                     required: true
                 resources:
                   components:
@@ -151,6 +165,11 @@ spec:
                       validation:
                         int: true
                         min: 1
+                        modes:
+                          edit:
+                            celExpressions:
+                              - celExpr: spec.components.engine.storage.size >= original.spec.components.engine.storage.size
+                                message: Disk size cannot be decreased
                         required: true
                     memory:
                       fieldParams:
@@ -166,6 +185,9 @@ spec:
                         required: true
                   groupType: line
                   uiType: group
+              componentsOrder:
+                - numberOfnodes
+                - resources
               uiType: group
           description: Configure the resources your new database will have access to.
           label: Resources
@@ -179,24 +201,31 @@ spec:
           components:
             configuration:
               fieldParams:
-                defaultValue: |
-                  operationProfiling:
-                    mode: slowOps
-                label: Engine configuration
+                description: Set your database engine configuration to adjust your database system to your workload and performance needs. For configuration format and specific parameters, check your database type documentation.
+                label: Еngine parameters
                 maxRows: 8
                 minRows: 3
                 multiline: true
+                placeholder: |
+                  operationProfiling:
+                    mode: slowOps
+                    slowOpThresholdMs: 200
               path: spec.components.engine.configuration
               uiType: text
             storageClass:
               fieldParams:
                 defaultValue: local-path
                 label: Storage class
+                modes:
+                  edit:
+                    disabled: true
                 options:
                   - label: local-path
                     value: local-path
               path: spec.components.engine.storage.storageClass
               uiType: select
+              validation:
+                required: true
           componentsOrder:
             - storageClass
             - configuration
@@ -207,6 +236,9 @@ spec:
             version:
               fieldParams:
                 label: Database Version
+                modes:
+                  edit:
+                    disabled: true
                 optionsPath: spec.componentTypes.mongod.versions
                 optionsPathConfig:
                   labelPath: version
@@ -245,6 +277,11 @@ spec:
                   validation:
                     int: true
                     min: 1
+                    modes:
+                      edit:
+                        celExpressions:
+                          - celExpr: spec.components.engine.storage.size >= original.spec.components.engine.storage.size
+                            message: Disk size cannot be decreased
                     required: true
                 memory:
                   fieldParams:
@@ -268,10 +305,17 @@ spec:
               uiType: number
               validation:
                 celExpressions:
+                  - celExpr: spec.components.configServer.replicas % 2 == 1
+                    message: The number of configuration servers must be odd
                   - celExpr: '!(spec.components.engine.replicas > 1 && spec.components.configServer.replicas == 1)'
                     message: The number of configuration servers cannot be 1 if the number of database nodes is greater than 1
+                int: true
+                max: 7
+                min: 1
+                required: true
             numberOfRouters:
               fieldParams:
+                defaultValue: 3
                 label: Number of routers
               path: spec.components.proxy.replicas
               uiType: number
@@ -287,34 +331,53 @@ spec:
                     message: The number of nodes must be odd
                 int: true
                 min: 1
+                modes:
+                  edit:
+                    celExpressions:
+                      - celExpr: '!(spec.components.engine.replicas == 1 && original.spec.components.engine.replicas > 1)'
+                        message: Cannot scale down to a single node
                 required: true
             routersResources:
               components:
                 cpu:
                   fieldParams:
+                    defaultValue: 1
                     label: CPU
+                    step: 0.1
                   path: spec.components.proxy.resources.limits.cpu
                   uiType: number
                   validation:
-                    max: 10
-                    min: 1
+                    min: 0.6
+                    required: true
                 memory:
                   fieldParams:
+                    badge: Gi
+                    badgeToApi: true
+                    defaultValue: 4
                     label: Memory
+                    step: 0.001
                   path: spec.components.proxy.resources.limits.memory
                   uiType: number
                   validation:
-                    max: 10
-                    min: 1
+                    min: 0.512
+                    required: true
               groupType: line
               uiType: group
             shards:
               fieldParams:
                 defaultValue: 1
                 label: Nº of shards
-                required: true
-              path: spec.sharding.shards
+              path: spec.topology.config.shards
               uiType: number
+              validation:
+                int: true
+                min: 1
+                modes:
+                  edit:
+                    celExpressions:
+                      - celExpr: spec.topology.config.shards >= original.spec.topology.config.shards
+                        message: Number of shards cannot be decreased
+                required: true
           componentsOrder:
             - shards
             - numberOfnodes
@@ -322,7 +385,7 @@ spec:
             - numberOfRouters
             - routersResources
             - numberOfConfigServers
-          description: Some description about resources
+          description: Configure the resources your new database will have access to.
           label: Resources
       sectionsOrder:
         - databaseVersion

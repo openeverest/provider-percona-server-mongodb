@@ -34,6 +34,9 @@ ui:
             optionsPathConfig:
               labelPath: "version"
               valuePath: "version"
+            modes:
+              edit:
+                disabled: true
           validation:
             required: true
     resources:
@@ -56,6 +59,12 @@ ui:
                 celExpressions:
                   - celExpr: "spec.components.engine.replicas % 2 == 1"
                     message: "The number of nodes must be odd"
+                modes:
+                  edit:
+                    celExpressions:
+                      - celExpr: "!(spec.components.engine.replicas == 1 && original.spec.components.engine.replicas > 1)"
+                        message: "Cannot scale down to a single node"
+
             resources:
               uiType: group
               groupType: line
@@ -94,6 +103,14 @@ ui:
                     min: 1
                     int: true
                     required: true
+                    modes:
+                      edit:
+                        celExpressions:
+                          - celExpr: "spec.components.engine.storage.size >= original.spec.components.engine.storage.size"
+                            message: "Disk size cannot be decreased"
+          componentsOrder:
+            - numberOfnodes
+            - resources
     advanced:
       label: "Advanced configuration"
       description: "Configure advanced settings for your database"
@@ -104,17 +121,23 @@ ui:
           fieldParams:
             label: "Storage class"
             defaultValue: "local-path"
+            modes:
+              edit:
+                disabled: true
             options:
               - label: "local-path"
                 value: "local-path"
+          validation:
+            required: true
         configuration:
           uiType: text
           path: spec.components.engine.configuration
           fieldParams:
             label: "Engine configuration"
-            defaultValue: |2
+            placeholder: |2
               operationProfiling:
                 mode: slowOps
+                slowOpThresholdMs: 200
             multiline: true
             minRows: 3
             maxRows: 8
