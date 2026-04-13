@@ -136,7 +136,7 @@ spec:
                     modes:
                       edit:
                         celExpressions:
-                          - celExpr: "!(spec.components.engine.replicas == 1 && original.spec.components.engine.replicas > 1)"
+                          - celExpr: '!(spec.components.engine.replicas == 1 && original.spec.components.engine.replicas > 1)'
                             message: Cannot scale down to a single node
                     required: true
                 resources:
@@ -198,7 +198,6 @@ spec:
           components:
             configuration:
               fieldParams:
-                description: Set your database engine configuration to adjust your database system to your workload and performance needs. For configuration format and specific parameters, check your database type documentation.
                 label: Еngine parameters
                 maxRows: 8
                 minRows: 3
@@ -301,7 +300,7 @@ spec:
                 celExpressions:
                   - celExpr: spec.components.configServer.replicas % 2 == 1
                     message: The number of configuration servers must be odd
-                  - celExpr: "!(spec.components.engine.replicas > 1 && spec.components.configServer.replicas == 1)"
+                  - celExpr: '!(spec.components.engine.replicas > 1 && spec.components.configServer.replicas == 1)'
                     message: The number of configuration servers cannot be 1 if the number of database nodes is greater than 1
                 int: true
                 max: 7
@@ -328,7 +327,7 @@ spec:
                 modes:
                   edit:
                     celExpressions:
-                      - celExpr: "!(spec.components.engine.replicas == 1 && original.spec.components.engine.replicas > 1)"
+                      - celExpr: '!(spec.components.engine.replicas == 1 && original.spec.components.engine.replicas > 1)'
                         message: Cannot scale down to a single node
                 required: true
             routersResources:

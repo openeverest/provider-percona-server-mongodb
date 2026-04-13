@@ -196,7 +196,6 @@ ui:
           path: spec.components.engine.configuration
           fieldParams:
             label: "Еngine parameters"
-            description: "Set your database engine configuration to adjust your database system to your workload and performance needs. For configuration format and specific parameters, check your database type documentation."
             placeholder: |2
               operationProfiling:
                 mode: slowOps
