@@ -131,9 +131,9 @@ func configureMonitoring(
 		return nil, fmt.Errorf("get provider spec: %w", err)
 	}
 
-	u, err := url.Parse(mc.Spec.PMM.URL)
+	u, err := url.Parse(mc.Spec.URL)
 	if err != nil {
-		return nil, fmt.Errorf("parse PMM URL %q: %w", mc.Spec.PMM.URL, err)
+		return nil, fmt.Errorf("parse PMM URL %q: %w", mc.Spec.URL, err)
 	}
 
 	// Copy the PMM API key from the MonitoringConfig credentials secret
