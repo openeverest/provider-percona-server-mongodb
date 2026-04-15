@@ -145,7 +145,7 @@ spec:
                       fieldParams:
                         defaultValue: 1
                         label: CPU
-                        step: 0.1
+                        step: 1
                       path: spec.components.engine.resources.limits.cpu
                       uiType: number
                       validation:
@@ -174,7 +174,7 @@ spec:
                         badgeToApi: true
                         defaultValue: 4
                         label: Memory
-                        step: 0.001
+                        step: 0.1
                       path: spec.components.engine.resources.limits.memory
                       uiType: number
                       validation:
@@ -253,7 +253,7 @@ spec:
                   fieldParams:
                     defaultValue: 1
                     label: CPU
-                    step: 0.1
+                    step: 1
                   path: spec.components.engine.resources.limits.cpu
                   uiType: number
                   validation:
@@ -282,7 +282,7 @@ spec:
                     badgeToApi: true
                     defaultValue: 4
                     label: Memory
-                    step: 0.001
+                    step: 0.1
                   path: spec.components.engine.resources.limits.memory
                   uiType: number
                   validation:
@@ -312,6 +312,15 @@ spec:
                 label: Number of routers
               path: spec.components.proxy.replicas
               uiType: number
+              validation:
+                celExpressions:
+                  - celExpr: spec.components.proxy.replicas % 2 == 1
+                    message: The number of routers must be odd
+                  - celExpr: 'spec.components.engine.replicas > 1 ? spec.components.proxy.replicas > 1 : true'
+                    message: Number of routers must be more than 1 if number of nodes is greater than 1
+                int: true
+                min: 1
+                required: true
             numberOfnodes:
               fieldParams:
                 defaultValue: 3
@@ -336,23 +345,23 @@ spec:
                   fieldParams:
                     defaultValue: 1
                     label: CPU
-                    step: 0.1
+                    step: 1
                   path: spec.components.proxy.resources.limits.cpu
                   uiType: number
                   validation:
-                    min: 0.6
+                    min: 0
                     required: true
                 memory:
                   fieldParams:
                     badge: Gi
                     badgeToApi: true
-                    defaultValue: 4
+                    defaultValue: 2
                     label: Memory
-                    step: 0.001
+                    step: 0.1
                   path: spec.components.proxy.resources.limits.memory
                   uiType: number
                   validation:
-                    min: 0.512
+                    min: 0
                     required: true
               groupType: line
               uiType: group
