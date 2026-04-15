@@ -27,7 +27,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	corev1alpha1 "github.com/openeverest/openeverest/v2/api/core/v1alpha1"
-	monitoringv1alpha1 "github.com/openeverest/openeverest/v2/api/monitoring/v1alpha1"
+	monitoringv1alpha2 "github.com/openeverest/openeverest/v2/api/monitoring/v1alpha2"
 	"github.com/openeverest/openeverest/v2/provider-runtime/controller"
 
 	"github.com/openeverest/provider-percona-server-mongodb/internal/common"
@@ -268,7 +268,7 @@ func NewPSMDBProviderInterface() *PSMDBProvider {
 		ProviderName: "percona-server-mongodb",
 		SchemeFuncs: []func(*runtime.Scheme) error{
 			psmdbv1.SchemeBuilder.AddToScheme,
-			monitoringv1alpha1.SchemeBuilder.AddToScheme,
+			monitoringv1alpha2.SchemeBuilder.AddToScheme,
 		},
 		WatchConfigs: []controller.WatchConfig{
 			// Watch owned PSMDB resources - only trigger on spec changes
@@ -277,7 +277,7 @@ func NewPSMDBProviderInterface() *PSMDBProvider {
 			// we need to be notified when the status changes so we can
 			// update the Instance status.
 			controller.WatchOwned(&psmdbv1.PerconaServerMongoDB{}),
-			controller.WatchExternal(&monitoringv1alpha1.MonitoringConfig{},
+			controller.WatchExternal(&monitoringv1alpha2.MonitoringConfig{},
 				handler.EnqueueRequestsFromMapFunc(enqueueMonitoringConfig(p)),
 				monitoringConfigPredicate(),
 			),
@@ -323,7 +323,7 @@ func (p *PSMDBProvider) FieldIndexes() []controller.FieldIndex {
 			Extractor: extractMonitoringConfigName,
 		},
 		{
-			Object:    &monitoringv1alpha1.MonitoringConfig{},
+			Object:    &monitoringv1alpha2.MonitoringConfig{},
 			FieldPath: credentialsSecretPath,
 			Extractor: extractMonitoringConfigSecretName,
 		},
