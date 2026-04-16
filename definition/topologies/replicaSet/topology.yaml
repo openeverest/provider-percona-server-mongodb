@@ -31,6 +31,9 @@ ui:
             optionsPathConfig:
               labelPath: "name"
               valuePath: "name"
+            modes:
+              edit:
+                disabled: true
           validation:
             required: true
     resources:
@@ -53,6 +56,12 @@ ui:
                 celExpressions:
                   - celExpr: "spec.components.engine.replicas % 2 == 1"
                     message: "The number of nodes must be odd"
+                modes:
+                  edit:
+                    celExpressions:
+                      - celExpr: "!(spec.components.engine.replicas == 1 && original.spec.components.engine.replicas > 1)"
+                        message: "Cannot scale down to a single node"
+
             resources:
               uiType: group
               groupType: line
@@ -63,7 +72,7 @@ ui:
                   fieldParams:
                     label: "CPU"
                     defaultValue: 1
-                    step: 0.1
+                    step: 1
                   validation:
                     min: 0.6
                     required: true
@@ -73,7 +82,7 @@ ui:
                   fieldParams:
                     label: "Memory"
                     defaultValue: 4
-                    step: 0.001
+                    step: 0.1
                     badge: "Gi"
                     badgeToApi: true
                   validation:
@@ -91,6 +100,14 @@ ui:
                     min: 1
                     int: true
                     required: true
+                    modes:
+                      edit:
+                        celExpressions:
+                          - celExpr: "spec.components.engine.storage.size >= original.spec.components.engine.storage.size"
+                            message: "Disk size cannot be decreased"
+          componentsOrder:
+            - numberOfnodes
+            - resources
     advanced:
       label: "Advanced configuration"
       description: "Configure advanced settings for your database"
@@ -101,17 +118,23 @@ ui:
           fieldParams:
             label: "Storage class"
             defaultValue: "local-path"
+            modes:
+              edit:
+                disabled: true
             options:
               - label: "local-path"
                 value: "local-path"
+          validation:
+            required: true
         configuration:
           uiType: text
           path: spec.components.engine.configuration
           fieldParams:
-            label: "Advanced configuration"
-            defaultValues: |2
-                operationProfiling:
-                  mode: slowOps
+            label: "Engine configuration"
+            placeholder: |2
+              operationProfiling:
+                mode: slowOps
+                slowOpThresholdMs: 200
             multiline: true
             minRows: 3
             maxRows: 8
