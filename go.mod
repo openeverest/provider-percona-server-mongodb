@@ -5,7 +5,7 @@ go 1.25.5
 require (
 	github.com/AlekSi/pointer v1.2.0
 	github.com/hashicorp/go-version v1.8.0
-	github.com/openeverest/openeverest/v2 v2.0.0-20260415061558-0abb5b81d4dc
+	github.com/openeverest/openeverest/v2 v2.0.0-20260416012020-65e0e32acd5e
 	github.com/percona/percona-server-mongodb-operator v1.22.0
 	k8s.io/api v0.35.0
 	k8s.io/apimachinery v0.35.0
