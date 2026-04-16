@@ -17,7 +17,7 @@ collectors:
   #   selector: control-plane=controller-manager
   #   tail: 100
 resourceRefs:
-  - apiVersion: monitoring.openeverest.io/v1alpha1
+  - apiVersion: monitoring.openeverest.io/v1alpha2
     kind: MonitoringConfig
     name: mc-psmdb
     ref: mc
@@ -49,7 +49,7 @@ assertAll:
   # - celExpr: "vmagent.spec.remoteWrite.exists(i, i.url == 'http://localhost-mc-psmdb/victoriametrics/api/v1/write')"
   #   message: "vmagent.spec.remoteWrite does not contain url 'http://localhost-mc-psmdb/victoriametrics/api/v1/write'"
 ---
-apiVersion: monitoring.openeverest.io/v1alpha1
+apiVersion: monitoring.openeverest.io/v1alpha2
 kind: MonitoringConfig
 metadata:
   name: mc-psmdb
@@ -57,8 +57,7 @@ spec:
   type: pmm
   credentialsSecretName: mc-psmdb-secret
   verifyTLS: false
-  pmm:
-    url: http://localhost-mc-psmdb
+  url: http://localhost-mc-psmdb
 # status:
 #   inUse: true
 ---

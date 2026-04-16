@@ -17,7 +17,7 @@ commands:
   - command: kubectl wait --for=delete in/psmdb-mc -n ${NAMESPACE}
   - command: kubectl wait --for=delete psmdb/psmdb-mc -n ${NAMESPACE}
 resourceRefs:
-  - apiVersion: monitoring.openeverest.io/v1alpha1
+  - apiVersion: monitoring.openeverest.io/v1alpha2
     kind: MonitoringConfig
     name: mc-psmdb
     ref: mc
@@ -42,7 +42,7 @@ assertAll:
   # - celExpr: "vmagent.spec.remoteWrite.exists(i, i.url == 'http://localhost-mc-psmdb-updated/victoriametrics/api/v1/write')"
   #   message: "vmagent.spec.remoteWrite does not contain url 'http://localhost-mc-psmdb-updated/victoriametrics/api/v1/write'"
 ---
-apiVersion: monitoring.openeverest.io/v1alpha1
+apiVersion: monitoring.openeverest.io/v1alpha2
 kind: MonitoringConfig
 metadata:
   name: mc-psmdb
@@ -50,8 +50,7 @@ spec:
   type: pmm
   credentialsSecretName: mc-psmdb-secret
   verifyTLS: false
-  pmm:
-    url: http://localhost-mc-psmdb-updated
+  url: http://localhost-mc-psmdb-updated
 # status:
 #   inUse: false
 ---

@@ -17,7 +17,7 @@ collectors:
   #   selector: control-plane=controller-manager
   #   tail: 100
 resourceRefs:
-  - apiVersion: monitoring.openeverest.io/v1alpha1
+  - apiVersion: monitoring.openeverest.io/v1alpha2
     kind: MonitoringConfig
     name: mc-psmdb
     ref: mc
@@ -98,7 +98,7 @@ spec:
           memory: "128Mi"
           cpu: "500m"
 ---
-apiVersion: monitoring.openeverest.io/v1alpha1
+apiVersion: monitoring.openeverest.io/v1alpha2
 kind: MonitoringConfig
 metadata:
   name: mc-psmdb
@@ -106,8 +106,7 @@ spec:
   type: pmm
   credentialsSecretName: mc-psmdb-secret
   verifyTLS: false
-  pmm:
-    url: http://localhost-mc-psmdb-updated
+  url: http://localhost-mc-psmdb-updated
 # status:
 #   inUse: false
 ---

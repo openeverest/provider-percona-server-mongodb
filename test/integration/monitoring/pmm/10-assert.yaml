@@ -17,7 +17,7 @@ collectors:
   #   selector: control-plane=controller-manager
   #   tail: 100
 resourceRefs:
-  - apiVersion: monitoring.openeverest.io/v1alpha1
+  - apiVersion: monitoring.openeverest.io/v1alpha2
     kind: MonitoringConfig
     name: mc-psmdb
     ref: mc
@@ -52,7 +52,7 @@ assertAll:
   - celExpr: "!has(psmdb.spec.pmm.resources.limits)"
     message: "psmdb.spec.pmm.resources.limits is not empty"
 ---
-apiVersion: monitoring.openeverest.io/v1alpha1
+apiVersion: monitoring.openeverest.io/v1alpha2
 kind: MonitoringConfig
 metadata:
   name: mc-psmdb
@@ -60,8 +60,7 @@ spec:
   type: pmm
   credentialsSecretName: mc-psmdb-secret
   verifyTLS: false
-  pmm:
-    url: http://localhost-mc-psmdb
+  url: http://localhost-mc-psmdb
   # status:
   #  inUse: true
 ---
