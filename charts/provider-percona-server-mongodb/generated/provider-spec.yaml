@@ -145,6 +145,7 @@ spec:
                       fieldParams:
                         defaultValue: 1
                         label: CPU
+                        payloadFormat: string
                         step: 1
                       path: spec.components.engine.resources.limits.cpu
                       uiType: number
@@ -253,6 +254,7 @@ spec:
                   fieldParams:
                     defaultValue: 1
                     label: CPU
+                    payloadFormat: string
                     step: 1
                   path: spec.components.engine.resources.limits.cpu
                   uiType: number
@@ -345,6 +347,7 @@ spec:
                   fieldParams:
                     defaultValue: 1
                     label: CPU
+                    payloadFormat: string
                     step: 1
                   path: spec.components.proxy.resources.limits.cpu
                   uiType: number

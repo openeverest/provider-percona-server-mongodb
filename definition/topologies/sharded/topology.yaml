@@ -85,6 +85,7 @@ ui:
               fieldParams:
                 label: "CPU"
                 defaultValue: 1
+                payloadFormat: "string"
                 step: 1
               validation:
                 min: 0.6
@@ -143,6 +144,7 @@ ui:
               fieldParams:
                 label: "CPU"
                 defaultValue: 1
+                payloadFormat: "string"
                 step: 1
               validation:
                 min: 0
