@@ -20,6 +20,10 @@ permissions:
 
 env:
   IMG: provider-percona-server-mongodb:ci
+  # Branch of openeverest/openeverest to build the platform from.
+  # TODO: change to v2
+  # OPENEVEREST_BRANCH: v2
+  OPENEVEREST_BRANCH: add-cr-tests
 
 jobs:
   run:
@@ -29,6 +33,13 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Checkout OpenEverest (v2)
+        uses: actions/checkout@v4
+        with:
+          repository: openeverest/openeverest
+          ref: ${{ env.OPENEVEREST_BRANCH }}
+          path: _openeverest
 
       - name: Install Kubernetes tooling
         uses: ./.github/actions/setup-k8s-tools
@@ -47,11 +58,27 @@ jobs:
       - name: Import image into k3d
         run: make load-image
 
+      - name: Build OpenEverest controller
+        working-directory: _openeverest
+        run: make build-controller
+
+      - name: Build OpenEverest controller Docker image
+        working-directory: _openeverest
+        run: make docker-build-controller
+
+      - name: Import OpenEverest controller image into k3d
+        working-directory: _openeverest
+        run: make k3d-upload-controller-image
+
       - name: Install CRDs
         run: make install-crds
 
       - name: Deploy provider
         run: make deploy-provider-ci
+
+      - name: Deploy OpenEverest controller
+        working-directory: _openeverest
+        run: make deploy-test-controller
 
       - name: Run ${{ inputs.make_target }}
         run: make ${{ inputs.make_target }}
