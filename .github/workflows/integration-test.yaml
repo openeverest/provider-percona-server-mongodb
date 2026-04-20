@@ -67,7 +67,6 @@ jobs:
         run: make docker-build-controller
 
       - name: Import OpenEverest controller image into k3d
-        working-directory: _openeverest
         run: make load-openeverest-controller-image
 
       - name: Install CRDs
