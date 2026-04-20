@@ -68,7 +68,7 @@ jobs:
 
       - name: Import OpenEverest controller image into k3d
         working-directory: _openeverest
-        run: k3d image import -c provider-psmdb-test $(EVEREST_CONTROLLER_IMG)
+        run: make load-openeverest-controller-image
 
       - name: Install CRDs
         run: make install-crds

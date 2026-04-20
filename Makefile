@@ -12,6 +12,9 @@ CONTAINER_TOOL ?= docker
 # Image URL to use all building/pushing image targets
 IMG ?= ghcr.io/openeverest/provider-percona-server-mongodb-dev:latest
 
+# Image URL for OpenEverest controller used in integration tests (must be pre-built).
+OPENEVEREST_CONTROLLER_IMG ?= ghcr.io/openeverest/openeverest-controller-dev:0.0.0
+
 # Split IMG into repository and tag for Helm values
 _IMG_REPO = $(firstword $(subst :, ,$(IMG)))
 _IMG_TAG  = $(lastword $(subst :, ,$(IMG)))
@@ -104,6 +107,10 @@ test-e2e: ## Run Playwright E2E tests against a running Everest UI (http://local
 .PHONY: load-image
 load-image: ## Import the provider image (IMG) into the k3d cluster.
 	k3d image import ${IMG} -c ${K3D_CLUSTER_NAME}
+
+.PHONY: load-openeverest-controller-image
+load-openeverest-controller-image: ## Import the OpenEverest controller image into the k3d cluster.
+	k3d image import ${OPENEVEREST_CONTROLLER_IMG} -c ${K3D_CLUSTER_NAME}
 
 .PHONY: install-crds
 install-crds: ## Install OpenEverest and PSMDB CRDs into the cluster.
