@@ -52,7 +52,7 @@ assertAll:
   #   message: "db.spec.monitoring.monitoringConfigName is not empty"
 
   - celExpr: "!has(inst.spec.components.monitoring)"
-    message: "in.spec.components.monitoring should not exist"
+    message: "inst.spec.components.monitoring should not exist"
 
   - celExpr: "!has(psmdb.spec.pmm.enabled)"
     message: "psmdb.spec.pmm.enabled is not empty"
