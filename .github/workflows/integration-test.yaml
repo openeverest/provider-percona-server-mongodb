@@ -23,7 +23,7 @@ env:
   # Branch of openeverest/openeverest to build the platform from.
   # OPENEVEREST_BRANCH: v2
   # TODO: update this back to v2 once the wait-test-deployment target is in place.
-  # OPENEVEREST_BRANCH: wait-test-deployment
+  OPENEVEREST_BRANCH: wait-test-deployment
 
 jobs:
   run:
