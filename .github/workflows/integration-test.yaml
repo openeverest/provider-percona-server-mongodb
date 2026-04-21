@@ -21,9 +21,7 @@ permissions:
 env:
   IMG: provider-percona-server-mongodb:ci
   # Branch of openeverest/openeverest to build the platform from.
-  # TODO: change to v2
-  # OPENEVEREST_BRANCH: v2
-  OPENEVEREST_BRANCH: add-cr-tests
+  OPENEVEREST_BRANCH: v2
 
 jobs:
   run:
