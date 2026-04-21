@@ -139,7 +139,11 @@ func SyncPSMDB(c *controller.Context) error {
 		psmdb.Spec.Sharding.Mongos = configureMongos(c)
 	}
 
-	psmdb.Spec.Backup = configureBackup(c)
+	backupSpec, err := buildBackupSpec(c)
+	if err != nil {
+		return err
+	}
+	psmdb.Spec.Backup = backupSpec
 
 	usersSecretName := "everest-secrets-" + c.Name()
 
