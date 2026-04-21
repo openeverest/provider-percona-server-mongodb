@@ -21,7 +21,9 @@ permissions:
 env:
   IMG: provider-percona-server-mongodb:ci
   # Branch of openeverest/openeverest to build the platform from.
-  OPENEVEREST_BRANCH: v2
+  # OPENEVEREST_BRANCH: v2
+  # TODO: update this back to v2 once the wait-test-deployment target is in place.
+  # OPENEVEREST_BRANCH: wait-test-deployment
 
 jobs:
   run:
@@ -77,8 +79,9 @@ jobs:
         working-directory: _openeverest
         run: make deploy-test-controller
 
-      - name: Wait for OpenEverest controller to be available
-        run: kubectl wait --for=condition=available --timeout=60s deploy/openeverest-controller-manager -n openeverest-system
+      - name: Wait for OpenEverest deployment to be ready
+        working-directory: _openeverest
+        run: make wait-test-deployment
 
       - name: Run ${{ inputs.make_target }}
         run: make ${{ inputs.make_target }}
