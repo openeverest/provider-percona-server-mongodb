@@ -50,8 +50,7 @@ const (
 
 // resolveMonitoringConfig looks up the MonitoringConfig referenced by the
 // instance's monitoring component custom spec. It returns nil without error when
-// the monitoring component is absent, the monitoringConfigName is not set, or
-// the monitoringConfigName is explicitly empty (monitoring disabled).
+// the monitoring component is absent.
 func resolveMonitoringConfig(c *controller.Context) (*monitoringv1alpha2.MonitoringConfig, error) {
 	monitoring, ok := c.Instance().Spec.Components[common.ComponentMonitoring]
 	if !ok {
@@ -64,7 +63,7 @@ func resolveMonitoringConfig(c *controller.Context) (*monitoringv1alpha2.Monitor
 	}
 
 	if customSpec.MonitoringConfigName == nil || *customSpec.MonitoringConfigName == "" {
-		return nil, nil
+		return nil, fmt.Errorf("monitoringConfigName is required when monitoring component is set")
 	}
 
 	mc := &monitoringv1alpha2.MonitoringConfig{}
@@ -75,41 +74,18 @@ func resolveMonitoringConfig(c *controller.Context) (*monitoringv1alpha2.Monitor
 	return mc, nil
 }
 
-// isMonitoringDisabled checks whether monitoring has been explicitly disabled
-// by setting the monitoringConfigName to an empty string.
-func isMonitoringDisabled(c *controller.Context) bool {
-	monitoring, ok := c.Instance().Spec.Components[common.ComponentMonitoring]
-	if !ok {
-		return false
-	}
-
-	var customSpec components.PMMCustomSpec
-	if !c.TryDecodeComponentCustomSpec(monitoring, &customSpec) {
-		return false
-	}
-
-	return customSpec.MonitoringConfigName != nil && *customSpec.MonitoringConfigName == ""
-}
-
 // configureMonitoring builds the PMMSpec for the PSMDB resource based on the
 // instance's monitoring component configuration. The reconciliation handles:
 //
-//  1. Monitoring explicitly disabled (empty monitoringConfigName): returns a
-//     PMMSpec with Enabled=false to turn off PMM.
-//  2. Monitoring not configured (component absent or name not set): returns nil,
-//     leaving PMM at its default disabled state.
-//  3. Monitoring enabled: resolves the MonitoringConfig, copies the PMM API key
-//     to the users secret, and returns a fully configured PMMSpec with resource
-//     requirements calculated from the engine memory size.
+//  1. Monitoring not configured (component absent) returns disabled PMMSpec.
+//  2. Monitoring enabled: resolves the MonitoringConfig, copies the PMM API key
+//     to the users secret, and returns a configured PMMSpec with resource
+//     requirements calculated from the engine memory size. Resources are
+//     never preserved from a previous PMM configuration.
 func configureMonitoring(
 	c *controller.Context,
 	usersSecretName string,
 ) (*psmdbv1.PMMSpec, error) {
-	// Monitoring explicitly disabled: ensure PMM is turned off.
-	if isMonitoringDisabled(c) {
-		return &psmdbv1.PMMSpec{Enabled: false}, nil
-	}
-
 	// Resolve the referenced MonitoringConfig. Returns nil if monitoring
 	// is not configured (component absent or monitoringConfigName not set).
 	mc, err := resolveMonitoringConfig(c)
@@ -118,7 +94,7 @@ func configureMonitoring(
 	}
 
 	if mc == nil {
-		return nil, nil
+		return &psmdbv1.PMMSpec{Enabled: false}, nil
 	}
 
 	spec, err := c.ProviderSpec()

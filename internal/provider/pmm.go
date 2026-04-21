@@ -136,66 +136,30 @@ func getPMMResources(
 // If a resource is specified in both, the value from requested is used.
 // If a resource is only specified in one, that value is used.
 func mergeResources(requested, calculated corev1.ResourceRequirements) corev1.ResourceRequirements {
-	resources := corev1.ResourceRequirements{
-		Requests: corev1.ResourceList{},
-		Limits:   corev1.ResourceList{},
-	}
+	resources := corev1.ResourceRequirements{}
 
-	// CPU Requests
-	if hasRequestsCPU(requested) {
-		resources.Requests[corev1.ResourceCPU] = *requested.Requests.Cpu()
-	} else if hasRequestsCPU(calculated) {
-		resources.Requests[corev1.ResourceCPU] = *calculated.Requests.Cpu()
-	}
-
-	// Memory Requests
-	if hasRequestsMemory(requested) {
-		resources.Requests[corev1.ResourceMemory] = *requested.Requests.Memory()
-	} else if hasRequestsMemory(calculated) {
-		resources.Requests[corev1.ResourceMemory] = *calculated.Requests.Memory()
-	}
-
-	// CPU Limits
-	if hasLimitsCPU(requested) {
-		resources.Limits[corev1.ResourceCPU] = *requested.Limits.Cpu()
-	} else if hasLimitsCPU(calculated) {
-		resources.Limits[corev1.ResourceCPU] = *calculated.Limits.Cpu()
-	}
-
-	// Memory Limits
-	if hasLimitsMemory(requested) {
-		resources.Limits[corev1.ResourceMemory] = *requested.Limits.Memory()
-	} else if hasLimitsMemory(calculated) {
-		resources.Limits[corev1.ResourceMemory] = *calculated.Limits.Memory()
-	}
+	resources.Requests = mergeResourceList(requested.Requests, calculated.Requests)
+	resources.Limits = mergeResourceList(requested.Limits, calculated.Limits)
 
 	return resources
 }
 
-// hasRequestsCPU checks if the given resources has non-zero CPU requests.
-func hasRequestsCPU(resources corev1.ResourceRequirements) bool {
-	return resources.Requests != nil &&
-		resources.Requests.Cpu() != nil &&
-		!resources.Requests.Cpu().IsZero()
-}
+// mergeResourceList merges two resource lists, preferring values from requested.
+// Returns nil if the merged result is empty.
+func mergeResourceList(requested, calculated corev1.ResourceList) corev1.ResourceList {
+	merged := corev1.ResourceList{}
 
-// hasRequestsMemory checks if the given resources has non-zero memory requests.
-func hasRequestsMemory(resources corev1.ResourceRequirements) bool {
-	return resources.Requests != nil &&
-		resources.Requests.Memory() != nil &&
-		!resources.Requests.Memory().IsZero()
-}
+	for _, name := range []corev1.ResourceName{corev1.ResourceCPU, corev1.ResourceMemory} {
+		if v, ok := requested[name]; ok && !v.IsZero() {
+			merged[name] = v
+		} else if v, ok := calculated[name]; ok && !v.IsZero() {
+			merged[name] = v
+		}
+	}
 
-// hasLimitsCPU checks if the given resources has non-zero CPU limits.
-func hasLimitsCPU(resources corev1.ResourceRequirements) bool {
-	return resources.Limits != nil &&
-		resources.Limits.Cpu() != nil &&
-		!resources.Limits.Cpu().IsZero()
-}
+	if len(merged) == 0 {
+		return nil
+	}
 
-// hasLimitsMemory checks if the given resources has non-zero memory limits.
-func hasLimitsMemory(resources corev1.ResourceRequirements) bool {
-	return resources.Limits != nil &&
-		resources.Limits.Memory() != nil &&
-		!resources.Limits.Memory().IsZero()
+	return merged
 }
