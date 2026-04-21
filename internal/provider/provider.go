@@ -143,16 +143,7 @@ func SyncPSMDB(c *controller.Context) error {
 
 	usersSecretName := "everest-secrets-" + c.Name()
 
-	// Fetch the current PSMDB from the cluster to inform monitoring resource
-	// calculations. The current spec is nil when the resource doesn't exist yet
-	// (first reconciliation for a new instance).
-	var currentSpec *psmdbv1.PerconaServerMongoDBSpec
-	currentPSMDB := &psmdbv1.PerconaServerMongoDB{}
-	if err := c.Get(currentPSMDB, c.Name()); err == nil {
-		currentSpec = &currentPSMDB.Spec
-	}
-
-	pmmSpec, err := configureMonitoring(c, currentSpec, usersSecretName)
+	pmmSpec, err := configureMonitoring(c, usersSecretName)
 	if err != nil {
 		return err
 	}

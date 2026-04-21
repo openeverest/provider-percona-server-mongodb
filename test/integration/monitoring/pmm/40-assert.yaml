@@ -28,7 +28,7 @@ resourceRefs:
   - apiVersion: core.openeverest.io/v1alpha1
     kind: Instance
     name: psmdb-mc
-    ref: in
+    ref: inst
   - apiVersion: psmdb.percona.com/v1
     kind: PerconaServerMongoDB
     name: psmdb-mc
@@ -50,6 +50,9 @@ assertAll:
 
   # - celExpr: "!has(db.spec.monitoring.monitoringConfigName)"
   #   message: "db.spec.monitoring.monitoringConfigName is not empty"
+
+  - celExpr: "!has(inst.spec.components.monitoring)"
+    message: "in.spec.components.monitoring should not exist"
 
   - celExpr: "!has(psmdb.spec.pmm.enabled)"
     message: "psmdb.spec.pmm.enabled is not empty"
@@ -87,16 +90,6 @@ apiVersion: core.openeverest.io/v1alpha1
 kind: Instance
 metadata:
   name: psmdb-mc
-spec:
-  components:
-    monitoring:
-      resources:
-        requests:
-          memory: "64Mi"
-          cpu: "250m"
-        limits:
-          memory: "128Mi"
-          cpu: "500m"
 ---
 apiVersion: monitoring.openeverest.io/v1alpha2
 kind: MonitoringConfig

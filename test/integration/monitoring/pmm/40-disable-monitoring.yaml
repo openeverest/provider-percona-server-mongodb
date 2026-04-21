@@ -17,5 +17,3 @@ metadata:
 spec:
   components:
     monitoring:
-      customSpec:
-        monitoringConfigName:

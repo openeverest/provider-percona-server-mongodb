@@ -100,14 +100,9 @@ func isMonitoringDisabled(c *controller.Context) bool {
 //     leaving PMM at its default disabled state.
 //  3. Monitoring enabled: resolves the MonitoringConfig, copies the PMM API key
 //     to the users secret, and returns a fully configured PMMSpec with resource
-//     requirements calculated from the current cluster state.
-//
-// The currentSpec parameter should be the PSMDB spec currently running in the
-// cluster (nil if the resource does not exist yet). It is used to calculate
-// appropriate PMM resource requirements based on the cluster's current state.
+//     requirements calculated from the engine memory size.
 func configureMonitoring(
 	c *controller.Context,
-	currentSpec *psmdbv1.PerconaServerMongoDBSpec,
 	usersSecretName string,
 ) (*psmdbv1.PMMSpec, error) {
 	// Monitoring explicitly disabled: ensure PMM is turned off.
@@ -146,7 +141,7 @@ func configureMonitoring(
 		Enabled:    true,
 		ServerHost: u.Host,
 		Image:      controller.GetDefaultImageForComponent(spec, common.ComponentMonitoring),
-		Resources:  getPMMResources(c, currentSpec),
+		Resources:  getPMMResources(c),
 	}, nil
 }
 

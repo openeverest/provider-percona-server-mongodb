@@ -15,7 +15,6 @@
 package provider
 
 import (
-	psmdbv1 "github.com/percona/percona-server-mongodb-operator/pkg/apis/psmdb/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 
@@ -98,18 +97,13 @@ var (
 
 // getPMMResources returns the PMM resource requirements for the instance.
 //
-// The calculation depends on the cluster lifecycle state:
-//
-//  1. New instance (currentSpec is nil): calculate defaults from engine memory
-//     size, merged with any user-specified overrides from the monitoring component.
-//  2. Existing instance, engine size category changed: recalculate defaults from
-//     the new engine memory size, merged with any user overrides.
-//  3. Existing instance, PMM was already enabled: preserve current PMM resources,
-//     merged with any user overrides (allows resource tuning without resizing).
-//  4. Existing instance, PMM was not enabled before: same as new instance.
+// Default resources are calculated from the engine memory size tier (small,
+// medium, or large) and then merged with any user-specified overrides from the
+// monitoring component. User-provided values always take precedence over the
+// calculated defaults. Resources are never preserved from a previous monitoring
+// configuration; they are always freshly calculated on each reconciliation.
 func getPMMResources(
 	c *controller.Context,
-	currentSpec *psmdbv1.PerconaServerMongoDBSpec,
 ) corev1.ResourceRequirements {
 	monitoring := c.Instance().Spec.Components[common.ComponentMonitoring]
 
@@ -124,62 +118,18 @@ func getPMMResources(
 		engineMemoryLimits = engine.Resources.Limits[corev1.ResourceMemory]
 	}
 
-	defaultResources := calculatePMMResources(engineMemoryLimits)
+	var defaultResources corev1.ResourceRequirements
 
-	// New instance: no existing PSMDB to compare against.
-	if currentSpec == nil {
-		return mergeResources(requested, defaultResources)
-	}
-
-	// Find the primary replset to compare engine size categories.
-	var currentReplSet psmdbv1.ReplsetSpec
-	for _, replset := range currentSpec.Replsets {
-		if replset.Name == rsName(0) {
-			currentReplSet = *replset
-			break
-		}
-	}
-
-	// Engine size category changed: recalculate PMM resources for the new tier.
-	if !equalSize(engineMemoryLimits, *currentReplSet.Resources.Requests.Memory()) {
-		return mergeResources(requested, defaultResources)
-	}
-
-	// PMM was already enabled: preserve current resources, allowing user overrides.
-	if currentSpec.PMM.Enabled {
-		return mergeResources(requested, currentSpec.PMM.Resources)
-	}
-
-	// PMM is being enabled for the first time on an existing instance.
-	return mergeResources(requested, defaultResources)
-}
-
-// equalSize checks if two memory sizes fall into the same predefined size category.
-func equalSize(a, b resource.Quantity) bool {
 	switch {
-	case a.Cmp(memoryLargeSize) >= 0:
-		// a is large size -> b must be large size
-		return b.Cmp(memoryLargeSize) >= 0
-	case a.Cmp(memoryMediumSize) >= 0:
-		// a is medium size -> b must be medium size
-		return b.Cmp(memoryMediumSize) >= 0 && b.Cmp(memoryLargeSize) == -1
+	case engineMemoryLimits.Cmp(memoryLargeSize) >= 0:
+		defaultResources = pmmResourcesLarge
+	case engineMemoryLimits.Cmp(memoryMediumSize) >= 0:
+		defaultResources = pmmResourcesMedium
 	default:
-		// a is small size -> b must be small size (less than medium)
-		return b.Cmp(memoryMediumSize) == -1
-	}
-}
-
-// calculatePMMResources returns the resources for PMM based on memory size.
-func calculatePMMResources(m resource.Quantity) corev1.ResourceRequirements {
-	if m.Cmp(memoryLargeSize) >= 0 {
-		return pmmResourcesLarge
+		defaultResources = pmmResourcesSmall
 	}
 
-	if m.Cmp(memoryMediumSize) >= 0 {
-		return pmmResourcesMedium
-	}
-
-	return pmmResourcesSmall
+	return mergeResources(requested, defaultResources)
 }
 
 // mergeResources merges requested and calculated resources.
