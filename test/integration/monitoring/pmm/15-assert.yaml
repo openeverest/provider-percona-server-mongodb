@@ -26,4 +26,3 @@ spec:
     image: percona/pmm-client:2.44.1
   secrets:
     users: everest-secrets-psmdb-mc
-
