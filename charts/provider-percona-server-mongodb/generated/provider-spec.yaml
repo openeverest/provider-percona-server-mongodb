@@ -26,9 +26,11 @@ spec:
           version: 8.0.12-4
     pmm:
       versions:
-        - default: true
-          image: percona/pmm-client:2.44.1
+        - image: percona/pmm-client:2.44.1
           version: 2.44.1
+        - default: true
+          image: percona/pmm-client:3.7.0
+          version: 3.7.0
   components:
     backupAgent:
       type: backup
@@ -398,7 +400,7 @@ spec:
         backupAgent: 2.11.0
         configServer: 8.0.12-4
         engine: 8.0.12-4
-        monitoring: 2.44.1
+        monitoring: 3.7.0
         proxy: 8.0.12-4
       default: true
       name: 8.0.12
@@ -406,34 +408,34 @@ spec:
         backupAgent: 2.11.0
         configServer: 8.0.8-3
         engine: 8.0.8-3
-        monitoring: 2.44.1
+        monitoring: 3.7.0
         proxy: 8.0.8-3
       name: 8.0.8
     - components:
         backupAgent: 2.11.0
         configServer: 8.0.4-1
         engine: 8.0.4-1
-        monitoring: 2.44.1
+        monitoring: 3.7.0
         proxy: 8.0.4-1
       name: 8.0.4
     - components:
         backupAgent: 2.11.0
         configServer: 7.0.18-11
         engine: 7.0.18-11
-        monitoring: 2.44.1
+        monitoring: 3.7.0
         proxy: 7.0.18-11
       name: 7.0.18
     - components:
         backupAgent: 2.11.0
         configServer: 6.0.21-18
         engine: 6.0.21-18
-        monitoring: 2.44.1
+        monitoring: 3.7.0
         proxy: 6.0.21-18
       name: 6.0.21
     - components:
         backupAgent: 2.11.0
         configServer: 6.0.19-16
         engine: 6.0.19-16
-        monitoring: 2.44.1
+        monitoring: 3.7.0
         proxy: 6.0.19-16
       name: 6.0.19

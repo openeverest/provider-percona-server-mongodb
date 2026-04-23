@@ -1,0 +1,13 @@
+apiVersion: kuttl.dev/v1
+kind: TestStep
+timeout: 10
+---
+apiVersion: core.openeverest.io/v1alpha1
+kind: Instance
+metadata:
+  name: psmdb-mc
+spec:
+  components:
+    monitoring:
+      type: pmm
+      version: 2.44.1
