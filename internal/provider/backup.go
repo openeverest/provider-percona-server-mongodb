@@ -15,6 +15,7 @@
 package provider
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/AlekSi/pointer"
@@ -37,6 +38,14 @@ const (
 	// psmdbDeleteBackupFinalizer is the PSMDB operator finalizer
 	// that protects S3 storage during backup deletion.
 	psmdbDeleteBackupFinalizer = "percona.com/delete-backup"
+
+	// psmdbBackupAncestorLabel is the label key that PSMDB stamps on
+	// PerconaServerMongoDBBackup objects produced by a scheduled task. The
+	// value is the BackupTaskSpec.Name. Backups created on demand (no task)
+	// do not carry this label. Mirrors `naming.LabelBackupAncestor` in the
+	// PSMDB operator (kept as a string constant here to avoid pulling in the
+	// operator's internal naming package).
+	psmdbBackupAncestorLabel = "percona.com/backup-ancestor"
 )
 
 // =============================================================================
@@ -120,6 +129,53 @@ func buildPSMDBTasks(schedules []corev1alpha1.InstanceBackupSchedule) []psmdbv1.
 		out = append(out, task)
 	}
 	return out
+}
+
+// Mirror implements controller.BackupMirror. The runtime invokes Mirror once
+// per PerconaServerMongoDBBackup event; returning a non-nil Backup causes the
+// runtime to create it (idempotently). For on-demand backups (no task
+// annotation) and for operator backups whose parent Instance is missing or
+// owned by a different provider, Mirror returns nil to skip.
+func (p *PSMDBProvider) Mirror(ctx context.Context, c client.Client, obj client.Object) (*backupv1alpha1.Backup, error) {
+	ub, ok := obj.(*psmdbv1.PerconaServerMongoDBBackup)
+	if !ok {
+		return nil, nil
+	}
+	taskName := ub.Labels[psmdbBackupAncestorLabel]
+	if taskName == "" {
+		// On-demand backups originate from a Backup CR; no mirroring needed.
+		return nil, nil
+	}
+	instance := &corev1alpha1.Instance{}
+	if err := c.Get(ctx, client.ObjectKey{Namespace: ub.Namespace, Name: ub.Spec.ClusterName}, instance); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get parent Instance %q: %w", ub.Spec.ClusterName, err)
+	}
+	if instance.Spec.Provider != p.Name() {
+		return nil, nil
+	}
+	if instance.Spec.Backup == nil || instance.Spec.Backup.ClassRef.Name == "" {
+		return nil, nil
+	}
+	return &backupv1alpha1.Backup{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      ub.Name,
+			Namespace: ub.Namespace,
+		},
+		Spec: backupv1alpha1.BackupSpec{
+			InstanceName:    ub.Spec.ClusterName,
+			BackupClassName: instance.Spec.Backup.ClassRef.Name,
+			StorageName:     ub.Spec.StorageName,
+			ScheduleName:    taskName,
+		},
+	}, nil
+}
+
+// OperatorBackupType implements controller.BackupMirror.
+func (p *PSMDBProvider) OperatorBackupType() client.Object {
+	return &psmdbv1.PerconaServerMongoDBBackup{}
 }
 
 // buildPSMDBStorages resolves each storage entry on the Instance into a
