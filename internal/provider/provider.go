@@ -348,8 +348,17 @@ func (p *PSMDBProvider) BackupWatches() []controller.WatchConfig {
 	}
 }
 
+// RestoreWatches mirrors BackupWatches for PerconaServerMongoDBRestore.
+func (p *PSMDBProvider) RestoreWatches() []controller.WatchConfig {
+	return []controller.WatchConfig{
+		controller.WatchOwned(&psmdbv1.PerconaServerMongoDBRestore{}),
+	}
+}
+
 // Compile-time interface checks
 var _ controller.ProviderInterface = (*PSMDBProvider)(nil)
 var _ controller.WatchProvider = (*PSMDBProvider)(nil)
 var _ controller.FieldIndexProvider = (*PSMDBProvider)(nil)
+var _ controller.BackupProvider = (*PSMDBProvider)(nil)
 var _ controller.BackupWatcher = (*PSMDBProvider)(nil)
+var _ controller.RestoreWatcher = (*PSMDBProvider)(nil)

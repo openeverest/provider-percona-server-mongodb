@@ -47,6 +47,7 @@ rules:
   - backup.openeverest.io
   resources:
   - backups
+  - restores
   verbs:
   - get
   - list
@@ -57,6 +58,7 @@ rules:
   - backup.openeverest.io
   resources:
   - backups/status
+  - restores/status
   verbs:
   - get
   - patch
