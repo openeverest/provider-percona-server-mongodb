@@ -22,11 +22,21 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
+	backupv1alpha1 "github.com/openeverest/openeverest/v2/api/backup/v1alpha1"
 	corev1alpha1 "github.com/openeverest/openeverest/v2/api/core/v1alpha1"
 	"github.com/openeverest/openeverest/v2/provider-runtime/controller"
 
 	"github.com/openeverest/provider-percona-server-mongodb/internal/common"
+)
+
+const (
+	// psmdbDeleteBackupFinalizer is the PSMDB operator finalizer
+	// that protects S3 storage during backup deletion.
+	psmdbDeleteBackupFinalizer = "percona.com/delete-backup"
 )
 
 // =============================================================================
@@ -153,4 +163,113 @@ func buildPSMDBStorages(
 		}
 	}
 	return out, nil
+}
+
+// SyncBackup creates or updates a PerconaServerMongoDBBackup that references
+// the operator-registered storage matching backup.spec.storageName, then maps
+// operator status into the BackupExecutionStatus the runtime expects.
+func (p *PSMDBProvider) SyncBackup(c *controller.Context, backup *backupv1alpha1.Backup) (controller.BackupExecutionStatus, error) {
+	psmdb := &psmdbv1.PerconaServerMongoDB{}
+	if err := c.Get(psmdb, c.Name()); err != nil {
+		if apierrors.IsNotFound(err) {
+			return controller.BackupExecutionStatus{
+				State:   backupv1alpha1.BackupStatePending,
+				Message: "Waiting for PerconaServerMongoDB cluster to exist",
+			}, nil
+		}
+		return controller.BackupExecutionStatus{}, fmt.Errorf("get PSMDB: %w", err)
+	}
+
+	// The storage name on the PSMDB cluster matches the logical storage name on the
+	// Instance and on the Backup CR. Reject up-front if the user pointed at a
+	// storage the cluster doesn't know about.
+	if _, ok := psmdb.Spec.Backup.Storages[backup.Spec.StorageName]; !ok {
+		return controller.BackupExecutionStatus{
+			State:   backupv1alpha1.BackupStatePending,
+			Message: fmt.Sprintf("Waiting for storage %q to be registered on PSMDB cluster", backup.Spec.StorageName),
+		}, nil
+	}
+
+	psmdbBackup := &psmdbv1.PerconaServerMongoDBBackup{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      backup.Name,
+			Namespace: backup.Namespace,
+		},
+	}
+
+	if _, err := controllerutil.CreateOrUpdate(c.Context(), c.Client(), psmdbBackup, func() error {
+		psmdbBackup.Spec.ClusterName = c.Name()
+		psmdbBackup.Spec.StorageName = backup.Spec.StorageName
+		controllerutil.AddFinalizer(psmdbBackup, psmdbDeleteBackupFinalizer)
+		return controllerutil.SetControllerReference(backup, psmdbBackup, c.Client().Scheme())
+	}); err != nil {
+		return controller.BackupExecutionStatus{}, fmt.Errorf("create or update PSMDB backup: %w", err)
+	}
+
+	exec := controller.BackupExecutionStatus{
+		OperatorBackupRef: &corev1.TypedLocalObjectReference{
+			APIGroup: pointer.ToString(psmdbv1.SchemeGroupVersion.Group),
+			Kind:     "PerconaServerMongoDBBackup",
+			Name:     psmdbBackup.Name,
+		},
+	}
+	switch psmdbBackup.Status.State {
+	case psmdbv1.BackupStateReady:
+		exec.State = backupv1alpha1.BackupStateSucceeded
+		now := metav1.Now()
+		exec.CompletedAt = &now
+	case psmdbv1.BackupStateError:
+		exec.State = backupv1alpha1.BackupStateFailed
+		exec.Message = psmdbBackup.Status.Error
+	case psmdbv1.BackupStateRequested, psmdbv1.BackupStateRunning, psmdbv1.BackupStateWaiting:
+		exec.State = backupv1alpha1.BackupStateRunning
+	default:
+		exec.State = backupv1alpha1.BackupStatePending
+	}
+	return exec, nil
+}
+
+// CleanupBackup removes the operator PerconaServerMongoDBBackup, honoring the
+// Backup's DeletionPolicy:
+//
+//   - Delete (default): leave the percona.com/delete-backup finalizer in
+//     place and issue a Delete on the PerconaServerMongoDBBackup. The PSMDB
+//     operator will run PBM's delete-backup against the storage to purge
+//     the underlying object, then release its own finalizer.
+//   - Retain: strip the percona.com/delete-backup finalizer first so PSMDB
+//     does NOT touch the storage, then delete the CR. The S3 object is
+//     left in place for out-of-band recovery or manual cleanup.
+//
+// In both cases CleanupBackup returns done=true only once the
+// PerconaServerMongoDBBackup has fully gone away.
+func (p *PSMDBProvider) CleanupBackup(c *controller.Context, backup *backupv1alpha1.Backup) (bool, error) {
+	psmdbBackup := &psmdbv1.PerconaServerMongoDBBackup{}
+	err := c.Get(psmdbBackup, backup.Name)
+	if apierrors.IsNotFound(err) {
+		return true, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("get PSMDB backup for cleanup: %w", err)
+	}
+
+	if backup.Spec.DeletionPolicy == backupv1alpha1.BackupDeletionPolicyRetain {
+		// Strip the storage-protection finalizer BEFORE deletion so the
+		// PSMDB operator skips its delete-backup hook and the underlying
+		// S3 object is preserved.
+		if controllerutil.RemoveFinalizer(psmdbBackup, psmdbDeleteBackupFinalizer) {
+			if err := c.Client().Update(c.Context(), psmdbBackup); err != nil {
+				return false, fmt.Errorf("remove finalizer from PSMDB backup: %w", err)
+			}
+		}
+	}
+
+	if psmdbBackup.DeletionTimestamp.IsZero() {
+		if err := c.Delete(psmdbBackup); err != nil {
+			return false, fmt.Errorf("delete PSMDB backup: %w", err)
+		}
+	}
+	// For the Delete path, requeue until PSMDB has run its delete-backup
+	// finalizer and the CR is gone. For the Retain path, the CR will
+	// disappear as soon as our finalizer-strip update commits.
+	return false, nil
 }

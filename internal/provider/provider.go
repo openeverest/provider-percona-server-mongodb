@@ -334,7 +334,22 @@ func (p *PSMDBProvider) FieldIndexes() []controller.FieldIndex {
 	}
 }
 
+// BackupWatches implements controller.BackupWatcher. The runtime's Backup
+// reconciler watches PerconaServerMongoDBBackup CRs as owned resources so
+// operator status changes are routed directly to the parent Backup CR via
+// owner-reference based enqueue (1:1, no Instance fan-out). SyncBackup sets
+// the controller reference from Backup -> PerconaServerMongoDBBackup, so
+// owner-based enqueue applies to every adopted backup. Operator-emitted
+// scheduled backups are still routed through the Instance reconciler (where
+// they get mirrored into Backup CRs) until the next SyncBackup adopts them.
+func (p *PSMDBProvider) BackupWatches() []controller.WatchConfig {
+	return []controller.WatchConfig{
+		controller.WatchOwned(&psmdbv1.PerconaServerMongoDBBackup{}),
+	}
+}
+
 // Compile-time interface checks
 var _ controller.ProviderInterface = (*PSMDBProvider)(nil)
 var _ controller.WatchProvider = (*PSMDBProvider)(nil)
 var _ controller.FieldIndexProvider = (*PSMDBProvider)(nil)
+var _ controller.BackupWatcher = (*PSMDBProvider)(nil)
