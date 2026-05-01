@@ -30,6 +30,7 @@ import (
 	monitoringv1alpha2 "github.com/openeverest/openeverest/v2/api/monitoring/v1alpha2"
 	"github.com/openeverest/openeverest/v2/provider-runtime/controller"
 
+	templatev1alpha1 "github.com/openeverest/provider-percona-server-mongodb/api/v1alpha1"
 	"github.com/openeverest/provider-percona-server-mongodb/internal/common"
 )
 
@@ -133,6 +134,14 @@ func SyncPSMDB(c *controller.Context) error {
 	psmdb.Spec.ImagePullPolicy = corev1.PullIfNotPresent
 
 	psmdb.Spec.Replsets = configureReplsets(c)
+
+	// Apply split horizon DNS configuration from template or instance.
+	sh, err := resolveSplitHorizon(c)
+	if err != nil {
+		return fmt.Errorf("resolve split horizon: %w", err)
+	}
+	applySplitHorizon(psmdb.Spec.Replsets, sh)
+
 	if c.Instance().Spec.Topology != nil && c.Instance().Spec.Topology.Type == "sharded" {
 		psmdb.Spec.Sharding.Enabled = true
 		psmdb.Spec.Sharding.ConfigsvrReplSet = configureConfigServerReplset(c)
@@ -269,6 +278,7 @@ func NewPSMDBProviderInterface() *PSMDBProvider {
 		SchemeFuncs: []func(*runtime.Scheme) error{
 			psmdbv1.SchemeBuilder.AddToScheme,
 			monitoringv1alpha2.SchemeBuilder.AddToScheme,
+			templatev1alpha1.AddToScheme,
 		},
 		WatchConfigs: []controller.WatchConfig{
 			// Watch owned PSMDB resources - only trigger on spec changes
@@ -280,6 +290,11 @@ func NewPSMDBProviderInterface() *PSMDBProvider {
 			controller.WatchExternal(&monitoringv1alpha2.MonitoringConfig{},
 				handler.EnqueueRequestsFromMapFunc(enqueueMonitoringConfig(p)),
 				monitoringConfigPredicate(),
+			),
+			// Watch InstanceTemplate resources - trigger reconcile for referencing Instances
+			controller.WatchExternal(&templatev1alpha1.InstanceTemplate{},
+				handler.EnqueueRequestsFromMapFunc(enqueueTemplate(p)),
+				templatePredicate(),
 			),
 			// Watch secrets referenced by MonitoringConfig resources
 			// TODO: Can this watch removed? After all, MontoringConfig owns this secret.
@@ -317,6 +332,11 @@ func (p *PSMDBProvider) Cleanup(c *controller.Context) error {
 // It registers indexes used by watchers.
 func (p *PSMDBProvider) FieldIndexes() []controller.FieldIndex {
 	return []controller.FieldIndex{
+		{
+			Object:    &corev1alpha1.Instance{},
+			FieldPath: templateNamePath,
+			Extractor: extractTemplateName,
+		},
 		{
 			Object:    &corev1alpha1.Instance{},
 			FieldPath: monitoringConfigPath,

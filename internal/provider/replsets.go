@@ -24,6 +24,7 @@ import (
 	corev1alpha1 "github.com/openeverest/openeverest/v2/api/core/v1alpha1"
 	"github.com/openeverest/openeverest/v2/provider-runtime/controller"
 
+	templatev1alpha1 "github.com/openeverest/provider-percona-server-mongodb/api/v1alpha1"
 	"github.com/openeverest/provider-percona-server-mongodb/definition/topologies/sharded"
 	"github.com/openeverest/provider-percona-server-mongodb/internal/common"
 )
@@ -134,4 +135,24 @@ func configureConfigServerReplset(c *controller.Context) *psmdbv1.ReplsetSpec {
 	// TODO: check if this is okay. It adds the configuration, expose.type,
 	// name, podDisruptionBudget that we didn't have in the everest operator
 	return configureReplset("configsvr", cfgSrv.Replicas, cfgSrv.Resources, cfgSrv.Storage, false)
+}
+
+// applySplitHorizon sets the split horizon DNS configuration on all replsets.
+// It generates horizon entries based on the baseDomainNameSuffix for each
+// pod in each replset: <pod-name>.<baseDomainNameSuffix>
+func applySplitHorizon(replsets []*psmdbv1.ReplsetSpec, sh *templatev1alpha1.SplitHorizonSpec) {
+	if sh == nil || sh.BaseDomainNameSuffix == "" {
+		return
+	}
+
+	for _, rs := range replsets {
+		horizons := make(psmdbv1.HorizonsSpec)
+		for i := int32(0); i < rs.Size; i++ {
+			podName := fmt.Sprintf("%s-%d", rs.Name, i)
+			horizons[podName] = map[string]string{
+				"external": fmt.Sprintf("%s.%s", podName, sh.BaseDomainNameSuffix),
+			}
+		}
+		rs.Horizons = horizons
+	}
 }

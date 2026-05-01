@@ -81,6 +81,22 @@
     - list
     - watch
 - apiGroups:
+    - psmdb.openeverest.io
+  resources:
+    - psmdbtemplates
+  verbs:
+    - get
+    - list
+    - watch
+- apiGroups:
+    - psmdb.openeverest.io
+  resources:
+    - psmdbtemplates/status
+  verbs:
+    - get
+    - patch
+    - update
+- apiGroups:
     - psmdb.percona.com
   resources:
     - perconaservermongodbbackups

@@ -31,6 +31,8 @@ spec:
         - default: true
           image: percona/pmm-client:3.7.0
           version: 3.7.0
+    splitHorizon:
+      versions: []
   components:
     backupAgent:
       type: backup
@@ -42,6 +44,8 @@ spec:
       type: pmm
     proxy:
       type: mongod
+    splitHorizon:
+      type: splitHorizon
   topologies:
     replicaSet:
       components:
@@ -49,6 +53,8 @@ spec:
           optional: true
         engine: {}
         monitoring:
+          optional: true
+        splitHorizon:
           optional: true
     sharded:
       components:
@@ -59,6 +65,8 @@ spec:
         monitoring:
           optional: true
         proxy: {}
+        splitHorizon:
+          optional: true
       configSchema:
         properties:
           numShards:
@@ -199,10 +207,30 @@ spec:
               uiType: group
           description: Configure the resources your new database will have access to.
           label: Resources
+        splitHorizon:
+          components:
+            baseDomainNameSuffix:
+              fieldParams:
+                label: Base Domain Name Suffix
+                placeholder: mycompany.com
+              path: spec.components.splitHorizon.customSpec.baseDomainNameSuffix
+              uiType: text
+            tlsSecretName:
+              fieldParams:
+                label: TLS Secret Name
+                placeholder: shdc-secret
+              path: spec.components.splitHorizon.customSpec.tlsSecretName
+              uiType: text
+          componentsOrder:
+            - baseDomainNameSuffix
+            - tlsSecretName
+          description: Configure split horizon DNS for external access to replica set members.
+          label: Split Horizon DNS
       sectionsOrder:
         - databaseVersion
         - resources
         - monitoring
+        - splitHorizon
         - advanced
     sharded:
       sections:
@@ -410,10 +438,30 @@ spec:
             - numberOfConfigServers
           description: Configure the resources your new database will have access to.
           label: Resources
+        splitHorizon:
+          components:
+            baseDomainNameSuffix:
+              fieldParams:
+                label: Base Domain Name Suffix
+                placeholder: mycompany.com
+              path: spec.components.splitHorizon.customSpec.baseDomainNameSuffix
+              uiType: text
+            tlsSecretName:
+              fieldParams:
+                label: TLS Secret Name
+                placeholder: shdc-secret
+              path: spec.components.splitHorizon.customSpec.tlsSecretName
+              uiType: text
+          componentsOrder:
+            - baseDomainNameSuffix
+            - tlsSecretName
+          description: Configure split horizon DNS for external access to replica set members.
+          label: Split Horizon DNS
       sectionsOrder:
         - databaseVersion
         - resources
         - monitoring
+        - splitHorizon
         - advanced
   versions:
     - components:

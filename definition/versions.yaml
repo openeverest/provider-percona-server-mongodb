@@ -32,6 +32,8 @@ componentTypes:
     - version: "3.7.0"
       image: percona/pmm-client:3.7.0
       default: true
+  splitHorizon:
+    versions: []
 
 # Version bundles — curated sets of component versions known to work together.
 # Users set spec.version on an Instance to select a bundle.

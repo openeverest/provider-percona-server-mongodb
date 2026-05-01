@@ -43,6 +43,12 @@ package provider
 // +kubebuilder:rbac:groups=monitoring.openeverest.io,resources=monitoringconfigs,verbs=get;list;watch
 
 // =============================================================================
+// PSMDB TEMPLATE RESOURCES
+// =============================================================================
+// +kubebuilder:rbac:groups=psmdb.openeverest.io,resources=instancetemplates,verbs=get;list;watch
+// +kubebuilder:rbac:groups=psmdb.openeverest.io,resources=instancetemplates/status,verbs=get;update;patch
+
+// =============================================================================
 // CORE KUBERNETES RESOURCES
 // =============================================================================
 // +kubebuilder:rbac:groups="",resources=secrets;configmaps;services,verbs=get;list;watch;create;update;patch;delete
