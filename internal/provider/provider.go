@@ -94,12 +94,18 @@ func ValidatePSMDB(c *controller.Context) error {
 	l := log.FromContext(c.Context())
 	l.Info("Validating PSMDB cluster", "cluster", c.Name())
 
+	if err := validateTopology(c); err != nil {
+		return fmt.Errorf("topology validation failed: %w", err)
+	}
+
+	if err := validateComponents(c); err != nil {
+		return fmt.Errorf("component validation failed: %w", err)
+	}
+
 	if err := validateMonitoring(c); err != nil {
 		return fmt.Errorf("monitoring validation failed: %w", err)
 	}
 
-	// TODO: Add actual validation logic
-	// Example: Check for required components, validate storage sizes, etc.
 	return nil
 }
 

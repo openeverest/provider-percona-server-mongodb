@@ -135,3 +135,87 @@ func configureConfigServerReplset(c *controller.Context) *psmdbv1.ReplsetSpec {
 	// name, podDisruptionBudget that we didn't have in the everest operator
 	return configureReplset("configsvr", cfgSrv.Replicas, cfgSrv.Resources, cfgSrv.Storage, false)
 }
+
+// validateTopology validates the topology field of the Instance spec.
+func validateTopology(c *controller.Context) error {
+	spec := c.Instance().Spec
+
+	if spec.Topology == nil {
+		return fmt.Errorf("topology is required")
+	}
+
+	switch spec.Topology.Type {
+	case "replicaset", "sharded":
+		// valid
+	default:
+		return fmt.Errorf("unsupported topology type %q: must be one of replicaset, sharded", spec.Topology.Type)
+	}
+
+	return nil
+}
+
+// validateComponents validates the component specs based on the topology.
+func validateComponents(c *controller.Context) error {
+	spec := c.Instance().Spec
+
+	// engine is required for all topologies
+	engine, ok := spec.Components[common.ComponentEngine]
+	if !ok {
+		return fmt.Errorf("engine component is required")
+	}
+
+	if err := validateReplicas("engine", engine.Replicas, 1, true); err != nil {
+		return err
+	}
+
+	if spec.Topology.Type == "sharded" {
+		if err := validateShardedComponents(c); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// validateShardedComponents validates components required for sharded topology.
+func validateShardedComponents(c *controller.Context) error {
+	spec := c.Instance().Spec
+
+	proxy, ok := spec.Components[common.ComponentProxy]
+	if !ok {
+		return fmt.Errorf("proxy component is required for sharded topology")
+	}
+	if err := validateReplicas("proxy", proxy.Replicas, 1, false); err != nil {
+		return err
+	}
+
+	cfgSrv, ok := spec.Components[common.ComponentConfigServer]
+	if !ok {
+		return fmt.Errorf("configServer component is required for sharded topology")
+	}
+	// config server must be odd and >= 3 (MongoDB requirement)
+	if err := validateReplicas("configServer", cfgSrv.Replicas, 3, true); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// validateReplicas validates the replicas field for a component.
+// mustBeOdd enforces MongoDB quorum requirement.
+// min is the minimum allowed value.
+func validateReplicas(component string, replicas *int32, min int32, mustBeOdd bool) error {
+	if replicas == nil {
+		return nil
+	}
+
+	if *replicas < min {
+		return fmt.Errorf("%s replicas must be at least %d, got %d", component, min, *replicas)
+	}
+
+	if mustBeOdd && *replicas%2 == 0 {
+		return fmt.Errorf("%s replicas must be odd for MongoDB quorum, got %d", component, *replicas)
+	}
+
+	return nil
+}
