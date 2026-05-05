@@ -92,41 +92,64 @@ func buildBackupSpec(c *controller.Context) (psmdbv1.BackupSpec, error) {
 			Message: err.Error(),
 		}
 	}
+	pitrEnabled, err := resolvePSMDBPITR(backupCfg.Storages)
+	if err != nil {
+		return psmdbv1.BackupSpec{}, &controller.BackupConfigError{
+			Reason:  "PITRConfigInvalid",
+			Message: err.Error(),
+		}
+	}
 	bs.Enabled = true
 	bs.Storages = storages
-	bs.Tasks = buildPSMDBTasks(backupCfg.Schedules)
-	bs.PITR.Enabled = backupCfg.PITR != nil && backupCfg.PITR.Enabled
+	bs.Tasks = buildPSMDBTasks(backupCfg.Storages)
+	bs.PITR.Enabled = pitrEnabled
 	return bs, nil
+}
+
+// resolvePSMDBPITR returns true when exactly one storage has PITR enabled.
+// PSMDB only supports a single PITR stream per cluster, so configuring more
+// than one PITR-enabled storage is rejected as a configuration error.
+func resolvePSMDBPITR(storages []corev1alpha1.InstanceBackupStorage) (bool, error) {
+	var enabled []string
+	for _, s := range storages {
+		if s.PITR != nil && s.PITR.Enabled {
+			enabled = append(enabled, s.Name)
+		}
+	}
+	if len(enabled) > 1 {
+		return false, fmt.Errorf("PSMDB supports at most one PITR-enabled storage, got %d: %v", len(enabled), enabled)
+	}
+	return len(enabled) == 1, nil
 }
 
 // =============================================================================
 // BACKUPPROVIDER — runtime hooks for ProviderManaged BackupClasses
 // =============================================================================
 
-// buildPSMDBTasks translates the Instance's schedule list into the PSMDB
-// operator's BackupTaskSpec list. Disabled schedules are still recorded
-// (the operator honors the Enabled flag) so that toggling a schedule off
-// does not lose its definition. Retention=0 means "keep all".
-func buildPSMDBTasks(schedules []corev1alpha1.InstanceBackupSchedule) []psmdbv1.BackupTaskSpec {
-	if len(schedules) == 0 {
-		return nil
-	}
-	out := make([]psmdbv1.BackupTaskSpec, 0, len(schedules))
-	for _, s := range schedules {
-		task := psmdbv1.BackupTaskSpec{
-			Name:        s.Name,
-			Enabled:     s.Enabled,
-			Schedule:    s.Cron,
-			StorageName: s.StorageName,
-		}
-		if s.RetentionCopies > 0 {
-			task.Retention = &psmdbv1.BackupTaskSpecRetention{
-				Type:              psmdbv1.BackupTaskSpecRetentionTypeCount,
-				Count:             int(s.RetentionCopies),
-				DeleteFromStorage: true,
+// buildPSMDBTasks flattens the per-storage schedule lists into the PSMDB
+// operator's BackupTaskSpec list. Each task's StorageName is taken from the
+// parent storage entry. Disabled schedules are still recorded (the operator
+// honors the Enabled flag) so that toggling a schedule off does not lose its
+// definition. Retention=0 means "keep all".
+func buildPSMDBTasks(storages []corev1alpha1.InstanceBackupStorage) []psmdbv1.BackupTaskSpec {
+	var out []psmdbv1.BackupTaskSpec
+	for _, st := range storages {
+		for _, s := range st.Schedules {
+			task := psmdbv1.BackupTaskSpec{
+				Name:        s.Name,
+				Enabled:     s.Enabled,
+				Schedule:    s.Cron,
+				StorageName: st.Name,
 			}
+			if s.RetentionCopies > 0 {
+				task.Retention = &psmdbv1.BackupTaskSpecRetention{
+					Type:              psmdbv1.BackupTaskSpecRetentionTypeCount,
+					Count:             int(s.RetentionCopies),
+					DeleteFromStorage: true,
+				}
+			}
+			out = append(out, task)
 		}
-		out = append(out, task)
 	}
 	return out
 }
