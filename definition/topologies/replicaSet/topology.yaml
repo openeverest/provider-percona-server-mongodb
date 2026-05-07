@@ -108,6 +108,17 @@ ui:
           componentsOrder:
             - numberOfnodes
             - resources
+    monitoring:
+      label: "Monitoring"
+      description: "Monitor the health of your database to detect issues quickly and improve its performance."
+      components:
+        monitoring:
+          uiType: select
+          path: spec.components.monitoring.customSpec.monitoringConfigName
+          fieldParams:
+            label: "Monitoring endpoint"
+          dataSource:
+            provider: monitoringConfigs
     advanced:
       label: "Advanced configuration"
       description: "Configure advanced settings for your database"
@@ -117,15 +128,13 @@ ui:
           path: spec.components.engine.storage.storageClass
           fieldParams:
             label: "Storage class"
-            defaultValue: "local-path"
             modes:
               edit:
                 disabled: true
-            options:
-              - label: "local-path"
-                value: "local-path"
           validation:
             required: true
+          dataSource:
+            provider: storageClasses
         configuration:
           uiType: text
           path: spec.components.engine.configuration
@@ -144,4 +153,5 @@ ui:
   sectionsOrder:
     - databaseVersion
     - resources
+    - monitoring
     - advanced

@@ -80,8 +80,8 @@ func resolveMonitoringConfig(c *controller.Context) (*monitoringv1alpha2.Monitor
 //  1. Monitoring not configured (component absent) returns disabled PMMSpec.
 //  2. Monitoring enabled: resolves the MonitoringConfig, copies the PMM API key
 //     to the users secret, and returns a configured PMMSpec with resource
-//     requirements calculated from the engine memory size. Resources are
-//     never preserved from a previous PMM configuration.
+//     requirements calculated from the engine and requested resources.
+//     Resources are never preserved from a previous PMM configuration.
 func configureMonitoring(
 	c *controller.Context,
 	usersSecretName string,
@@ -113,10 +113,17 @@ func configureMonitoring(
 		return nil, fmt.Errorf("copy PMM API key to users secret: %w", err)
 	}
 
+	pmmImage := controller.GetDefaultImageForComponent(spec, common.ComponentMonitoring)
+
+	monitoring := c.Instance().Spec.Components[common.ComponentMonitoring]
+	if monitoring.Version != "" {
+		pmmImage = controller.GetImageForVersion(spec, common.ComponentMonitoring, monitoring.Version)
+	}
+
 	return &psmdbv1.PMMSpec{
 		Enabled:    true,
 		ServerHost: u.Host,
-		Image:      controller.GetDefaultImageForComponent(spec, common.ComponentMonitoring),
+		Image:      pmmImage,
 		Resources:  getPMMResources(c),
 	}, nil
 }
@@ -149,8 +156,8 @@ func copySecretData(c *controller.Context, source, dest, sourceKey, destKey stri
 	return c.Apply(destSecret)
 }
 
-// validateMonitoring validates that the PMM client image version is compatible
-// with the PMM server version. The major versions must match.
+// validateMonitoring validates that an explicitly set PMM client version exists
+// in the provider spec and is compatible with the PMM server's major version.
 // See: https://docs.percona.com/percona-operator-for-mongodb/monitoring-tutorial.html#considerations
 func validateMonitoring(c *controller.Context) error {
 	mc, err := resolveMonitoringConfig(c)
@@ -168,6 +175,20 @@ func validateMonitoring(c *controller.Context) error {
 	}
 
 	monitoring := c.Instance().Spec.Components[common.ComponentMonitoring]
+
+	// version is not configured, nothing to validate
+	if monitoring.Version == "" {
+		return nil
+	}
+
+	spec, err := c.ProviderSpec()
+	if err != nil {
+		return fmt.Errorf("get provider spec: %w", err)
+	}
+
+	if controller.GetImageForVersion(spec, common.ComponentMonitoring, monitoring.Version) == "" {
+		return fmt.Errorf("monitoring version %q not found in provider spec", monitoring.Version)
+	}
 
 	serverVersion, err := goversion.NewVersion(string(mc.Status.PMMServerVersion))
 	if err != nil {

@@ -1,0 +1,28 @@
+apiVersion: kuttl.dev/v1
+kind: TestAssert
+timeout: 30
+collectors:
+  - command: kubectl get in/psmdb-mc -n ${NAMESPACE} -o yaml
+  - command: kubectl get psmdb/psmdb-mc -n ${NAMESPACE} -o yaml
+---
+apiVersion: core.openeverest.io/v1alpha1
+kind: Instance
+metadata:
+  name: psmdb-mc
+spec:
+  components:
+    monitoring:
+      type: pmm
+      version: 2.44.1
+---
+apiVersion: psmdb.percona.com/v1
+kind: PerconaServerMongoDB
+metadata:
+  name: psmdb-mc
+spec:
+  pmm:
+    enabled: true
+    serverHost: localhost-mc-psmdb
+    image: percona/pmm-client:2.44.1
+  secrets:
+    users: everest-secrets-psmdb-mc

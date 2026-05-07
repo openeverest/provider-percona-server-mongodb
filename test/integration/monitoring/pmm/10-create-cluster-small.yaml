@@ -23,7 +23,6 @@ spec:
       replicas: 1
     monitoring:
       type: pmm
-      version: 2.44.1
       customSpec:
         monitoringConfigName: mc-psmdb
 # ---
