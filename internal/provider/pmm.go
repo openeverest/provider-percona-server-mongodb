@@ -132,27 +132,27 @@ func getPMMResources(
 	return mergeResources(requested, defaultResources)
 }
 
-// mergeResources merges requested and calculated resources.
+// mergeResources merges requested and default resources.
 // If a resource is specified in both, the value from requested is used.
 // If a resource is only specified in one, that value is used.
-func mergeResources(requested, calculated corev1.ResourceRequirements) corev1.ResourceRequirements {
+func mergeResources(requested, defaultResources corev1.ResourceRequirements) corev1.ResourceRequirements {
 	resources := corev1.ResourceRequirements{}
 
-	resources.Requests = mergeResourceList(requested.Requests, calculated.Requests)
-	resources.Limits = mergeResourceList(requested.Limits, calculated.Limits)
+	resources.Requests = mergeResourceList(requested.Requests, defaultResources.Requests)
+	resources.Limits = mergeResourceList(requested.Limits, defaultResources.Limits)
 
 	return resources
 }
 
 // mergeResourceList merges two resource lists, preferring values from requested.
 // Returns nil if the merged result is empty.
-func mergeResourceList(requested, calculated corev1.ResourceList) corev1.ResourceList {
+func mergeResourceList(requested, defaultResources corev1.ResourceList) corev1.ResourceList {
 	merged := corev1.ResourceList{}
 
 	for _, name := range []corev1.ResourceName{corev1.ResourceCPU, corev1.ResourceMemory} {
 		if v, ok := requested[name]; ok && !v.IsZero() {
 			merged[name] = v
-		} else if v, ok := calculated[name]; ok && !v.IsZero() {
+		} else if v, ok := defaultResources[name]; ok && !v.IsZero() {
 			merged[name] = v
 		}
 	}
