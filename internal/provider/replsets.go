@@ -24,6 +24,8 @@ import (
 	corev1alpha1 "github.com/openeverest/openeverest/v2/api/core/v1alpha1"
 	"github.com/openeverest/openeverest/v2/provider-runtime/controller"
 
+	"github.com/openeverest/provider-percona-server-mongodb/definition"
+	"github.com/openeverest/provider-percona-server-mongodb/definition/components"
 	"github.com/openeverest/provider-percona-server-mongodb/definition/topologies/sharded"
 	"github.com/openeverest/provider-percona-server-mongodb/internal/common"
 )
@@ -134,4 +136,52 @@ func configureConfigServerReplset(c *controller.Context) *psmdbv1.ReplsetSpec {
 	// TODO: check if this is okay. It adds the configuration, expose.type,
 	// name, podDisruptionBudget that we didn't have in the everest operator
 	return configureReplset("configsvr", cfgSrv.Replicas, cfgSrv.Resources, cfgSrv.Storage, false)
+}
+
+// applySplitHorizon reads the dnsConfig component's CustomSpec from the
+// Instance and applies horizon DNS entries to the first replset.
+// Each pod gets a horizon entry using the pattern:
+//
+//	<dbName>-<rsName>-<i>-<namespace>.<domain>
+//
+// Split horizon is only supported for replicaset topologies.
+// Returns the TLS secret name to set on the PSMDB spec, or empty string if not applicable.
+func applySplitHorizon(c *controller.Context, replsets []*psmdbv1.ReplsetSpec) string {
+	// Split horizon DNS is not applicable to sharded clusters.
+	if c.Instance().Spec.Topology != nil && c.Instance().Spec.Topology.Type != string(definition.TopologyTypeReplicaSet) {
+		return ""
+	}
+
+	splitHorizon, ok := c.Instance().Spec.Components[common.ComponentDnsConfig]
+	if !ok {
+		return ""
+	}
+
+	var spec components.SplitHorizonCustomSpec
+	if !c.TryDecodeComponentCustomSpec(splitHorizon, &spec) {
+		return ""
+	}
+
+	if spec.Domain == "" {
+		return ""
+	}
+
+	if len(replsets) == 0 {
+		return ""
+	}
+
+	in := c.Instance()
+	rs := replsets[0]
+
+	horizons := make(psmdbv1.HorizonsSpec)
+	for i := int32(0); i < rs.Size; i++ {
+		podName := fmt.Sprintf("%s-%s-%d", in.GetName(), rs.Name, i)
+		horizons[podName] = map[string]string{
+			"external": fmt.Sprintf("%s-%s.%s", podName, in.GetNamespace(), spec.Domain),
+		}
+	}
+
+	rs.Horizons = horizons
+
+	return spec.TLSSecretName
 }

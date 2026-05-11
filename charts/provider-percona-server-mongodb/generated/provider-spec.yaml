@@ -31,11 +31,15 @@ spec:
         - default: true
           image: percona/pmm-client:3.7.0
           version: 3.7.0
+    splitHorizon:
+      versions: []
   components:
     backupAgent:
       type: backup
     configServer:
       type: mongod
+    dnsConfig:
+      type: splitHorizon
     engine:
       type: mongod
     monitoring:
@@ -46,6 +50,8 @@ spec:
     replicaSet:
       components:
         backupAgent:
+          optional: true
+        dnsConfig:
           optional: true
         engine: {}
         monitoring:

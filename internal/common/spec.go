@@ -24,6 +24,7 @@ const (
 	ComponentProxy        = "proxy"
 	ComponentBackupAgent  = "backupAgent"
 	ComponentMonitoring   = "monitoring"
+	ComponentDnsConfig    = "dnsConfig"
 
 	ComponentTypeMongod = "mongod"
 	ComponentTypeBackup = "backup"

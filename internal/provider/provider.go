@@ -133,6 +133,10 @@ func SyncPSMDB(c *controller.Context) error {
 	psmdb.Spec.ImagePullPolicy = corev1.PullIfNotPresent
 
 	psmdb.Spec.Replsets = configureReplsets(c)
+
+	// Apply split horizon DNS configuration if the dnsConfig component is set.
+	splitHorizonSSL := applySplitHorizon(c, psmdb.Spec.Replsets)
+
 	if c.Instance().Spec.Topology != nil && c.Instance().Spec.Topology.Type == "sharded" {
 		psmdb.Spec.Sharding.Enabled = true
 		psmdb.Spec.Sharding.ConfigsvrReplSet = configureConfigServerReplset(c)
@@ -168,6 +172,9 @@ func SyncPSMDB(c *controller.Context) error {
 		Users:         usersSecretName,
 		EncryptionKey: c.Name() + "-mongodb-encryption-key",
 		SSLInternal:   c.Name() + "-ssl-internal",
+	}
+	if splitHorizonSSL != "" {
+		psmdb.Spec.Secrets.SSL = splitHorizonSSL
 	}
 
 	if err := c.Apply(psmdb); err != nil {

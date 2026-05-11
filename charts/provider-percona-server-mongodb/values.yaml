@@ -102,6 +102,22 @@ provider:
   # -- The name to register for the Provider custom resource
   name: percona-server-mongodb
 
+# -- Split Horizon DNS defaults.
+# These values are injected into the Provider CR uiSchema as defaultValues.
+# Users can override them per instance via the UI.
+splitHorizon:
+  # -- Default base domain for split horizon DNS
+  domain: ""
+  tls:
+    # -- Name of a pre-existing TLS Secret (type kubernetes.io/tls) for split horizon DNS.
+    # If caCert and caKey are provided, this is auto-set and the chart creates the Secret.
+    secretName: ""
+    # -- PEM-encoded CA certificate for split horizon TLS.
+    # Use --set-file splitHorizon.tls.caCert=path/to/ca.crt
+    caCert: ""
+    # -- PEM-encoded CA private key for split horizon TLS.
+    # Use --set-file splitHorizon.tls.caKey=path/to/ca.key
+    caKey: ""
 # -- Additional environment variables to set on the provider container
 extraEnv: []
 # - name: MY_VAR

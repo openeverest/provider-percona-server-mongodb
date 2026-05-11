@@ -40,3 +40,17 @@ type PMMCustomSpec struct {
 
 // BackupCustomSpec defines custom configuration for backup agents.
 type BackupCustomSpec struct{}
+
+// SplitHorizonCustomSpec defines custom configuration for split horizon DNS.
+// When configured, the provider generates horizon DNS entries for each pod
+// using the pattern: <dbName>-<rsName>-<i>-<namespace>.<domain>
+type SplitHorizonCustomSpec struct {
+	// Domain is the base domain appended to generate horizon DNS entries.
+	// Example: "mycompany.com"
+	Domain string `json:"domain,omitempty"`
+
+	// TLSSecretName is the name of an existing Kubernetes Secret containing TLS certificates
+	// for split horizon DNS. The Secret must be of type kubernetes.io/tls and exist
+	// in the same namespace as the Instance.
+	TLSSecretName string `json:"tlsSecretName,omitempty"`
+}

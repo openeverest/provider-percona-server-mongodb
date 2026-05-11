@@ -13,6 +13,11 @@ config:
       optional: true
     monitoring:
       optional: true
+    dnsConfig:
+      optional: true
+      defaults:
+        domain: '{{ .Values.splitHorizon.domain }}'
+        tlsSecretName: '{{ .Values.splitHorizon.tls.secretName }}'
 
 # UI schema: rendering hints for the frontend form.
 # Paths reference fields in the Instance CR spec.
