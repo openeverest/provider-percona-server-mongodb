@@ -21,6 +21,7 @@ metadata:
 spec:
   components:
     monitoring:
+      version: 2.44.1
       resources:
         requests:
           memory: 335Mi
