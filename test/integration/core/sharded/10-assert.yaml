@@ -110,7 +110,7 @@ spec:
         oplogSpanMin: 0
         timeouts:
           startingStatus: 120
-    enabled: true
+    enabled: false
     pitr: {}
     resources:
       limits:
