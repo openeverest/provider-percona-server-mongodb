@@ -15,16 +15,20 @@
 package provider
 
 import (
+	"context"
 	"fmt"
 
 	psmdbv1 "github.com/percona/percona-server-mongodb-operator/pkg/apis/psmdb/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	corev1alpha1 "github.com/openeverest/openeverest/v2/api/core/v1alpha1"
 	monitoringv1alpha2 "github.com/openeverest/openeverest/v2/api/monitoring/v1alpha2"
@@ -39,6 +43,10 @@ const (
         mode: slowOp
 `
 	defaultBackupStartingTimeout = 120
+
+	// providerFieldPath is the field index path for looking up Instances
+	// by their provider name.
+	providerFieldPath = ".spec.provider"
 )
 
 var maxUnavailable = intstr.FromInt(1)
@@ -298,6 +306,11 @@ func NewPSMDBProviderInterface() *PSMDBProvider {
 				handler.EnqueueRequestsFromMapFunc(enqueueMonitoringConfigSecret(p)),
 				monitoringConfigPredicate(),
 			),
+			// Watch Provider CR so instances with useDefaults=true are
+			// re-reconciled when topology defaults change (e.g. helm upgrade).
+			controller.WatchExternal(&corev1alpha1.Provider{},
+				handler.EnqueueRequestsFromMapFunc(enqueueProviderInstances(p)),
+			),
 		},
 	}
 
@@ -330,6 +343,11 @@ func (p *PSMDBProvider) FieldIndexes() []controller.FieldIndex {
 	return []controller.FieldIndex{
 		{
 			Object:    &corev1alpha1.Instance{},
+			FieldPath: providerFieldPath,
+			Extractor: extractProviderName,
+		},
+		{
+			Object:    &corev1alpha1.Instance{},
 			FieldPath: monitoringConfigPath,
 			Extractor: extractMonitoringConfigName,
 		},
@@ -339,6 +357,55 @@ func (p *PSMDBProvider) FieldIndexes() []controller.FieldIndex {
 			Extractor: extractMonitoringConfigSecretName,
 		},
 	}
+}
+
+// enqueueProviderInstances returns a handler that enqueues all Instances
+// belonging to this provider when the Provider CR changes. This ensures
+// instances with useDefaults=true pick up new topology defaults.
+func enqueueProviderInstances(p *PSMDBProvider) func(ctx context.Context, obj client.Object) []reconcile.Request {
+	return func(ctx context.Context, obj client.Object) []reconcile.Request {
+		prov, ok := obj.(*corev1alpha1.Provider)
+		if !ok || prov.GetName() != p.Name() {
+			return nil
+		}
+
+		c := p.client
+		if c == nil {
+			return nil
+		}
+
+		instanceList := &corev1alpha1.InstanceList{}
+		listOpts := &client.ListOptions{
+			FieldSelector: fields.OneTermEqualSelector(providerFieldPath, p.Name()),
+		}
+		if err := c.List(ctx, instanceList, listOpts); err != nil {
+			return nil
+		}
+
+		requests := make([]reconcile.Request, len(instanceList.Items))
+		for i, item := range instanceList.Items {
+			requests[i] = reconcile.Request{
+				NamespacedName: types.NamespacedName{
+					Name:      item.GetName(),
+					Namespace: item.GetNamespace(),
+				},
+			}
+		}
+
+		return requests
+	}
+}
+
+// extractProviderName extracts the provider name from an Instance for field indexing.
+func extractProviderName(obj client.Object) []string {
+	in, ok := obj.(*corev1alpha1.Instance)
+	if !ok {
+		return nil
+	}
+	if in.Spec.Provider == "" {
+		return nil
+	}
+	return []string{in.Spec.Provider}
 }
 
 // BackupWatches implements controller.BackupWatcher. The runtime's Backup

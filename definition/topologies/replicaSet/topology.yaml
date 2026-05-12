@@ -16,8 +16,9 @@ config:
     dnsConfig:
       optional: true
       defaults:
-        domain: '{{ .Values.splitHorizon.domain }}'
-        tlsSecretName: '{{ .Values.splitHorizon.tls.secretName }}'
+        customSpec:
+          domain: '{{ .Values.splitHorizon.domain }}'
+          tlsSecretName: '{{ .Values.splitHorizon.tls.secretName }}'
 
 # UI schema: rendering hints for the frontend form.
 # Paths reference fields in the Instance CR spec.

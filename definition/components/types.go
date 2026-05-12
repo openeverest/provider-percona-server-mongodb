@@ -45,12 +45,21 @@ type BackupCustomSpec struct{}
 // When configured, the provider generates horizon DNS entries for each pod
 // using the pattern: <dbName>-<rsName>-<i>-<namespace>.<domain>
 type SplitHorizonCustomSpec struct {
+	// UseDefaults when true instructs the controller to read domain and
+	// tlsSecretName from the Provider CR topology defaults instead of the
+	// inline values below. This enables bulk updates — changing the Provider
+	// CR (via helm upgrade) automatically propagates to all instances that
+	// have useDefaults set to true.
+	UseDefaults bool `json:"useDefaults,omitempty"`
+
 	// Domain is the base domain appended to generate horizon DNS entries.
 	// Example: "mycompany.com"
+	// Ignored when useDefaults is true.
 	Domain string `json:"domain,omitempty"`
 
 	// TLSSecretName is the name of an existing Kubernetes Secret containing TLS certificates
 	// for split horizon DNS. The Secret must be of type kubernetes.io/tls and exist
 	// in the same namespace as the Instance.
+	// Ignored when useDefaults is true.
 	TLSSecretName string `json:"tlsSecretName,omitempty"`
 }

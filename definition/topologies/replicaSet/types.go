@@ -24,3 +24,15 @@ package replicaset
 // Currently empty — add fields here when the replica set topology needs
 // custom configuration beyond what the base Instance spec provides.
 type ReplicaSetTopologyConfig struct{}
+
+// SplitHorizonDefaults holds the default values for split horizon DNS
+// stored in the Provider CR topology component defaults.
+type SplitHorizonDefaults struct {
+	CustomSpec SplitHorizonDefaultsSpec `json:"customSpec,omitempty"`
+}
+
+// SplitHorizonDefaultsSpec holds the domain and TLS secret name defaults.
+type SplitHorizonDefaultsSpec struct {
+	Domain        string `json:"domain,omitempty"`
+	TLSSecretName string `json:"tlsSecretName,omitempty"`
+}
