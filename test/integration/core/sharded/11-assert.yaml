@@ -242,8 +242,8 @@ type: Opaque
 data:
   type: bW9uZ29kYg==
   provider: cGVyY29uYS1zZXJ2ZXItbW9uZ29kYg==
-  host: dGVzdC1wc21kYi1jbHVzdGVyLWhvc3Q=
+  host: dGVzdC1wc21kYi1jbHVzdGVyLW1vbmdvcy5kZWZhdWx0LnN2Yy5jbHVzdGVyLmxvY2FsOjI3MDE3
   port: MjcwMTc=
   username: dGVzdC11c2Vy
   password: dGVzdC1wYXNzd29yZA==
-  uri: bW9uZ29kYjovL3Rlc3QtdXNlcjp0ZXN0LXBhc3N3b3JkQHRlc3QtcHNtZGItY2x1c3Rlci1ob3N0OjI3MDE3L2FkbWluP3NzbD1mYWxzZQ==
+  uri: bW9uZ29kYjovL3Rlc3QtdXNlcjp0ZXN0LXBhc3N3b3JkQHRlc3QtcHNtZGItY2x1c3Rlci1tb25nb3MuZGVmYXVsdC5zdmMuY2x1c3Rlci5sb2NhbDoyNzAxNy9hZG1pbj9zc2w9ZmFsc2U=

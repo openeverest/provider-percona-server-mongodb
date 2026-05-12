@@ -2,7 +2,7 @@ apiVersion: kuttl.dev/v1
 kind: TestStep
 timeout: 10
 commands:
-  - command: kubectl patch psmdb/test-psmdb-cluster  --subresource status -n $NAMESPACE -p '{"status":{"state":"ready", "size":1, "ready":1, "host":"test-psmdb-cluster-host"}}' --type=merge
+  - command: kubectl patch psmdb/test-psmdb-cluster  --subresource status -n $NAMESPACE -p '{"status":{"state":"ready", "size":1, "ready":1, "host":"test-psmdb-cluster-rs0.default.svc.cluster.local"}}' --type=merge
 ---
 apiVersion: v1
 kind: Secret
