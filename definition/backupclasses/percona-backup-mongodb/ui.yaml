@@ -1,0 +1,73 @@
+# UI rendering hints for this BackupClass.
+# Inlined verbatim under spec.uiSchema in the generated manifest; treated as
+# opaque by the runtime. The shape groups fields by the modal that renders them.
+
+backup:
+  label: "Backup Configuration"
+  componentsOrder:
+    - type
+    - compressionType
+    - compressionLevel
+  components:
+    type:
+      uiType: select
+      label: "Backup Type"
+      path: type
+      required: true
+      fieldParams:
+        options:
+          - { label: "Logical", value: "logical" }
+          - { label: "Physical", value: "physical" }
+        defaultValue: "logical"
+    compressionType:
+      uiType: select
+      label: "Compression"
+      path: compressionType
+      fieldParams:
+        options:
+          - { label: "None", value: "none" }
+          - { label: "Gzip", value: "gzip" }
+          - { label: "Snappy", value: "snappy" }
+          - { label: "LZ4", value: "lz4" }
+          - { label: "Zstandard", value: "zstd" }
+        defaultValue: "snappy"
+    compressionLevel:
+      uiType: number
+      label: "Compression Level"
+      path: compressionLevel
+      fieldParams:
+        defaultValue: 6
+      validation:
+        minimum: 0
+        maximum: 22
+
+pitr:
+  label: "PITR Configuration"
+  componentsOrder:
+    - oplogSpanMin
+    - compressionType
+  components:
+    oplogSpanMin:
+      uiType: number
+      label: "Oplog Span (minutes)"
+      path: oplogSpanMin
+      tooltip: "Interval between oplog chunk boundaries"
+      fieldParams:
+        defaultValue: 10
+      validation:
+        minimum: 1
+    compressionType:
+      uiType: select
+      label: "Oplog Compression"
+      path: compressionType
+      fieldParams:
+        options:
+          - { label: "None", value: "none" }
+          - { label: "Snappy", value: "snappy" }
+          - { label: "Zstandard", value: "zstd" }
+        defaultValue: "snappy"
+
+restore:
+  label: "Restore Configuration"
+  componentsOrder: []
+  components: {}

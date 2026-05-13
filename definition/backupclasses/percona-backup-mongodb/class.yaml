@@ -1,0 +1,42 @@
+# PerconaServerMongodbOperator BackupClass definition.
+# This file is the source of truth for the generated BackupClass manifest.
+#
+# Fields:
+#   displayName/description: human-readable metadata.
+#   supportedProviders: providers this class can be used with.
+#   executionMode: "ProviderManaged" (operator-native) or "Job".
+#   providerManaged.supportsPITR: advertise PITR capability to Restore validation.
+#   providerManaged.limits: caps the runtime enforces against Instance.spec.backup.
+#     maxStorages, maxPITREnabledStorages, maxSchedulesPerStorage — unset means unlimited.
+#   providerManaged.pitrConfigSchema: Go type name (in this package) describing
+#     per-storage PITR custom config. Resolved to an OpenAPI schema at generation time.
+#   config.openAPIV3Schema / restoreConfig.openAPIV3Schema: Go type names
+#     describing backup-time and restore-time custom config respectively.
+#
+# Co-located files:
+#   ui.yaml  — free-form UI rendering hints, inlined verbatim under spec.uiSchema.
+#   types.go — Go types referenced above; OpenAPI-extracted by provider-sdk generate.
+
+displayName: "Percona Backup for MongoDB"
+description: |
+  BackupClass for the Percona Server MongoDB provider. Backups are managed
+  natively by Percona Backup for MongoDB (PBM) embedded in the PSMDB operator;
+  OpenEverest does not run any side-car Job for this class.
+supportedProviders:
+  - percona-server-mongodb
+executionMode: ProviderManaged
+
+providerManaged:
+  supportsPITR: true
+  limits:
+    # PSMDB supports only a single PITR stream per cluster. The provider also
+    # enforces this engine-specific rule defensively, but declaring it here
+    # makes the constraint visible to the UI and to other callers.
+    maxPITREnabledStorages: 1
+  pitrConfigSchema: PerconaPITRConfig
+
+config:
+  openAPIV3Schema: PerconaBackupConfig
+
+restoreConfig:
+  openAPIV3Schema: PerconaRestoreConfig
