@@ -17,5 +17,6 @@ maintainers:
   - name: OpenEverest Contributors
 dependencies:
   - name: psmdb-operator
+    alias: operator
     version: "1.21.3"
     repository: https://percona.github.io/percona-helm-charts/
