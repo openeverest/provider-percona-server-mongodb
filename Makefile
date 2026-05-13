@@ -133,7 +133,7 @@ deploy-provider-ci: ## Deploy the provider via Helm for CI (IMG must already be 
 		--set image.repository=$(_IMG_REPO) \
 		--set image.tag=$(_IMG_TAG) \
 		--set image.pullPolicy=Never \
-		--set psmdb-operator.replicaCount=0 \
+		--set operator.replicaCount=0 \
 		--wait --timeout 2m
 
 ##@ Deployment (legacy — prefer Helm targets)
