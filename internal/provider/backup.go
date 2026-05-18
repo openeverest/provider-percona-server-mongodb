@@ -201,17 +201,34 @@ func (p *PSMDBProvider) OperatorBackupType() client.Object {
 	return &psmdbv1.PerconaServerMongoDBBackup{}
 }
 
+// selectMainStorageName returns the logical name of the storage that should be
+// designated as the PBM main storage. The PITR-enabled storage is always
+// preferred because PSMDB requires PITR to write to the main storage. When no
+// storage has PITR enabled the first entry in the slice is used as the
+// fallback. An empty slice returns "".
+func selectMainStorageName(storages []corev1alpha1.InstanceBackupStorage) string {
+	for _, s := range storages {
+		if s.PITR != nil && s.PITR.Enabled {
+			return s.Name
+		}
+	}
+	if len(storages) > 0 {
+		return storages[0].Name
+	}
+	return ""
+}
+
 // buildPSMDBStorages resolves each storage entry on the Instance into a
-// psmdbv1.BackupStorageSpec keyed by the storage's logical name. The first
-// entry, or the one explicitly marked Main, is flagged as the PBM main
-// storage.
+// psmdbv1.BackupStorageSpec keyed by the storage's logical name. The main
+// storage is inferred via selectMainStorageName: the PITR-enabled storage wins;
+// the first entry is used as fallback when no storage has PITR enabled.
 func buildPSMDBStorages(
 	c *controller.Context,
 	storages []corev1alpha1.InstanceBackupStorage,
 ) (map[string]psmdbv1.BackupStorageSpec, error) {
 	out := make(map[string]psmdbv1.BackupStorageSpec, len(storages))
-	mainSet := false
-	for i, entry := range storages {
+	mainName := selectMainStorageName(storages)
+	for _, entry := range storages {
 		bs, err := c.BackupStorage(entry.StorageRef.Name)
 		if err != nil {
 			if apierrors.IsNotFound(err) {
@@ -225,13 +242,9 @@ func buildPSMDBStorages(
 			continue
 		}
 		s3 := bs.Spec.S3
-		isMain := entry.Main || (i == 0 && !mainSet)
-		if isMain {
-			mainSet = true
-		}
 		out[entry.Name] = psmdbv1.BackupStorageSpec{
 			Type: psmdbv1.BackupStorageS3,
-			Main: isMain,
+			Main: entry.Name == mainName,
 			S3: psmdbv1.BackupStorageS3Spec{
 				Bucket:                s3.Bucket,
 				Region:                s3.Region,
