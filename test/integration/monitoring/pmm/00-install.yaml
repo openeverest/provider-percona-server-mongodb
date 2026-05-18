@@ -15,7 +15,7 @@ type: Opaque
 data:
   apiKey: YWJjZGVm
 ---
-apiVersion: monitoring.openeverest.io/v1alpha2
+apiVersion: monitoring.openeverest.io/v1alpha1
 kind: MonitoringConfig
 metadata:
   name: mc-psmdb

@@ -13,7 +13,7 @@ collectors:
   #   selector: control-plane=controller-manager
   #   tail: 100
 resourceRefs:
-  - apiVersion: monitoring.openeverest.io/v1alpha2
+  - apiVersion: monitoring.openeverest.io/v1alpha1
     kind: MonitoringConfig
     name: mc-psmdb
     ref: mc
@@ -68,7 +68,7 @@ spec:
           memory: 335Mi
           cpu: 335m
 ---
-apiVersion: monitoring.openeverest.io/v1alpha2
+apiVersion: monitoring.openeverest.io/v1alpha1
 kind: MonitoringConfig
 metadata:
   name: mc-psmdb
