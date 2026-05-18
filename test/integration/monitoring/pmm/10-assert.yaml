@@ -58,9 +58,10 @@ metadata:
   name: mc-psmdb
 spec:
   type: pmm
-  credentialsSecretName: mc-psmdb-secret
-  verifyTLS: false
-  url: http://localhost-mc-psmdb
+  pmm:
+    credentialsSecretName: mc-psmdb-secret
+    verifyTLS: false
+    url: http://localhost-mc-psmdb
   # status:
   #  inUse: true
 ---
