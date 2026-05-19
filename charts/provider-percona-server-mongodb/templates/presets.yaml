@@ -1,0 +1,30 @@
+{{/*
+Renders Preset CRs from .Values.presets.
+
+The map key becomes the Preset CR metadata.name.
+Each preset entry must have:
+  - template:     the spec.template content for the Preset CR
+Optional:
+  - namespace:    target namespace (defaults to .Release.Namespace)
+*/}}
+
+{{- range $name, $preset := .Values.presets }}
+
+{{/* ---- Validation ---- */}}
+{{- if not $preset.template }}
+  {{- fail (printf "presets.%s.template is required" $name) }}
+{{- end }}
+
+{{/* ---- Render Preset CR ---- */}}
+---
+apiVersion: core.openeverest.io/v1alpha1
+kind: Preset
+metadata:
+  name: {{ $name }}
+  namespace: {{ $preset.namespace | default $.Release.Namespace }}
+  labels:
+    {{- include "provider-percona-server-mongodb.labels" $ | nindent 4 }}
+spec:
+  template:
+    {{- toYaml $preset.template | nindent 4 }}
+{{- end }}

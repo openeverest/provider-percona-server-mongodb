@@ -120,6 +120,7 @@ install-crds: ## Install OpenEverest and PSMDB CRDs into the cluster.
 	kubectl apply -f https://raw.githubusercontent.com/openeverest/openeverest/v2/config/crd/bases/backup.openeverest.io_backupclasses.yaml
 	kubectl apply -f https://raw.githubusercontent.com/openeverest/openeverest/v2/config/crd/bases/backup.openeverest.io_backups.yaml
 	kubectl apply -f https://raw.githubusercontent.com/openeverest/openeverest/v2/config/crd/bases/backup.openeverest.io_restores.yaml
+	kubectl apply -f https://raw.githubusercontent.com/openeverest/openeverest/v2/config/crd/bases/core.openeverest.io_presets.yaml
 	curl -fsSL https://raw.githubusercontent.com/percona/percona-server-mongodb-operator/v$(PSMDB_OPERATOR_VERSION)/deploy/crd.yaml \
 		| kubectl apply --server-side -f -
 
