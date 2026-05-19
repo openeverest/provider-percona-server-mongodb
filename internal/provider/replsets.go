@@ -31,7 +31,8 @@ import (
 // configureReplset configures a single replset based on the provided parameters.
 func configureReplset(name string, replicas *int32, resources *corev1.ResourceRequirements, storageSize *corev1alpha1.Storage, expose bool) *psmdbv1.ReplsetSpec {
 	rsSpec := &psmdbv1.ReplsetSpec{
-		Name:          name,
+		Name: name,
+		// TODO: set configuration
 		Configuration: psmdbv1.MongoConfiguration(psmdbDefaultConfigurationTemplate),
 		MultiAZ: psmdbv1.MultiAZ{
 			PodDisruptionBudget: &psmdbv1.PodDisruptionBudgetSpec{
@@ -45,6 +46,7 @@ func configureReplset(name string, replicas *int32, resources *corev1.ResourceRe
 		VolumeSpec: &psmdbv1.VolumeSpec{
 			PersistentVolumeClaim: psmdbv1.PVCSpec{
 				PersistentVolumeClaimSpec: &corev1.PersistentVolumeClaimSpec{
+					// TODO: set storage class
 					Resources: corev1.VolumeResourceRequirements{
 						Requests: corev1.ResourceList{
 							// TODO: set storage size
