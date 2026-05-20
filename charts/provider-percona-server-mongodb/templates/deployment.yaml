@@ -44,6 +44,9 @@ spec:
             {{- toYaml .Values.securityContext | nindent 12 }}
           image: {{ include "provider-percona-server-mongodb.image" . }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - --server-port={{ .Values.service.port }}
+            - --metrics-bind-address={{ .Values.service.metricsBindAddress }}
           ports:
             - name: http
               containerPort: {{ .Values.service.port }}
