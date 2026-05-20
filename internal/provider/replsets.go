@@ -50,10 +50,8 @@ func configureReplset(name string, replicas *int32, resources *corev1.ResourceRe
 		VolumeSpec: &psmdbv1.VolumeSpec{
 			PersistentVolumeClaim: psmdbv1.PVCSpec{
 				PersistentVolumeClaimSpec: &corev1.PersistentVolumeClaimSpec{
-					// TODO: set storage class
 					Resources: corev1.VolumeResourceRequirements{
 						Requests: corev1.ResourceList{
-							// TODO: set storage size
 							corev1.ResourceStorage: resource.MustParse("10Gi"),
 						},
 					},
@@ -94,8 +92,13 @@ func configureReplset(name string, replicas *int32, resources *corev1.ResourceRe
 		}
 	}
 
-	if storageSize != nil && !storageSize.Size.IsZero() {
-		rsSpec.VolumeSpec.PersistentVolumeClaim.Resources.Requests[corev1.ResourceStorage] = storageSize.Size
+	if storageSize != nil {
+		if !storageSize.Size.IsZero() {
+			rsSpec.VolumeSpec.PersistentVolumeClaim.Resources.Requests[corev1.ResourceStorage] = storageSize.Size
+		}
+		if storageSize.StorageClass != nil {
+			rsSpec.VolumeSpec.PersistentVolumeClaim.StorageClassName = storageSize.StorageClass
+		}
 	}
 
 	return rsSpec
