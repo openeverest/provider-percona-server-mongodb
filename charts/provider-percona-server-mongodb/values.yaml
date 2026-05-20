@@ -88,6 +88,22 @@ readinessProbe:
   initialDelaySeconds: 5
   periodSeconds: 10
 
+# -- Deployment update strategy
+strategy:
+  type: RollingUpdate
+  rollingUpdate:
+    maxUnavailable: 25%
+    maxSurge: 25%
+
+# -- Number of old ReplicaSets to retain
+revisionHistoryLimit: 1
+
+# -- Termination grace period in seconds
+terminationGracePeriodSeconds: 10
+
+# -- Topology spread constraints for pod scheduling
+topologySpreadConstraints: []
+
 # -- Node selector for pod scheduling
 nodeSelector: {}
 
