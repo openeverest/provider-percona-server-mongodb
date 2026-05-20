@@ -15,6 +15,8 @@
 package provider
 
 import (
+	"fmt"
+
 	"github.com/openeverest/openeverest/v2/provider-runtime/controller"
 	"github.com/openeverest/provider-percona-server-mongodb/internal/common"
 	psmdbv1 "github.com/percona/percona-server-mongodb-operator/pkg/apis/psmdb/v1"
@@ -22,10 +24,15 @@ import (
 )
 
 // configureMongos configures the mongos (proxy) component for sharded clusters.
-func configureMongos(c *controller.Context) *psmdbv1.MongosSpec {
+func configureMongos(c *controller.Context) (*psmdbv1.MongosSpec, error) {
 	in := c.Instance()
 	spec := in.Spec
 	proxy := spec.Components[common.ComponentProxy]
+
+	config, err := c.ComponentConfig(proxy)
+	if err != nil {
+		return nil, fmt.Errorf("resolve proxy config: %w", err)
+	}
 
 	mongosSpec := &psmdbv1.MongosSpec{
 		Size: 3,
@@ -34,6 +41,10 @@ func configureMongos(c *controller.Context) *psmdbv1.MongosSpec {
 				Limits: corev1.ResourceList{},
 			},
 		},
+	}
+
+	if config != "" {
+		mongosSpec.Configuration = psmdbv1.MongoConfiguration(config)
 	}
 
 	if proxy.Replicas != nil {
@@ -57,5 +68,5 @@ func configureMongos(c *controller.Context) *psmdbv1.MongosSpec {
 		},
 	}
 
-	return mongosSpec
+	return mongosSpec, nil
 }

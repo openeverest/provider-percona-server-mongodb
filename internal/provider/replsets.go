@@ -29,11 +29,15 @@ import (
 )
 
 // configureReplset configures a single replset based on the provided parameters.
-func configureReplset(name string, replicas *int32, resources *corev1.ResourceRequirements, storageSize *corev1alpha1.Storage, expose bool) *psmdbv1.ReplsetSpec {
+func configureReplset(name string, replicas *int32, resources *corev1.ResourceRequirements, storageSize *corev1alpha1.Storage, expose bool, config string) *psmdbv1.ReplsetSpec {
+	configuration := psmdbDefaultConfigurationTemplate
+	if config != "" {
+		configuration = config
+	}
+
 	rsSpec := &psmdbv1.ReplsetSpec{
-		Name: name,
-		// TODO: set configuration
-		Configuration: psmdbv1.MongoConfiguration(psmdbDefaultConfigurationTemplate),
+		Name:          name,
+		Configuration: psmdbv1.MongoConfiguration(configuration),
 		MultiAZ: psmdbv1.MultiAZ{
 			PodDisruptionBudget: &psmdbv1.PodDisruptionBudgetSpec{
 				MaxUnavailable: &maxUnavailable,
@@ -92,18 +96,21 @@ func rsName(i int) string {
 }
 
 // configureReplsets configures the replsets based on the topology and component specs.
-func configureReplsets(c *controller.Context) []*psmdbv1.ReplsetSpec {
-	var replsets []*psmdbv1.ReplsetSpec
-
+func configureReplsets(c *controller.Context) ([]*psmdbv1.ReplsetSpec, error) {
 	in := c.Instance()
 	spec := in.Spec
 	engine := spec.Components[common.ComponentEngine]
 
+	config, err := c.ComponentConfig(engine)
+	if err != nil {
+		return nil, fmt.Errorf("resolve engine config: %w", err)
+	}
+
 	// TODO: implement disabling
 	if spec.Topology == nil || spec.Topology.Type != "sharded" {
 		return []*psmdbv1.ReplsetSpec{
-			configureReplset(rsName(0), engine.Replicas, engine.Resources, engine.Storage, true),
-		}
+			configureReplset(rsName(0), engine.Replicas, engine.Resources, engine.Storage, true, config),
+		}, nil
 	}
 
 	numShards := 2 // default
@@ -112,28 +119,32 @@ func configureReplsets(c *controller.Context) []*psmdbv1.ReplsetSpec {
 		numShards = int(shardedConfig.NumShards)
 	}
 
-	// Create replsets for each shard
+	replsets := make([]*psmdbv1.ReplsetSpec, 0, numShards)
 	for i := 0; i < numShards; i++ {
-		replsets = append(replsets, configureReplset(rsName(i), engine.Replicas, engine.Resources, engine.Storage, false))
+		replsets = append(replsets, configureReplset(rsName(i), engine.Replicas, engine.Resources, engine.Storage, false, config))
 	}
 
-	return replsets
+	return replsets, nil
 }
 
 // configureConfigServerReplset configures the config server replset for sharded clusters.
-func configureConfigServerReplset(c *controller.Context) *psmdbv1.ReplsetSpec {
-	var replset *psmdbv1.ReplsetSpec
-
+func configureConfigServerReplset(c *controller.Context) (*psmdbv1.ReplsetSpec, error) {
 	in := c.Instance()
 	spec := in.Spec
-	cfgSrv := spec.Components[common.ComponentConfigServer]
 
 	// TODO: implement disabling
 	if spec.Topology == nil || spec.Topology.Type != "sharded" {
-		return replset
+		return nil, nil
+	}
+
+	cfgSrv := spec.Components[common.ComponentConfigServer]
+
+	config, err := c.ComponentConfig(cfgSrv)
+	if err != nil {
+		return nil, fmt.Errorf("resolve configServer config: %w", err)
 	}
 
 	// TODO: check if this is okay. It adds the configuration, expose.type,
 	// name, podDisruptionBudget that we didn't have in the everest operator
-	return configureReplset("configsvr", cfgSrv.Replicas, cfgSrv.Resources, cfgSrv.Storage, false)
+	return configureReplset("configsvr", cfgSrv.Replicas, cfgSrv.Resources, cfgSrv.Storage, false, config), nil
 }

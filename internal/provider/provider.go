@@ -132,11 +132,23 @@ func SyncPSMDB(c *controller.Context) error {
 	}
 	psmdb.Spec.ImagePullPolicy = corev1.PullIfNotPresent
 
-	psmdb.Spec.Replsets = configureReplsets(c)
+	replsets, err := configureReplsets(c)
+	if err != nil {
+		return err
+	}
+	psmdb.Spec.Replsets = replsets
 	if c.Instance().Spec.Topology != nil && c.Instance().Spec.Topology.Type == "sharded" {
 		psmdb.Spec.Sharding.Enabled = true
-		psmdb.Spec.Sharding.ConfigsvrReplSet = configureConfigServerReplset(c)
-		psmdb.Spec.Sharding.Mongos = configureMongos(c)
+		configsvr, err := configureConfigServerReplset(c)
+		if err != nil {
+			return err
+		}
+		psmdb.Spec.Sharding.ConfigsvrReplSet = configsvr
+		mongos, err := configureMongos(c)
+		if err != nil {
+			return err
+		}
+		psmdb.Spec.Sharding.Mongos = mongos
 	}
 
 	backupSpec, err := buildBackupSpec(c)
