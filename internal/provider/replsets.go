@@ -74,12 +74,23 @@ func configureReplset(name string, replicas *int32, resources *corev1.ResourceRe
 		rsSpec.Size = *replicas
 	}
 
-	if resources != nil && resources.Limits != nil {
-		if !resources.Limits.Cpu().IsZero() {
-			rsSpec.Resources.Limits[corev1.ResourceCPU] = *resources.Limits.Cpu()
+	if resources != nil {
+		if resources.Limits != nil {
+			if !resources.Limits.Cpu().IsZero() {
+				rsSpec.Resources.Limits[corev1.ResourceCPU] = *resources.Limits.Cpu()
+			}
+			if !resources.Limits.Memory().IsZero() {
+				rsSpec.Resources.Limits[corev1.ResourceMemory] = *resources.Limits.Memory()
+			}
 		}
-		if !resources.Limits.Memory().IsZero() {
-			rsSpec.Resources.Limits[corev1.ResourceMemory] = *resources.Limits.Memory()
+		if resources.Requests != nil {
+			rsSpec.Resources.Requests = corev1.ResourceList{}
+			if !resources.Requests.Cpu().IsZero() {
+				rsSpec.Resources.Requests[corev1.ResourceCPU] = *resources.Requests.Cpu()
+			}
+			if !resources.Requests.Memory().IsZero() {
+				rsSpec.Resources.Requests[corev1.ResourceMemory] = *resources.Requests.Memory()
+			}
 		}
 	}
 

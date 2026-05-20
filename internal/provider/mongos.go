@@ -51,12 +51,23 @@ func configureMongos(c *controller.Context) (*psmdbv1.MongosSpec, error) {
 		mongosSpec.Size = *proxy.Replicas
 	}
 
-	if proxy.Resources != nil && proxy.Resources.Limits != nil {
-		if !proxy.Resources.Limits.Cpu().IsZero() {
-			mongosSpec.Resources.Limits[corev1.ResourceCPU] = *proxy.Resources.Limits.Cpu()
+	if proxy.Resources != nil {
+		if proxy.Resources.Limits != nil {
+			if !proxy.Resources.Limits.Cpu().IsZero() {
+				mongosSpec.Resources.Limits[corev1.ResourceCPU] = *proxy.Resources.Limits.Cpu()
+			}
+			if !proxy.Resources.Limits.Memory().IsZero() {
+				mongosSpec.Resources.Limits[corev1.ResourceMemory] = *proxy.Resources.Limits.Memory()
+			}
 		}
-		if !proxy.Resources.Limits.Memory().IsZero() {
-			mongosSpec.Resources.Limits[corev1.ResourceMemory] = *proxy.Resources.Limits.Memory()
+		if proxy.Resources.Requests != nil {
+			mongosSpec.Resources.Requests = corev1.ResourceList{}
+			if !proxy.Resources.Requests.Cpu().IsZero() {
+				mongosSpec.Resources.Requests[corev1.ResourceCPU] = *proxy.Resources.Requests.Cpu()
+			}
+			if !proxy.Resources.Requests.Memory().IsZero() {
+				mongosSpec.Resources.Requests[corev1.ResourceMemory] = *proxy.Resources.Requests.Memory()
+			}
 		}
 	}
 
