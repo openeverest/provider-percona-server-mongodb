@@ -131,6 +131,7 @@ extraVolumeMounts: []
 extraVolumes: []
 
 # -- Leader election configuration
+# TODO: enable configuring leader election in provider.
 leaderElection:
   # -- Enable leader election (recommended for HA deployments)
   enabled: true
