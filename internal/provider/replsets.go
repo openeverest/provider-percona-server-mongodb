@@ -45,6 +45,20 @@ func configureReplset(name string, replicas *int32, resources *corev1.ResourceRe
 			Resources: corev1.ResourceRequirements{
 				Limits: corev1.ResourceList{},
 			},
+			Affinity: &psmdbv1.PodAffinity{
+				Advanced: &corev1.Affinity{
+					PodAntiAffinity: &corev1.PodAntiAffinity{
+						PreferredDuringSchedulingIgnoredDuringExecution: []corev1.WeightedPodAffinityTerm{
+							{
+								Weight: 1,
+								PodAffinityTerm: corev1.PodAffinityTerm{
+									TopologyKey: "kubernetes.io/hostname",
+								},
+							},
+						},
+					},
+				},
+			},
 		},
 		Size: 3,
 		VolumeSpec: &psmdbv1.VolumeSpec{
