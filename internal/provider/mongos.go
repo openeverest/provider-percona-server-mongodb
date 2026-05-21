@@ -15,6 +15,8 @@
 package provider
 
 import (
+	"fmt"
+
 	"github.com/openeverest/openeverest/v2/provider-runtime/controller"
 	"github.com/openeverest/provider-percona-server-mongodb/internal/common"
 	psmdbv1 "github.com/percona/percona-server-mongodb-operator/pkg/apis/psmdb/v1"
@@ -22,10 +24,15 @@ import (
 )
 
 // configureMongos configures the mongos (proxy) component for sharded clusters.
-func configureMongos(c *controller.Context) *psmdbv1.MongosSpec {
+func configureMongos(c *controller.Context) (*psmdbv1.MongosSpec, error) {
 	in := c.Instance()
 	spec := in.Spec
 	proxy := spec.Components[common.ComponentProxy]
+
+	config, err := c.ComponentConfig(proxy)
+	if err != nil {
+		return nil, fmt.Errorf("resolve proxy config: %w", err)
+	}
 
 	mongosSpec := &psmdbv1.MongosSpec{
 		Size: 3,
@@ -36,16 +43,31 @@ func configureMongos(c *controller.Context) *psmdbv1.MongosSpec {
 		},
 	}
 
+	if config != "" {
+		mongosSpec.Configuration = psmdbv1.MongoConfiguration(config)
+	}
+
 	if proxy.Replicas != nil {
 		mongosSpec.Size = *proxy.Replicas
 	}
 
-	if proxy.Resources != nil && proxy.Resources.Limits != nil {
-		if !proxy.Resources.Limits.Cpu().IsZero() {
-			mongosSpec.Resources.Limits[corev1.ResourceCPU] = *proxy.Resources.Limits.Cpu()
+	if proxy.Resources != nil {
+		if proxy.Resources.Limits != nil {
+			if !proxy.Resources.Limits.Cpu().IsZero() {
+				mongosSpec.Resources.Limits[corev1.ResourceCPU] = *proxy.Resources.Limits.Cpu()
+			}
+			if !proxy.Resources.Limits.Memory().IsZero() {
+				mongosSpec.Resources.Limits[corev1.ResourceMemory] = *proxy.Resources.Limits.Memory()
+			}
 		}
-		if !proxy.Resources.Limits.Memory().IsZero() {
-			mongosSpec.Resources.Limits[corev1.ResourceMemory] = *proxy.Resources.Limits.Memory()
+		if proxy.Resources.Requests != nil {
+			mongosSpec.Resources.Requests = corev1.ResourceList{}
+			if !proxy.Resources.Requests.Cpu().IsZero() {
+				mongosSpec.Resources.Requests[corev1.ResourceCPU] = *proxy.Resources.Requests.Cpu()
+			}
+			if !proxy.Resources.Requests.Memory().IsZero() {
+				mongosSpec.Resources.Requests[corev1.ResourceMemory] = *proxy.Resources.Requests.Memory()
+			}
 		}
 	}
 
@@ -57,5 +79,5 @@ func configureMongos(c *controller.Context) *psmdbv1.MongosSpec {
 		},
 	}
 
-	return mongosSpec
+	return mongosSpec, nil
 }

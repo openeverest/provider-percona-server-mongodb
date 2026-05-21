@@ -27,7 +27,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	corev1alpha1 "github.com/openeverest/openeverest/v2/api/core/v1alpha1"
-	monitoringv1alpha2 "github.com/openeverest/openeverest/v2/api/monitoring/v1alpha2"
+	monitoringv1alpha1 "github.com/openeverest/openeverest/v2/api/monitoring/v1alpha1"
 	"github.com/openeverest/openeverest/v2/provider-runtime/controller"
 
 	"github.com/openeverest/provider-percona-server-mongodb/internal/common"
@@ -119,24 +119,43 @@ func SyncPSMDB(c *controller.Context) error {
 	engine := c.Instance().Spec.Components[common.ComponentEngine]
 	// No need to check if engine is nil, it is guaranteed to be present by the validator
 
-	// Set the image: use the user-specified image if provided, otherwise use the default from the provider spec
+	// Set the image: use the user-specified image if provided, otherwise resolve
+	// from the version bundle (engine.Version is populated by the provider-runtime)
+	// or fall back to the provider's default image.
 	if engine.Image != "" {
-		// User explicitly specified an image
+		// User explicitly specified an image override.
 		psmdb.Spec.Image = engine.Image
 	} else {
 		spec, err := c.ProviderSpec()
 		if err != nil {
 			return err
 		}
-		psmdb.Spec.Image = controller.GetDefaultImageForComponent(spec, common.ComponentEngine)
+		if engine.Version != "" {
+			psmdb.Spec.Image = controller.GetImageForVersion(spec, common.ComponentEngine, engine.Version)
+		}
+		if psmdb.Spec.Image == "" {
+			psmdb.Spec.Image = controller.GetDefaultImageForComponent(spec, common.ComponentEngine)
+		}
 	}
 	psmdb.Spec.ImagePullPolicy = corev1.PullIfNotPresent
 
-	psmdb.Spec.Replsets = configureReplsets(c)
+	replsets, err := configureReplsets(c)
+	if err != nil {
+		return err
+	}
+	psmdb.Spec.Replsets = replsets
 	if c.Instance().Spec.Topology != nil && c.Instance().Spec.Topology.Type == "sharded" {
 		psmdb.Spec.Sharding.Enabled = true
-		psmdb.Spec.Sharding.ConfigsvrReplSet = configureConfigServerReplset(c)
-		psmdb.Spec.Sharding.Mongos = configureMongos(c)
+		configsvr, err := configureConfigServerReplset(c)
+		if err != nil {
+			return err
+		}
+		psmdb.Spec.Sharding.ConfigsvrReplSet = configsvr
+		mongos, err := configureMongos(c)
+		if err != nil {
+			return err
+		}
+		psmdb.Spec.Sharding.Mongos = mongos
 	}
 
 	backupSpec, err := buildBackupSpec(c)
@@ -263,7 +282,7 @@ func NewPSMDBProviderInterface() *PSMDBProvider {
 		ProviderName: "percona-server-mongodb",
 		SchemeFuncs: []func(*runtime.Scheme) error{
 			psmdbv1.SchemeBuilder.AddToScheme,
-			monitoringv1alpha2.SchemeBuilder.AddToScheme,
+			monitoringv1alpha1.SchemeBuilder.AddToScheme,
 		},
 		WatchConfigs: []controller.WatchConfig{
 			// Watch owned PSMDB resources - only trigger on spec changes
@@ -272,7 +291,7 @@ func NewPSMDBProviderInterface() *PSMDBProvider {
 			// we need to be notified when the status changes so we can
 			// update the Instance status.
 			controller.WatchOwned(&psmdbv1.PerconaServerMongoDB{}),
-			controller.WatchExternal(&monitoringv1alpha2.MonitoringConfig{},
+			controller.WatchExternal(&monitoringv1alpha1.MonitoringConfig{},
 				handler.EnqueueRequestsFromMapFunc(enqueueMonitoringConfig(p)),
 				monitoringConfigPredicate(),
 			),
@@ -318,7 +337,7 @@ func (p *PSMDBProvider) FieldIndexes() []controller.FieldIndex {
 			Extractor: extractMonitoringConfigName,
 		},
 		{
-			Object:    &monitoringv1alpha2.MonitoringConfig{},
+			Object:    &monitoringv1alpha1.MonitoringConfig{},
 			FieldPath: credentialsSecretPath,
 			Extractor: extractMonitoringConfigSecretName,
 		},

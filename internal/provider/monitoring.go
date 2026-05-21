@@ -31,7 +31,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	corev1alpha1 "github.com/openeverest/openeverest/v2/api/core/v1alpha1"
-	monitoringv1alpha2 "github.com/openeverest/openeverest/v2/api/monitoring/v1alpha2"
+	monitoringv1alpha1 "github.com/openeverest/openeverest/v2/api/monitoring/v1alpha1"
 	"github.com/openeverest/openeverest/v2/provider-runtime/controller"
 
 	"github.com/openeverest/provider-percona-server-mongodb/definition/components"
@@ -45,13 +45,13 @@ const (
 
 	// credentialsSecretPath is the field index path for looking up MonitoringConfigs
 	// by their referenced credentials Secret name.
-	credentialsSecretPath = ".spec.credentialsSecretName"
+	credentialsSecretPath = ".spec.pmm.credentialsSecretName"
 )
 
 // resolveMonitoringConfig looks up the MonitoringConfig referenced by the
 // instance's monitoring component custom spec. It returns nil without error when
 // the monitoring component is absent.
-func resolveMonitoringConfig(c *controller.Context) (*monitoringv1alpha2.MonitoringConfig, error) {
+func resolveMonitoringConfig(c *controller.Context) (*monitoringv1alpha1.MonitoringConfig, error) {
 	monitoring, ok := c.Instance().Spec.Components[common.ComponentMonitoring]
 	if !ok {
 		return nil, nil
@@ -66,7 +66,7 @@ func resolveMonitoringConfig(c *controller.Context) (*monitoringv1alpha2.Monitor
 		return nil, fmt.Errorf("monitoringConfigName is required when monitoring component is set")
 	}
 
-	mc := &monitoringv1alpha2.MonitoringConfig{}
+	mc := &monitoringv1alpha1.MonitoringConfig{}
 	if err := c.Get(mc, *customSpec.MonitoringConfigName); err != nil {
 		return nil, fmt.Errorf("get MonitoringConfig %q: %w", *customSpec.MonitoringConfigName, err)
 	}
@@ -102,14 +102,14 @@ func configureMonitoring(
 		return nil, fmt.Errorf("get provider spec: %w", err)
 	}
 
-	u, err := url.Parse(mc.Spec.URL)
+	u, err := url.Parse(mc.Spec.PMM.URL)
 	if err != nil {
-		return nil, fmt.Errorf("parse PMM URL %q: %w", mc.Spec.URL, err)
+		return nil, fmt.Errorf("parse PMM URL %q: %w", mc.Spec.PMM.URL, err)
 	}
 
 	// Copy the PMM API key from the MonitoringConfig credentials secret
 	// to the PSMDB users secret so the PMM sidecar can authenticate.
-	if err := copySecretData(c, mc.Spec.CredentialsSecretName, usersSecretName, "apiKey", "PMM_SERVER_TOKEN"); err != nil {
+	if err := copySecretData(c, mc.Spec.PMM.CredentialsSecretName, usersSecretName, "apiKey", "PMM_SERVER_TOKEN"); err != nil {
 		return nil, fmt.Errorf("copy PMM API key to users secret: %w", err)
 	}
 
@@ -169,7 +169,7 @@ func validateMonitoring(c *controller.Context) error {
 		return nil
 	}
 
-	if mc.Status.PMMServerVersion == "" {
+	if mc.Status.PMM == nil || mc.Status.PMM.ServerVersion == "" {
 		// PMM server version not yet reported; skip compatibility check.
 		return nil
 	}
@@ -190,9 +190,9 @@ func validateMonitoring(c *controller.Context) error {
 		return fmt.Errorf("monitoring version %q not found in provider spec", monitoring.Version)
 	}
 
-	serverVersion, err := goversion.NewVersion(string(mc.Status.PMMServerVersion))
+	serverVersion, err := goversion.NewVersion(string(mc.Status.PMM.ServerVersion))
 	if err != nil {
-		return fmt.Errorf("parse PMM server version %q: %w", mc.Status.PMMServerVersion, err)
+		return fmt.Errorf("parse PMM server version %q: %w", mc.Status.PMM.ServerVersion, err)
 	}
 
 	clientVersion, err := goversion.NewVersion(monitoring.Version)
@@ -203,7 +203,7 @@ func validateMonitoring(c *controller.Context) error {
 	if clientVersion.Segments()[0] != serverVersion.Segments()[0] {
 		return fmt.Errorf(
 			"PMM client version %s is incompatible with server version %s: major versions must match",
-			monitoring.Version, mc.Status.PMMServerVersion,
+			monitoring.Version, mc.Status.PMM.ServerVersion,
 		)
 	}
 
@@ -214,7 +214,7 @@ func validateMonitoring(c *controller.Context) error {
 // for Instances referencing the given MonitoringConfig.
 func enqueueMonitoringConfig(p *PSMDBProvider) func(ctx context.Context, obj client.Object) []reconcile.Request {
 	return func(ctx context.Context, obj client.Object) []reconcile.Request {
-		mc, ok := obj.(*monitoringv1alpha2.MonitoringConfig)
+		mc, ok := obj.(*monitoringv1alpha1.MonitoringConfig)
 		if !ok {
 			return []reconcile.Request{}
 		}
@@ -262,7 +262,7 @@ func enqueueMonitoringConfigSecret(p *PSMDBProvider) func(ctx context.Context, o
 			return []reconcile.Request{}
 		}
 
-		mcList := &monitoringv1alpha2.MonitoringConfigList{}
+		mcList := &monitoringv1alpha1.MonitoringConfigList{}
 		mcOpts := &client.ListOptions{
 			FieldSelector: fields.OneTermEqualSelector(credentialsSecretPath, secret.GetName()),
 			Namespace:     secret.GetNamespace(),
@@ -337,16 +337,16 @@ func extractMonitoringConfigName(obj client.Object) []string {
 // from the given object if it is a MonitoringConfig referencing a secret,
 // otherwise returns nil.
 func extractMonitoringConfigSecretName(obj client.Object) []string {
-	mc, ok := obj.(*monitoringv1alpha2.MonitoringConfig)
+	mc, ok := obj.(*monitoringv1alpha1.MonitoringConfig)
 	if !ok {
 		return nil
 	}
 
-	if mc.Spec.CredentialsSecretName == "" {
+	if mc.Spec.PMM == nil || mc.Spec.PMM.CredentialsSecretName == "" {
 		return nil
 	}
 
-	return []string{mc.Spec.CredentialsSecretName}
+	return []string{mc.Spec.PMM.CredentialsSecretName}
 }
 
 // monitoringConfigPredicate returns a predicate that filters events

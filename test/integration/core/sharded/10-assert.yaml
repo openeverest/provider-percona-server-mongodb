@@ -76,6 +76,9 @@ spec:
         limits:
           cpu: "1"
           memory: 4G
+        requests:
+          cpu: 500m
+          memory: 2G
       storage:
         size: 25Gi
     proxy:
@@ -150,6 +153,9 @@ spec:
       limits:
         cpu: "1"
         memory: 4G
+      requests:
+        cpu: 500m
+        memory: 2G
     size: 3
     volumeSpec:
       persistentVolumeClaim:
@@ -182,6 +188,9 @@ spec:
       limits:
         cpu: "1"
         memory: 4G
+      requests:
+        cpu: 500m
+        memory: 2G
     size: 3
     volumeSpec:
       persistentVolumeClaim:
