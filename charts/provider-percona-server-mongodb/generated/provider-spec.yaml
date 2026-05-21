@@ -5,10 +5,8 @@ spec:
     backup:
       versions:
         - default: true
-          image: percona/percona-backup-mongodb:2.11.0
-          version: 2.11.0
-        - image: percona/percona-backup-mongodb:2.9.1
-          version: 2.9.1
+          image: percona/percona-backup-mongodb:2.12.0
+          version: 2.12.0
     mongod:
       versions:
         - image: percona/percona-server-mongodb:6.0.19-16-multi
@@ -417,7 +415,7 @@ spec:
         - advanced
   versions:
     - components:
-        backupAgent: 2.11.0
+        backupAgent: 2.12.0
         configServer: 8.0.12-4
         engine: 8.0.12-4
         monitoring: 3.7.0
@@ -425,35 +423,35 @@ spec:
       default: true
       name: 8.0.12
     - components:
-        backupAgent: 2.11.0
+        backupAgent: 2.12.0
         configServer: 8.0.8-3
         engine: 8.0.8-3
         monitoring: 3.7.0
         proxy: 8.0.8-3
       name: 8.0.8
     - components:
-        backupAgent: 2.11.0
+        backupAgent: 2.12.0
         configServer: 8.0.4-1
         engine: 8.0.4-1
         monitoring: 3.7.0
         proxy: 8.0.4-1
       name: 8.0.4
     - components:
-        backupAgent: 2.11.0
+        backupAgent: 2.12.0
         configServer: 7.0.18-11
         engine: 7.0.18-11
         monitoring: 3.7.0
         proxy: 7.0.18-11
       name: 7.0.18
     - components:
-        backupAgent: 2.11.0
+        backupAgent: 2.12.0
         configServer: 6.0.21-18
         engine: 6.0.21-18
         monitoring: 3.7.0
         proxy: 6.0.21-18
       name: 6.0.21
     - components:
-        backupAgent: 2.11.0
+        backupAgent: 2.12.0
         configServer: 6.0.19-16
         engine: 6.0.19-16
         monitoring: 3.7.0
