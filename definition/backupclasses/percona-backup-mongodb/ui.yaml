@@ -3,27 +3,24 @@
 # opaque by the runtime. The shape groups fields by the modal that renders them.
 
 backup:
-  label: "Backup Configuration"
-  componentsOrder:
-    - type
-    - compressionType
-    - compressionLevel
   components:
     type:
       uiType: select
-      label: "Backup Type"
-      path: type
-      required: true
+      path: "config.type"
       fieldParams:
+        label: "Backup Type"
+        defaultValue: "logical"
+        placeholder: "Backup type"
         options:
           - { label: "Logical", value: "logical" }
           - { label: "Physical", value: "physical" }
-        defaultValue: "logical"
+      required: true
     compressionType:
       uiType: select
-      label: "Compression"
-      path: compressionType
+      path: "config.compressionType"
       fieldParams:
+        label: "Compression type"
+        placeholder: "Compression type"
         options:
           - { label: "None", value: "none" }
           - { label: "Gzip", value: "gzip" }
@@ -33,13 +30,18 @@ backup:
         defaultValue: "snappy"
     compressionLevel:
       uiType: number
-      label: "Compression Level"
-      path: compressionLevel
+      path: "config.compressionLevel"
       fieldParams:
+        label: "Compression Level"
+        placeholder: "Compression level (0-22)"
         defaultValue: 6
       validation:
-        minimum: 0
-        maximum: 22
+        min: 0
+        max: 22
+  componentsOrder:
+    - type
+    - compressionType
+    - compressionLevel
 
 pitr:
   label: "PITR Configuration"

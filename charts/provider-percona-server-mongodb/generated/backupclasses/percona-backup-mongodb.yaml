@@ -25,6 +25,7 @@ spec:
   providerManaged:
     limits:
       maxPITREnabledStorages: 1
+      maxStorages: 1
     pitrConfigSchema:
       properties:
         compressionType:
@@ -45,15 +46,17 @@ spec:
         compressionLevel:
           fieldParams:
             defaultValue: 6
-          label: Compression Level
-          path: compressionLevel
+            label: Compression Level
+            placeholder: Compression level (0-22)
+          path: config.compressionLevel
           uiType: number
           validation:
-            maximum: 22
-            minimum: 0
+            max: 22
+            min: 0
         compressionType:
           fieldParams:
             defaultValue: snappy
+            label: Compression type
             options:
               - label: None
                 value: none
@@ -65,26 +68,26 @@ spec:
                 value: lz4
               - label: Zstandard
                 value: zstd
-          label: Compression
-          path: compressionType
+            placeholder: Compression type
+          path: config.compressionType
           uiType: select
         type:
           fieldParams:
             defaultValue: logical
+            label: Backup Type
             options:
               - label: Logical
                 value: logical
               - label: Physical
                 value: physical
-          label: Backup Type
-          path: type
+            placeholder: Backup type
+          path: config.type
           required: true
           uiType: select
       componentsOrder:
         - type
         - compressionType
         - compressionLevel
-      label: Backup Configuration
     pitr:
       components:
         compressionType:
