@@ -9,6 +9,9 @@ $(LOCALBIN):
 # tools. (i.e. podman)
 CONTAINER_TOOL ?= docker
 
+# OpenEverest branch to use for OpenEverest CRD installation.
+OPENEVEREST_BRANCH ?= release-2.0
+
 # Image URL to use all building/pushing image targets
 IMG ?= ghcr.io/openeverest/provider-percona-server-mongodb-dev:latest
 
@@ -34,7 +37,7 @@ CHART_DIR ?= charts/provider-percona-server-mongodb
 K3D_CLUSTER_NAME ?= provider-psmdb-test
 
 # PSMDB operator version used for CRD installation in CI
-PSMDB_OPERATOR_VERSION ?= 1.21.1
+PSMDB_OPERATOR_VERSION ?= 1.22.0
 
 .PHONY: help
 help: ## Display this help.
@@ -114,12 +117,12 @@ load-openeverest-controller-image: ## Import the OpenEverest controller image in
 
 .PHONY: install-crds
 install-crds: ## Install OpenEverest and PSMDB CRDs into the cluster.
-	kubectl apply -f https://raw.githubusercontent.com/openeverest/openeverest/v2/config/crd/bases/core.openeverest.io_providers.yaml
-	kubectl apply -f https://raw.githubusercontent.com/openeverest/openeverest/v2/config/crd/bases/core.openeverest.io_instances.yaml
-	kubectl apply -f https://raw.githubusercontent.com/openeverest/openeverest/v2/config/crd/bases/monitoring.openeverest.io_monitoringconfigs.yaml
-	kubectl apply -f https://raw.githubusercontent.com/openeverest/openeverest/v2/config/crd/bases/backup.openeverest.io_backupclasses.yaml
-	kubectl apply -f https://raw.githubusercontent.com/openeverest/openeverest/v2/config/crd/bases/backup.openeverest.io_backups.yaml
-	kubectl apply -f https://raw.githubusercontent.com/openeverest/openeverest/v2/config/crd/bases/backup.openeverest.io_restores.yaml
+	kubectl apply -f https://raw.githubusercontent.com/openeverest/openeverest/$(OPENEVEREST_BRANCH)/config/crd/bases/core.openeverest.io_providers.yaml
+	kubectl apply -f https://raw.githubusercontent.com/openeverest/openeverest/$(OPENEVEREST_BRANCH)/config/crd/bases/core.openeverest.io_instances.yaml
+	kubectl apply -f https://raw.githubusercontent.com/openeverest/openeverest/$(OPENEVEREST_BRANCH)/config/crd/bases/monitoring.openeverest.io_monitoringconfigs.yaml
+	kubectl apply -f https://raw.githubusercontent.com/openeverest/openeverest/$(OPENEVEREST_BRANCH)/config/crd/bases/backup.openeverest.io_backupclasses.yaml
+	kubectl apply -f https://raw.githubusercontent.com/openeverest/openeverest/$(OPENEVEREST_BRANCH)/config/crd/bases/backup.openeverest.io_backups.yaml
+	kubectl apply -f https://raw.githubusercontent.com/openeverest/openeverest/$(OPENEVEREST_BRANCH)/config/crd/bases/backup.openeverest.io_restores.yaml
 	curl -fsSL https://raw.githubusercontent.com/percona/percona-server-mongodb-operator/v$(PSMDB_OPERATOR_VERSION)/deploy/crd.yaml \
 		| kubectl apply --server-side -f -
 
@@ -135,22 +138,6 @@ deploy-provider-ci: ## Deploy the provider via Helm for CI (IMG must already be 
 		--set image.pullPolicy=Never \
 		--set operator.replicaCount=0 \
 		--wait --timeout 2m
-
-##@ Deployment (legacy — prefer Helm targets)
-
-.PHONY: install
-install: ## Install CRDs, upstream operator, and Provider CR (dev shortcut).
-	kubectl apply -f https://raw.githubusercontent.com/openeverest/openeverest/v2/config/crd/bases/core.openeverest.io_providers.yaml
-	kubectl apply -f https://raw.githubusercontent.com/openeverest/openeverest/v2/config/crd/bases/core.openeverest.io_instances.yaml
-	kubectl apply --server-side -f https://raw.githubusercontent.com/percona/percona-server-mongodb-operator/v1.21.1/deploy/bundle.yaml
-	kubectl apply -f provider.yaml
-
-.PHONY: uninstall
-uninstall: ## Uninstall CRDs, upstream operator, and Provider CR.
-	kubectl delete -f provider.yaml
-	kubectl delete -f https://raw.githubusercontent.com/openeverest/openeverest/v2/config/crd/bases/core.openeverest.io_providers.yaml
-	kubectl delete -f https://raw.githubusercontent.com/openeverest/openeverest/v2/config/crd/bases/core.openeverest.io_instances.yaml
-	kubectl delete -f https://raw.githubusercontent.com/percona/percona-server-mongodb-operator/v1.21.1/deploy/bundle.yaml
 
 ##@ Helm
 

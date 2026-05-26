@@ -69,8 +69,16 @@ spec:
         limits:
           cpu: "1"
           memory: 4G
+        requests:
+          cpu: 500m
+          memory: 2G
       storage:
         size: 25Gi
+        storageClass: standard
+      config:
+        configMapRef:
+          name: psmdb-engine-config
+        key: mongod.conf
   # engine:
   #   replicas: 3
   #   resources:
@@ -123,9 +131,13 @@ spec:
       limits:
         cpu: "1"
         memory: 4G
+      requests:
+        cpu: 500m
+        memory: 2G
     size: 3
     volumeSpec:
       persistentVolumeClaim:
+        storageClassName: standard
         resources:
           requests:
             storage: 25Gi
