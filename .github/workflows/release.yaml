@@ -7,7 +7,7 @@ on:
         required: true
 
 permissions:
-  contents: read
+  contents: write
   packages: read
 
 env:
@@ -181,3 +181,26 @@ jobs:
         uses: helm/chart-releaser-action@a917fd15b20e8b64b94d9158ad54cd6345335584 # v1.6.0
         env:
           CR_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
+
+  tag:
+    name: Create git tag
+    needs: release-chart
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ github.event.inputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v4
+
+      - name: Configure Git
+        run: |
+          git config user.name "$GITHUB_ACTOR"
+          git config user.email "$GITHUB_ACTOR@users.noreply.github.com"
+
+      - name: Create and push tag
+        run: |
+          git tag "v$VERSION"
+          git push origin "v$VERSION"
