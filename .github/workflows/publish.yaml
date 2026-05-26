@@ -1,7 +1,7 @@
 ---
 # Builds and pushes a multi-arch dev image to GHCR and upload helm chart on
 # every commit to main, and can be triggered manually for testing the workflow itself.
-name: Publish dev image
+name: Publish dev image and upload dev Helm chart
 
 on:
   push:
@@ -22,8 +22,22 @@ env:
   IMAGE_NAME: ${{ github.repository_owner }}/provider-percona-server-mongodb-dev
 
 jobs:
+  prepare:
+    name: Prepare build metadata
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.set_version.outputs.version }}
+    steps:
+      - name: Generate version
+        id: set_version
+        run: |
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          V="0.0.0-${SHORT_SHA}"
+          echo "version=$V" >> $GITHUB_OUTPUT
+
   build:
     name: Build (${{ matrix.platform }})
+    needs: prepare
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     strategy:
@@ -62,7 +76,7 @@ jobs:
         if: matrix.platform == 'linux/amd64'
         run: |
           cd charts/provider-percona-server-mongodb
-          VERSION=${{ github.sha }} make release-dev
+          VERSION=${{ needs.prepare.outputs.version }} make release-dev
           cp -r . ${{ runner.temp }}/helm-chart
 
       - name: Extract image metadata
@@ -101,7 +115,7 @@ jobs:
         if: matrix.platform == 'linux/amd64'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: helm-chart-${{ github.sha }}
+          name: helm-chart-${{ needs.prepare.outputs.version }}
           path: ${{ runner.temp }}/helm-chart/*
           retention-days: 1
 
@@ -109,7 +123,7 @@ jobs:
     name: Merge and push manifest
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    needs: build
+    needs: [prepare, build]
     permissions:
       packages: write
     steps:
@@ -137,7 +151,7 @@ jobs:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
-            type=sha,format=short
+            type=raw,value=${{ needs.prepare.outputs.version }}
 
       - name: Create and push manifest list
         working-directory: ${{ runner.temp }}/digests

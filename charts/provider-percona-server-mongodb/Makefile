@@ -4,14 +4,15 @@ HELM ?= helm
 IMAGE_PREFIX ?= ghcr.io/openeverest
 PROVIDER_IMAGE_NAME ?= provider-percona-server-mongodb
 VERSION ?= 0.1.0
+CHART_VERSION ?= $(VERSION)
 DISABLE_TELEMETRY ?= true
 
 .PHONY: prepare-chart
 prepare-chart:
-	yq eval -i '.version = "${VERSION}"' Chart.yaml
+	yq eval -i '.version = "${CHART_VERSION}"' Chart.yaml
 	yq eval -i '.appVersion = "${VERSION}"' Chart.yaml
 	yq eval -i '.image.repository = "$(IMAGE_PREFIX)/$(PROVIDER_IMAGE_NAME)"' values.yaml
-	yq eval -i '.image.tag = "${VERSION}"' values.yaml
+	yq eval -i '.image.tag = "$(VERSION)"' values.yaml
 	yq eval -i '.operator.disableTelemetry = $(DISABLE_TELEMETRY)' values.yaml
 	$(MAKE) deps
 
