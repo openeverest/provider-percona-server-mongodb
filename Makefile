@@ -3,6 +3,9 @@ LOCALBIN ?= $(shell pwd)/bin
 $(LOCALBIN):
 	mkdir -p $(LOCALBIN)
 
+RELEASE_VERSION ?= v0.0.0-$(shell git rev-parse --short HEAD)
+RELEASE_FULLCOMMIT ?= $(shell git rev-parse HEAD)
+
 # CONTAINER_TOOL defines the container tool to be used for building images.
 # Be aware that the target commands are only tested with Docker which is
 # scaffolded by default. However, you might want to replace it to use other
@@ -171,9 +174,23 @@ k3d-cluster-reset: k3d-cluster-down k3d-cluster-up ## Reset the K8S cluster for 
 
 ##@ Build
 
+LD_FLAGS = -X 'github.com/openeverest/provider-percona-server-mongodb/cmd/provider.Version=$(RELEASE_VERSION)' \
+	-X 'github.com/openeverest/provider-percona-server-mongodb/cmd/provider.FullCommit=$(RELEASE_FULLCOMMIT)'
+
+.PHONY: build-helper
+build-helper: generate $(LOCALBIN) ## Build provider binary (helper).
+	go build -v -ldflags "$(LD_FLAGS)" -o bin/provider cmd/provider/main.go
+
 .PHONY: build
-build: generate ## Build provider binary.
-	go build -o bin/provider cmd/provider/main.go
+build: LD_FLAGS += -s -w
+build: build-helper ## Build provider binary.
+
+.PHONY: rc
+rc: build-helper ## Build provider RC binary.
+
+.PHONY: release
+release: LD_FLAGS += -s -w
+release: build-helper ## Build provider release binary. (Use for building release only!)
 
 .PHONY: docker-build
 docker-build: ## Build docker image with the manager.
