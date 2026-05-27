@@ -19,13 +19,16 @@ import (
 
 	psmdbv1 "github.com/percona/percona-server-mongodb-operator/pkg/apis/psmdb/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
+	backupv1alpha1 "github.com/openeverest/openeverest/v2/api/backup/v1alpha1"
 	corev1alpha1 "github.com/openeverest/openeverest/v2/api/core/v1alpha1"
 	monitoringv1alpha1 "github.com/openeverest/openeverest/v2/api/monitoring/v1alpha1"
 	"github.com/openeverest/openeverest/v2/provider-runtime/controller"
@@ -180,8 +183,46 @@ func SyncPSMDB(c *controller.Context) error {
 		SSLInternal:   c.Name() + "-ssl-internal",
 	}
 
+	// When seeding from a DataSource, the target cluster's users secret must
+	// contain the same credentials as the source cluster. The PSMDB backup
+	// embeds credential hashes; mismatched secrets render the restored data
+	// inaccessible. Copy BEFORE applying the PSMDB CR so the operator never
+	// initializes the secret with random passwords.
+	if c.Instance().Spec.DataSource != nil {
+		if err := ensureDataSourceCredentials(c, usersSecretName); err != nil {
+			return err
+		}
+	}
+
 	if err := c.Apply(psmdb); err != nil {
 		return err
+	}
+
+	// Initial seeding from .spec.dataSource: gated on the engine being Ready
+	// AND PSMDB having published a BackupVersion. Issuing the Restore before
+	// the operator has selected a backup-agent image causes the restore to
+	// hang in a Waiting state. While the gate is not satisfied the helper is
+	// not invoked and StatusPSMDB will report Restoring so callers know the
+	// Instance is still being seeded.
+	if c.Instance().Spec.DataSource != nil {
+		current := &psmdbv1.PerconaServerMongoDB{}
+		if err := c.Get(current, c.Name()); err != nil {
+			// Cluster has not been created yet (first Sync). The next
+			// reconcile after the PSMDB CR appears will re-enter this branch.
+			return nil
+		}
+		if current.Status.State != psmdbv1.AppStateReady || current.Status.BackupVersion == "" {
+			c.SetDataSourceStatus(controller.DataSourceStatus{
+				Done:    false,
+				State:   controller.DataSourceStateWaiting,
+				Reason:  corev1alpha1.ReasonDataSourceWaitingForCluster,
+				Message: "waiting for PerconaServerMongoDB to be Ready and publish a BackupVersion",
+			})
+			return nil
+		}
+		if _, err := c.ReconcileDataSource(); err != nil {
+			return fmt.Errorf("reconcile data source: %w", err)
+		}
 	}
 
 	return nil
@@ -197,6 +238,13 @@ func StatusPSMDB(c *controller.Context) (controller.Status, error) {
 	psmdb := &psmdbv1.PerconaServerMongoDB{}
 	if err := c.Get(psmdb, c.Name()); err != nil {
 		return controller.Provisioning("Waiting for PerconaServerMongoDB"), nil
+	}
+	// While initial seeding from .spec.dataSource has not reached a terminal
+	// state, override the phase to Restoring so users can see the Instance
+	// is being populated. ConditionDataSourceReady carries the detailed
+	// reason/message.
+	if ds := c.GetDataSourceStatus(); ds != nil && !ds.Done {
+		return controller.Restoring(ds.Message), nil
 	}
 	switch psmdb.Status.State {
 	case psmdbv1.AppStateReady:
@@ -236,6 +284,73 @@ func buildConnectionDetails(c *controller.Context, psmdb *psmdbv1.PerconaServerM
 		Password: password,
 		URI:      fmt.Sprintf("mongodb://%s:%s@%s/admin?ssl=false", username, password, host),
 	}, nil
+}
+
+// ensureDataSourceCredentials copies the users secret from the source Instance
+// to the target Instance when seeding from .spec.dataSource. The source
+// Instance is identified via the referenced Backup CR's .spec.instanceName.
+// This is idempotent: if the target secret already exists it is not
+// overwritten, ensuring reconcile loops don't corrupt credentials.
+func ensureDataSourceCredentials(c *controller.Context, targetSecretName string) error {
+	// If the target secret already exists, we're done. Either a previous
+	// reconcile created it or the user pre-provisioned it manually.
+	targetSecret := &corev1.Secret{}
+	if err := c.Get(targetSecret, targetSecretName); err == nil {
+		return nil
+	}
+
+	// Resolve the source Instance name from the referenced Backup CR.
+	ds := c.Instance().Spec.DataSource
+	srcBackup := &backupv1alpha1.Backup{}
+	if err := c.Get(srcBackup, ds.Backup.BackupName); err != nil {
+		if apierrors.IsNotFound(err) {
+			// Source Backup not found; ReconcileDataSource will surface this
+			// as a condition later. Let Sync continue — the gate on
+			// PSMDB Ready + BackupVersion will hold the restore.
+			return nil
+		}
+		return fmt.Errorf("get source Backup %q for credential copy: %w", ds.Backup.BackupName, err)
+	}
+
+	// The source Instance's users secret follows the same naming convention.
+	sourceSecretName := "everest-secrets-" + srcBackup.Spec.InstanceName
+	sourceSecret := &corev1.Secret{}
+	if err := c.Get(sourceSecret, sourceSecretName); err != nil {
+		if apierrors.IsNotFound(err) {
+			c.SetDataSourceStatus(controller.DataSourceStatus{
+				Done:    true,
+				State:   controller.DataSourceStateFailed,
+				Reason:  corev1alpha1.ReasonDataSourceFailed,
+				Message: fmt.Sprintf("source Instance credentials secret %q not found; the source Instance may have been deleted", sourceSecretName),
+			})
+			return &controller.DataSourceConfigError{
+				Reason:  corev1alpha1.ReasonDataSourceFailed,
+				Message: fmt.Sprintf("source Instance credentials secret %q not found; the source Instance may have been deleted", sourceSecretName),
+			}
+		}
+		return fmt.Errorf("get source credentials secret %q: %w", sourceSecretName, err)
+	}
+
+	// Create the target secret with the same data.
+	newSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      targetSecretName,
+			Namespace: c.Namespace(),
+			Labels: map[string]string{
+				"app.kubernetes.io/managed-by": "everest",
+				"app.kubernetes.io/instance":   c.Name(),
+			},
+		},
+		Data: sourceSecret.Data,
+	}
+	if err := c.Client().Create(c.Context(), newSecret); err != nil {
+		if apierrors.IsAlreadyExists(err) {
+			// Race: another reconcile beat us to it.
+			return nil
+		}
+		return fmt.Errorf("create target credentials secret %q: %w", targetSecretName, err)
+	}
+	return nil
 }
 
 // CleanupPSMDB handles deletion of the PSMDB cluster.
@@ -291,6 +406,11 @@ func NewPSMDBProviderInterface() *PSMDBProvider {
 			// we need to be notified when the status changes so we can
 			// update the Instance status.
 			controller.WatchOwned(&psmdbv1.PerconaServerMongoDB{}),
+			// Watch the datasource Restore CR (owned by the Instance via
+			// ReconcileDataSource). When the Restore reconciler marks it
+			// Succeeded the Instance reconciler re-evaluates and exits
+			// the Restoring phase.
+			controller.WatchOwned(&backupv1alpha1.Restore{}),
 			controller.WatchExternal(&monitoringv1alpha1.MonitoringConfig{},
 				handler.EnqueueRequestsFromMapFunc(enqueueMonitoringConfig(p)),
 				monitoringConfigPredicate(),

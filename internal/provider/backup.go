@@ -321,16 +321,57 @@ func (p *PSMDBProvider) SyncBackup(c *controller.Context, backup *backupv1alpha1
 	return exec, nil
 }
 
-// SyncRestore creates or updates a PerconaServerMongoDBRestore that references
-// the operator backup produced by the source Backup CR (resolved via
-// OperatorBackupRef, falling back to the Backup CR name).
+// SyncRestore creates or updates a PerconaServerMongoDBRestore that points at
+// the operator backup produced by the source Backup CR.
+//
+// Two cases are handled:
+//
+//   - Same-cluster restore (source Backup.spec.instanceName == this Instance):
+//     the operator backup lives on the same PSMDB cluster, so we set
+//     .spec.backupName to its name.
+//   - Cross-cluster restore (e.g. seeding a new Instance from another
+//     Instance's Backup via .spec.dataSource): the source operator backup
+//     belongs to a different PSMDB CR. The PSMDB operator cannot resolve it
+//     by name on this cluster, so we copy its .status into
+//     .spec.backupSource and set .spec.storageName to the target Instance's
+//     matching storage entry so credentials are taken from the target
+//     cluster's registered storages.
 func (p *PSMDBProvider) SyncRestore(c *controller.Context, restore *backupv1alpha1.Restore) (controller.RestoreExecutionStatus, error) {
-	operatorBackupName, exec, err := resolveOperatorBackupForRestore(c, restore)
+	sourceBackup, exec, err := resolveSourceBackup(c, restore)
 	if err != nil {
 		return controller.RestoreExecutionStatus{}, err
 	}
-	if operatorBackupName == "" {
+	if sourceBackup == nil {
 		return exec, nil
+	}
+
+	operatorBackupName := sourceBackup.Name
+	if sourceBackup.Status.OperatorBackupRef != nil && sourceBackup.Status.OperatorBackupRef.Name != "" {
+		operatorBackupName = sourceBackup.Status.OperatorBackupRef.Name
+	}
+
+	// Detect cross-cluster restores. When the source Backup was produced by a
+	// different Instance, fetch its PerconaServerMongoDBBackup so we can copy
+	// the destination/storage spec into Spec.BackupSource.
+	crossCluster := sourceBackup.Spec.InstanceName != c.Name()
+	var sourceOpBackup *psmdbv1.PerconaServerMongoDBBackup
+	if crossCluster {
+		sourceOpBackup = &psmdbv1.PerconaServerMongoDBBackup{}
+		if err := c.Get(sourceOpBackup, operatorBackupName); err != nil {
+			if apierrors.IsNotFound(err) {
+				return controller.RestoreExecutionStatus{
+					State:   backupv1alpha1.RestoreStatePending,
+					Message: fmt.Sprintf("waiting for source PerconaServerMongoDBBackup %q", operatorBackupName),
+				}, nil
+			}
+			return controller.RestoreExecutionStatus{}, fmt.Errorf("get source PSMDB backup %q: %w", operatorBackupName, err)
+		}
+		if sourceOpBackup.Status.Destination == "" {
+			return controller.RestoreExecutionStatus{
+				State:   backupv1alpha1.RestoreStatePending,
+				Message: fmt.Sprintf("source PerconaServerMongoDBBackup %q has no destination yet", operatorBackupName),
+			}, nil
+		}
 	}
 
 	psmdbRestore := &psmdbv1.PerconaServerMongoDBRestore{
@@ -342,15 +383,40 @@ func (p *PSMDBProvider) SyncRestore(c *controller.Context, restore *backupv1alph
 
 	if _, err := controllerutil.CreateOrUpdate(c.Context(), c.Client(), psmdbRestore, func() error {
 		psmdbRestore.Spec.ClusterName = c.Name()
-		psmdbRestore.Spec.BackupName = operatorBackupName
+		if crossCluster {
+			// Copy the source operator backup's storage descriptor verbatim
+			// (Destination + S3/Azure/GCS/Minio/Filesystem spec) so PSMDB can
+			// read the dump without consulting its own backup list. The
+			// StorageName on the restore selects credentials from this
+			// cluster's registered storages, which the runtime guarantees
+			// includes a matching entry (validated upstream by
+			// ReconcileDataSource).
+			src := sourceOpBackup.Status
+			psmdbRestore.Spec.BackupSource = &psmdbv1.PerconaServerMongoDBBackupStatus{
+				Destination: src.Destination,
+				StorageName: sourceBackup.Spec.StorageName,
+				S3:          src.S3,
+				Azure:       src.Azure,
+				GCS:         src.GCS,
+				Minio:       src.Minio,
+				Filesystem:  src.Filesystem,
+				Type:        src.Type,
+				PBMname:     src.PBMname,
+			}
+			psmdbRestore.Spec.StorageName = sourceBackup.Spec.StorageName
+			psmdbRestore.Spec.BackupName = ""
+		} else {
+			psmdbRestore.Spec.BackupName = operatorBackupName
+			psmdbRestore.Spec.BackupSource = nil
+		}
 		// PITR support: the runtime reconciler validates that PITR is only
 		// requested when the BackupClass advertises it; we just translate.
-		if restore.Spec.DataSource.PITR != nil {
+		if restore.Spec.DataSource.Backup.PITR != nil {
 			psmdbRestore.Spec.PITR = &psmdbv1.PITRestoreSpec{
-				Type: psmdbv1.PITRestoreType(restore.Spec.DataSource.PITR.Type),
+				Type: psmdbv1.PITRestoreType(restore.Spec.DataSource.Backup.PITR.Type),
 			}
-			if restore.Spec.DataSource.PITR.Date != nil {
-				psmdbRestore.Spec.PITR.Date = &psmdbv1.PITRestoreDate{Time: *restore.Spec.DataSource.PITR.Date}
+			if restore.Spec.DataSource.Backup.PITR.Date != nil {
+				psmdbRestore.Spec.PITR.Date = &psmdbv1.PITRestoreDate{Time: *restore.Spec.DataSource.Backup.PITR.Date}
 			}
 		}
 		return controllerutil.SetControllerReference(restore, psmdbRestore, c.Client().Scheme())
@@ -381,44 +447,32 @@ func (p *PSMDBProvider) SyncRestore(c *controller.Context, restore *backupv1alph
 	return out, nil
 }
 
-// resolveOperatorBackupForRestore returns the name of the
-// PerconaServerMongoDBBackup that the Restore should consume. If the Restore
-// references an in-cluster Backup CR, the operator backup name equals the
-// Backup CR name (deterministic naming used by SyncBackup). External
-// restores are not yet supported and will report a Failed status.
-func resolveOperatorBackupForRestore(
+// resolveSourceBackup fetches the Backup CR referenced by the Restore's
+// DataSource. Returns (nil, exec, nil) when a terminal exec status should be
+// reported (e.g. missing data source field) and (backup, _, nil) when the
+// source Backup is in scope.
+func resolveSourceBackup(
 	c *controller.Context,
 	restore *backupv1alpha1.Restore,
-) (string, controller.RestoreExecutionStatus, error) {
-	switch {
-	case restore.Spec.DataSource.BackupName != "":
-		backup := &backupv1alpha1.Backup{}
-		if err := c.Get(backup, restore.Spec.DataSource.BackupName); err != nil {
-			if apierrors.IsNotFound(err) {
-				return "", controller.RestoreExecutionStatus{
-					State:   backupv1alpha1.RestoreStateFailed,
-					Message: fmt.Sprintf("source Backup %q not found", restore.Spec.DataSource.BackupName),
-				}, nil
-			}
-			return "", controller.RestoreExecutionStatus{}, fmt.Errorf("get source Backup: %w", err)
-		}
-		if backup.Status.OperatorBackupRef != nil && backup.Status.OperatorBackupRef.Name != "" {
-			return backup.Status.OperatorBackupRef.Name, controller.RestoreExecutionStatus{}, nil
-		}
-		// Fall back to deterministic naming: SyncBackup names the operator
-		// backup after the Backup CR.
-		return backup.Name, controller.RestoreExecutionStatus{}, nil
-	case restore.Spec.DataSource.External != nil:
-		return "", controller.RestoreExecutionStatus{
+) (*backupv1alpha1.Backup, controller.RestoreExecutionStatus, error) {
+	if restore.Spec.DataSource.Backup == nil || restore.Spec.DataSource.Backup.BackupName == "" {
+		return nil, controller.RestoreExecutionStatus{
 			State:   backupv1alpha1.RestoreStateFailed,
-			Message: "external restore sources are not yet supported by the PSMDB provider",
-		}, nil
-	default:
-		return "", controller.RestoreExecutionStatus{
-			State:   backupv1alpha1.RestoreStateFailed,
-			Message: "restore.spec.dataSource is empty",
+			Message: "restore.spec.dataSource.backup is not set",
 		}, nil
 	}
+	backupName := restore.Spec.DataSource.Backup.BackupName
+	backup := &backupv1alpha1.Backup{}
+	if err := c.Get(backup, backupName); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil, controller.RestoreExecutionStatus{
+				State:   backupv1alpha1.RestoreStateFailed,
+				Message: fmt.Sprintf("source Backup %q not found", backupName),
+			}, nil
+		}
+		return nil, controller.RestoreExecutionStatus{}, fmt.Errorf("get source Backup: %w", err)
+	}
+	return backup, controller.RestoreExecutionStatus{}, nil
 }
 
 // CleanupBackup removes the operator PerconaServerMongoDBBackup, honoring the
