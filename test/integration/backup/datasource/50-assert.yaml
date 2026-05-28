@@ -1,0 +1,7 @@
+apiVersion: kuttl.dev/v1
+kind: TestAssert
+timeout: 30
+# Wait for backup infrastructure to be fully deleted
+commands:
+  - command: kubectl wait --for=delete backupstorage --all -n $NAMESPACE --timeout=30s
+  - command: kubectl wait --for=delete secret/backup-storage-credentials -n $NAMESPACE --timeout=10s

@@ -1,0 +1,8 @@
+apiVersion: kuttl.dev/v1
+kind: TestStep
+timeout: 10
+commands:
+  # Delete backup infrastructure
+  - script: kubectl -n $NAMESPACE delete backupstorage --all --ignore-not-found=true
+  - script: kubectl delete backupclass/percona-backup-mongodb --ignore-not-found=true
+  - script: kubectl -n $NAMESPACE delete secret/backup-storage-credentials --ignore-not-found=true

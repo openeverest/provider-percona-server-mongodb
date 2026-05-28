@@ -1,0 +1,7 @@
+apiVersion: kuttl.dev/v1
+kind: TestStep
+timeout: 30
+commands:
+  - script: kubectl -n $NAMESPACE delete psmdb-restore,psmdb-backup,psmdb,backup,instance --all --wait=false --ignore-not-found=true
+  # Remove finalizers from PerconaServerMongoDBBackup. It has percona.com/delete-backup finalizer that prevents deletion (operator is scaled to 0, so finalizers won't be processed).
+  - script: kubectl -n $NAMESPACE patch psmdb-backup src-backup --type=merge -p '{"metadata":{"finalizers":[]}}'
