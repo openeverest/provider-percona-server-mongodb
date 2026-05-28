@@ -1,0 +1,16 @@
+apiVersion: kuttl.dev/v1
+kind: TestStep
+timeout: 10
+commands:
+  # Simulate the source cluster becoming ready.
+  - command: kubectl patch psmdb/src-psmdb-cluster --subresource status -n $NAMESPACE -p '{"status":{"state":"ready","size":3,"ready":3,"host":"src-psmdb-cluster-rs0.default.svc.cluster.local","backupVersion":"2.9.0"}}' --type=merge
+---
+# Create the credentials secret so the Instance can reach Ready.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: everest-secrets-src-psmdb-cluster
+type: Opaque
+data:
+  MONGODB_DATABASE_ADMIN_USER: dGVzdC11c2Vy
+  MONGODB_DATABASE_ADMIN_PASSWORD: dGVzdC1wYXNzd29yZA==

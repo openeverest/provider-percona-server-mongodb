@@ -106,6 +106,14 @@ test-integration-core-sharded: ## Run core sharded integration tests.
 test-integration-monitoring-pmm: ## Run PMM integration tests.
 	. ./test/vars.sh && kubectl kuttl test --config ./test/integration/kuttl-monitoring.yaml
 
+.PHONY: test-integration-backup
+test-integration-backup: ## Run backup integration tests.
+	. ./test/vars.sh && kubectl kuttl test --config ./test/integration/kuttl-backup.yaml
+
+.PHONY: test-integration-backup-datasource
+test-integration-backup-datasource: ## Run backup datasource integration tests.
+	. ./test/vars.sh && kubectl kuttl test --config ./test/integration/kuttl-backup.yaml --test "datasource"
+
 .PHONY: test-e2e
 test-e2e: ## Run Playwright E2E tests against a running Everest UI (http://localhost:8080).
 	cd test/e2e && npm ci && npx playwright test
@@ -126,6 +134,7 @@ install-crds: ## Install OpenEverest and PSMDB CRDs into the cluster.
 	kubectl apply -f https://raw.githubusercontent.com/openeverest/openeverest/$(OPENEVEREST_BRANCH)/config/crd/bases/backup.openeverest.io_backupclasses.yaml
 	kubectl apply -f https://raw.githubusercontent.com/openeverest/openeverest/$(OPENEVEREST_BRANCH)/config/crd/bases/backup.openeverest.io_backups.yaml
 	kubectl apply -f https://raw.githubusercontent.com/openeverest/openeverest/$(OPENEVEREST_BRANCH)/config/crd/bases/backup.openeverest.io_restores.yaml
+	kubectl apply -f https://raw.githubusercontent.com/openeverest/openeverest/$(OPENEVEREST_BRANCH)/config/crd/bases/backup.openeverest.io_backupstorages.yaml
 	curl -fsSL https://raw.githubusercontent.com/percona/percona-server-mongodb-operator/v$(PSMDB_OPERATOR_VERSION)/deploy/crd.yaml \
 		| kubectl apply --server-side -f -
 

@@ -1,0 +1,44 @@
+apiVersion: kuttl.dev/v1
+kind: TestAssert
+timeout: 30
+collectors:
+  - command: kubectl get backupclass percona-backup-mongodb -o yaml
+  - command: kubectl get backupstorage test-storage-s3 -n ${NAMESPACE} -o yaml
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: provider-percona-server-mongodb-operator
+  namespace: provider-system
+spec:
+  replicas: 0
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: backup-storage-credentials
+type: Opaque
+---
+apiVersion: backup.openeverest.io/v1alpha1
+kind: BackupStorage
+metadata:
+  name: test-storage-s3
+spec:
+  type: s3
+  s3:
+    bucket: test-backup-bucket
+    region: us-east-1
+    endpointURL: http://fake
+    forcePathStyle: true
+    credentialsSecretName: backup-storage-credentials
+    verifyTLS: false
+---
+apiVersion: backup.openeverest.io/v1alpha1
+kind: BackupClass
+metadata:
+  name: percona-backup-mongodb
+spec:
+  displayName: Percona Backup for MongoDB
+  executionMode: ProviderManaged
+  supportedProviders:
+    - percona-server-mongodb

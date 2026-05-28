@@ -145,3 +145,12 @@ jobs:
       make_target: test-integration-monitoring-pmm
       suite: monitoring
     secrets: inherit
+
+  test-integration-backup-datasource:
+    name: Integration / backup datasource
+    needs: [lint, build, verify]
+    uses: ./.github/workflows/integration-test.yaml
+    with:
+      make_target: test-integration-backup-datasource
+      suite: backup
+    secrets: inherit
