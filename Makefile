@@ -3,11 +3,17 @@ LOCALBIN ?= $(shell pwd)/bin
 $(LOCALBIN):
 	mkdir -p $(LOCALBIN)
 
+RELEASE_VERSION ?= v0.0.0-$(shell git rev-parse --short HEAD)
+RELEASE_FULLCOMMIT ?= $(shell git rev-parse HEAD)
+
 # CONTAINER_TOOL defines the container tool to be used for building images.
 # Be aware that the target commands are only tested with Docker which is
 # scaffolded by default. However, you might want to replace it to use other
 # tools. (i.e. podman)
 CONTAINER_TOOL ?= docker
+
+# OpenEverest branch to use for OpenEverest CRD installation.
+OPENEVEREST_BRANCH ?= release-2.0
 
 # Image URL to use all building/pushing image targets
 IMG ?= ghcr.io/openeverest/provider-percona-server-mongodb-dev:latest
@@ -114,12 +120,12 @@ load-openeverest-controller-image: ## Import the OpenEverest controller image in
 
 .PHONY: install-crds
 install-crds: ## Install OpenEverest and PSMDB CRDs into the cluster.
-	kubectl apply -f https://raw.githubusercontent.com/openeverest/openeverest/v2/config/crd/bases/core.openeverest.io_providers.yaml
-	kubectl apply -f https://raw.githubusercontent.com/openeverest/openeverest/v2/config/crd/bases/core.openeverest.io_instances.yaml
-	kubectl apply -f https://raw.githubusercontent.com/openeverest/openeverest/v2/config/crd/bases/monitoring.openeverest.io_monitoringconfigs.yaml
-	kubectl apply -f https://raw.githubusercontent.com/openeverest/openeverest/v2/config/crd/bases/backup.openeverest.io_backupclasses.yaml
-	kubectl apply -f https://raw.githubusercontent.com/openeverest/openeverest/v2/config/crd/bases/backup.openeverest.io_backups.yaml
-	kubectl apply -f https://raw.githubusercontent.com/openeverest/openeverest/v2/config/crd/bases/backup.openeverest.io_restores.yaml
+	kubectl apply -f https://raw.githubusercontent.com/openeverest/openeverest/$(OPENEVEREST_BRANCH)/config/crd/bases/core.openeverest.io_providers.yaml
+	kubectl apply -f https://raw.githubusercontent.com/openeverest/openeverest/$(OPENEVEREST_BRANCH)/config/crd/bases/core.openeverest.io_instances.yaml
+	kubectl apply -f https://raw.githubusercontent.com/openeverest/openeverest/$(OPENEVEREST_BRANCH)/config/crd/bases/monitoring.openeverest.io_monitoringconfigs.yaml
+	kubectl apply -f https://raw.githubusercontent.com/openeverest/openeverest/$(OPENEVEREST_BRANCH)/config/crd/bases/backup.openeverest.io_backupclasses.yaml
+	kubectl apply -f https://raw.githubusercontent.com/openeverest/openeverest/$(OPENEVEREST_BRANCH)/config/crd/bases/backup.openeverest.io_backups.yaml
+	kubectl apply -f https://raw.githubusercontent.com/openeverest/openeverest/$(OPENEVEREST_BRANCH)/config/crd/bases/backup.openeverest.io_restores.yaml
 	curl -fsSL https://raw.githubusercontent.com/percona/percona-server-mongodb-operator/v$(PSMDB_OPERATOR_VERSION)/deploy/crd.yaml \
 		| kubectl apply --server-side -f -
 
@@ -171,9 +177,23 @@ k3d-cluster-reset: k3d-cluster-down k3d-cluster-up ## Reset the K8S cluster for 
 
 ##@ Build
 
+LD_FLAGS = -X 'github.com/openeverest/provider-percona-server-mongodb/cmd/provider.Version=$(RELEASE_VERSION)' \
+	-X 'github.com/openeverest/provider-percona-server-mongodb/cmd/provider.FullCommit=$(RELEASE_FULLCOMMIT)'
+
+.PHONY: build-helper
+build-helper: generate $(LOCALBIN) ## Build provider binary (helper).
+	go build -v -ldflags "$(LD_FLAGS)" -o bin/provider cmd/provider/main.go
+
 .PHONY: build
-build: generate ## Build provider binary.
-	go build -o bin/provider cmd/provider/main.go
+build: LD_FLAGS += -s -w
+build: build-helper ## Build provider binary.
+
+.PHONY: rc
+rc: build-helper ## Build provider RC binary.
+
+.PHONY: release
+release: LD_FLAGS += -s -w
+release: build-helper ## Build provider release binary. (Use for building release only!)
 
 .PHONY: docker-build
 docker-build: ## Build docker image with the manager.

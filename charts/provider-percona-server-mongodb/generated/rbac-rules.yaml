@@ -63,6 +63,8 @@
   resources:
     - restores
   verbs:
+    - create
+    - delete
     - get
     - list
     - patch
