@@ -34,6 +34,8 @@ ui:
             modes:
               edit:
                 disabled: true
+              restore:
+                disabled: true
           validation:
             required: true
     resources:
@@ -130,6 +132,8 @@ ui:
             label: "Storage class"
             modes:
               edit:
+                disabled: true
+              restore:
                 disabled: true
           validation:
             required: true

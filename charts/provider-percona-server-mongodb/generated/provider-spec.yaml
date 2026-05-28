@@ -88,6 +88,8 @@ spec:
                 modes:
                   edit:
                     disabled: true
+                  restore:
+                    disabled: true
               path: spec.components.engine.storage.storageClass
               uiType: select
               validation:
@@ -104,6 +106,8 @@ spec:
                 label: Database Version
                 modes:
                   edit:
+                    disabled: true
+                  restore:
                     disabled: true
                 optionsPath: spec.versions
                 optionsPathConfig:
@@ -226,6 +230,8 @@ spec:
                 modes:
                   edit:
                     disabled: true
+                  restore:
+                    disabled: true
               path: spec.components.engine.storage.storageClass
               uiType: select
               validation:
@@ -242,6 +248,8 @@ spec:
                 label: Database Version
                 modes:
                   edit:
+                    disabled: true
+                  restore:
                     disabled: true
                 optionsPath: spec.versions
                 optionsPathConfig:
