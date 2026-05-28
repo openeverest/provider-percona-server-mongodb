@@ -119,24 +119,43 @@ func SyncPSMDB(c *controller.Context) error {
 	engine := c.Instance().Spec.Components[common.ComponentEngine]
 	// No need to check if engine is nil, it is guaranteed to be present by the validator
 
-	// Set the image: use the user-specified image if provided, otherwise use the default from the provider spec
+	// Set the image: use the user-specified image if provided, otherwise resolve
+	// from the version bundle (engine.Version is populated by the provider-runtime)
+	// or fall back to the provider's default image.
 	if engine.Image != "" {
-		// User explicitly specified an image
+		// User explicitly specified an image override.
 		psmdb.Spec.Image = engine.Image
 	} else {
 		spec, err := c.ProviderSpec()
 		if err != nil {
 			return err
 		}
-		psmdb.Spec.Image = controller.GetDefaultImageForComponent(spec, common.ComponentEngine)
+		if engine.Version != "" {
+			psmdb.Spec.Image = controller.GetImageForVersion(spec, common.ComponentEngine, engine.Version)
+		}
+		if psmdb.Spec.Image == "" {
+			psmdb.Spec.Image = controller.GetDefaultImageForComponent(spec, common.ComponentEngine)
+		}
 	}
 	psmdb.Spec.ImagePullPolicy = corev1.PullIfNotPresent
 
-	psmdb.Spec.Replsets = configureReplsets(c)
+	replsets, err := configureReplsets(c)
+	if err != nil {
+		return err
+	}
+	psmdb.Spec.Replsets = replsets
 	if c.Instance().Spec.Topology != nil && c.Instance().Spec.Topology.Type == "sharded" {
 		psmdb.Spec.Sharding.Enabled = true
-		psmdb.Spec.Sharding.ConfigsvrReplSet = configureConfigServerReplset(c)
-		psmdb.Spec.Sharding.Mongos = configureMongos(c)
+		configsvr, err := configureConfigServerReplset(c)
+		if err != nil {
+			return err
+		}
+		psmdb.Spec.Sharding.ConfigsvrReplSet = configsvr
+		mongos, err := configureMongos(c)
+		if err != nil {
+			return err
+		}
+		psmdb.Spec.Sharding.Mongos = mongos
 	}
 
 	backupSpec, err := buildBackupSpec(c)

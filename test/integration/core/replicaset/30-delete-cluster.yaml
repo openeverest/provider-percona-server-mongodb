@@ -4,6 +4,7 @@ timeout: 10
 commands:
   - script: kubectl -n $NAMESPACE delete in/test-psmdb-cluster psmdb/test-psmdb-cluster --wait=false && sleep 5
   - script: kubectl -n $NAMESPACE delete secret/everest-secrets-test-psmdb-cluster
+  - script: kubectl -n $NAMESPACE delete configmap/psmdb-engine-config --ignore-not-found
   # - command: kubectl patch in/test-psmdb-cluster -n $NAMESPACE -p '{"metadata":{"finalizers":null}}' --type merge
   # - command: kubectl patch psmdb/test-psmdb-cluster -n $NAMESPACE -p '{"metadata":{"finalizers":null}}' --type merge
 

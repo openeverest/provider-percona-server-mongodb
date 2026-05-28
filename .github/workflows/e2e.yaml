@@ -48,7 +48,7 @@ env:
   PROVIDER_NAMESPACE: provider-system
 
   # Branch of openeverest/openeverest to build the platform from.
-  OPENEVEREST_BRANCH: v2
+  OPENEVEREST_BRANCH: release-2.0
 
   # Image names produced by the openeverest build (must match its Makefile).
   EVEREST_IMG: ghcr.io/openeverest/openeverest-dev:0.0.0
@@ -187,6 +187,8 @@ jobs:
 
       - name: Install provider CRDs
         run: make install-crds
+        env:
+          OPENEVEREST_BRANCH: ${{ env.OPENEVEREST_BRANCH }}
 
       - name: Deploy provider via Helm
         run: make deploy-provider-ci
