@@ -39,6 +39,8 @@ spec:
       storage:
         size: 25Gi
         storageClass: standard
+status:
+  phase: Restoring
 ---
 apiVersion: psmdb.percona.com/v1
 kind: PerconaServerMongoDB
