@@ -113,8 +113,13 @@ func SyncPSMDB(c *controller.Context) error {
 
 	defer l.Info("PSMDB cluster synced", "cluster", c.Name())
 
+	meta := c.ObjectMeta(c.Name())
+	meta.Finalizers = []string{
+		"percona.com/delete-psmdb-pods-in-order",
+		"percona.com/delete-psmdb-pvc",
+	}
 	psmdb := &psmdbv1.PerconaServerMongoDB{
-		ObjectMeta: c.ObjectMeta(c.Name()),
+		ObjectMeta: meta,
 		Spec:       defaultSpec(),
 	}
 
