@@ -1,3 +1,31 @@
 apiVersion: v1
-entries: {}
-generated: 2026-05-05T23:00:00Z
+entries:
+  provider-percona-server-mongodb:
+  - apiVersion: v2
+    appVersion: 0.1.0
+    created: "2026-05-29T17:23:03.3765588Z"
+    dependencies:
+    - alias: operator
+      name: psmdb-operator
+      repository: https://percona.github.io/percona-helm-charts/
+      version: 1.22.0
+    description: A Helm chart for deploying the OpenEverest Percona Server MongoDB
+      provider
+    digest: 5e79d23a9229ddb8dcbf4acf4d0e5739c43e3be613747ce04e57481098b19b49
+    home: https://github.com/openeverest/provider-percona-server-mongodb
+    keywords:
+    - openeverest
+    - percona
+    - mongodb
+    - provider
+    - database
+    maintainers:
+    - name: OpenEverest Contributors
+    name: provider-percona-server-mongodb
+    sources:
+    - https://github.com/openeverest/provider-percona-server-mongodb
+    type: application
+    urls:
+    - https://github.com/openeverest/provider-percona-server-mongodb/releases/download/provider-percona-server-mongodb-0.1.0/provider-percona-server-mongodb-0.1.0.tgz
+    version: 0.1.0
+generated: "2026-05-29T17:23:03.376568024Z"
