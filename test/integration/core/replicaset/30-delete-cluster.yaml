@@ -6,5 +6,5 @@ commands:
   - script: kubectl -n $NAMESPACE delete secret/everest-secrets-test-psmdb-cluster
   - script: kubectl -n $NAMESPACE delete configmap/psmdb-engine-config --ignore-not-found
   # - command: kubectl patch in/test-psmdb-cluster -n $NAMESPACE -p '{"metadata":{"finalizers":null}}' --type merge
-  # - command: kubectl patch psmdb/test-psmdb-cluster -n $NAMESPACE -p '{"metadata":{"finalizers":null}}' --type merge
+  - command: kubectl patch psmdb/test-psmdb-cluster -n $NAMESPACE -p '{"metadata":{"finalizers":null}}' --type merge
 
