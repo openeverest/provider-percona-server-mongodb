@@ -126,6 +126,7 @@ func SyncPSMDB(c *controller.Context) error {
 	// Get the engine component spec
 	engine := c.Instance().Spec.Components[common.ComponentEngine]
 	// No need to check if engine is nil, it is guaranteed to be present by the validator
+	psmdb.Spec.Unsafe = unsafeFlags(engine.Replicas)
 
 	// Set the image: use the user-specified image if provided, otherwise resolve
 	// from the version bundle (engine.Version is populated by the provider-runtime)
@@ -231,6 +232,16 @@ func SyncPSMDB(c *controller.Context) error {
 	}
 
 	return nil
+}
+
+// unsafeFlags returns psmdbv1.UnsafeFlags considering the given replicas configuration.
+func unsafeFlags(replicas *int32) psmdbv1.UnsafeFlags {
+	const productionSafeReplsetSize = 3
+	if replicas != nil && *replicas < productionSafeReplsetSize {
+		return psmdbv1.UnsafeFlags{ReplsetSize: true}
+	}
+
+	return psmdbv1.UnsafeFlags{}
 }
 
 // StatusPSMDB computes the current status of the PSMDB cluster.
