@@ -60,7 +60,7 @@ spec:
   components:
     engine:
       type: mongod
-      replicas: 6
+      replicas: 5
       resources:
         limits:
           cpu: "1"
@@ -128,7 +128,7 @@ spec:
         requests:
           cpu: 500m
           memory: 2G
-      size: 6
+      size: 5
       volumeSpec:
         persistentVolumeClaim:
           resources:
