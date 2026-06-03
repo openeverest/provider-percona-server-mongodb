@@ -401,7 +401,7 @@ func TestValidatePSMDB(t *testing.T) {
 					},
 				},
 			},
-			expectErr: "sharded missing spec.components.configServer",
+			expectErr: "missing spec.components.configServer",
 		},
 		{
 			name: "valid configServer with single engine replica",
