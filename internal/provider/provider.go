@@ -97,14 +97,12 @@ func ValidatePSMDB(c *controller.Context) error {
 	l := log.FromContext(c.Context())
 	l.Info("Validating PSMDB cluster", "cluster", c.Name())
 
-	spec := c.Instance().Spec
-
 	if err := validateMetadata(c); err != nil {
 		l.Error(err, "Metadata validation failed", "cluster", c.Name())
 		return fmt.Errorf("metadata validation failed: %w", err)
 	}
 
-	if err := validateDataSource(spec.DataSource); err != nil {
+	if err := validateDataSource(c); err != nil {
 		l.Error(err, "DataSource validation failed", "cluster", c.Name())
 		return fmt.Errorf("dataSource validation failed: %w", err)
 	}

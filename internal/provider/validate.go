@@ -137,7 +137,9 @@ func validateEngine(c *controller.Context) error {
 }
 
 // validateDataSource validates the dataSource spec.
-func validateDataSource(ds *backupv1alpha1.DataSource) error {
+func validateDataSource(c *controller.Context) error {
+	ds := c.Instance().Spec.DataSource
+
 	if ds == nil || ds.Type != backupv1alpha1.DataSourceTypeBackup {
 		return nil
 	}
@@ -173,21 +175,6 @@ func validateShardedTopology(c *controller.Context) error {
 	_, ok := spec.Components[common.ComponentProxy]
 	if !ok {
 		return fmt.Errorf("component %q required for sharded topology", common.ComponentProxy)
-	}
-
-	return nil
-}
-
-// validateReplicaSetTopology validates replica set topology.
-func validateReplicaSetTopology(c *controller.Context) error {
-	spec := c.Instance().Spec
-
-	// Ensure sharded-only components are not present in replica set topology.
-	if _, ok := spec.Components[common.ComponentConfigServer]; ok {
-		return fmt.Errorf("component %q is only valid for sharded topology", common.ComponentConfigServer)
-	}
-	if _, ok := spec.Components[common.ComponentProxy]; ok {
-		return fmt.Errorf("component %q is only valid for sharded topology", common.ComponentProxy)
 	}
 
 	return nil
