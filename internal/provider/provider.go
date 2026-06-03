@@ -97,12 +97,23 @@ func ValidatePSMDB(c *controller.Context) error {
 	l := log.FromContext(c.Context())
 	l.Info("Validating PSMDB cluster", "cluster", c.Name())
 
-	if err := validateMonitoring(c); err != nil {
-		return fmt.Errorf("monitoring validation failed: %w", err)
+	spec := c.Instance().Spec
+
+	if err := validateMetadata(c); err != nil {
+		l.Error(err, "Metadata validation failed", "cluster", c.Name())
+		return fmt.Errorf("metadata validation failed: %w", err)
 	}
 
-	// TODO: Add actual validation logic
-	// Example: Check for required components, validate storage sizes, etc.
+	if err := validateDataSource(spec.DataSource); err != nil {
+		l.Error(err, "DataSource validation failed", "cluster", c.Name())
+		return fmt.Errorf("dataSource validation failed: %w", err)
+	}
+
+	if err := validateComponents(c); err != nil {
+		l.Error(err, "Components validation failed", "cluster", c.Name())
+		return fmt.Errorf("components validation failed: %w", err)
+	}
+
 	return nil
 }
 
