@@ -16,7 +16,7 @@ IMG ?= ghcr.io/openeverest/provider-percona-server-mongodb-dev:latest
 OPENEVEREST_CONTROLLER_IMG ?= ghcr.io/openeverest/openeverest-controller-dev:0.0.0
 
 # OpenEverest branch to use for CRD installation in CI
-# TODO: set it back to v2
+# TODO: set it back to v2 before merge
 OPENEVEREST_BRANCH ?= preset
 
 # Split IMG into repository and tag for Helm values
