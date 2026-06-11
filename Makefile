@@ -86,6 +86,10 @@ verify: ## Verify that generated files are up-to-date (for CI).
 
 ##@ Testing
 
+.PHONY: test-unit
+test-unit: ## Run Go unit tests.
+	go test -v -race -coverprofile=coverage.out ./...
+
 .PHONY: test-integration
 test-integration: ## Run all integration tests against K8S cluster.
 	. ./test/vars.sh && kubectl kuttl test --config ./test/integration/kuttl.yaml
