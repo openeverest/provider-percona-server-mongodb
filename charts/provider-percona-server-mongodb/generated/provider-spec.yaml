@@ -396,7 +396,7 @@ spec:
               fieldParams:
                 defaultValue: 1
                 label: Nº of shards
-              path: spec.topology.config.shards
+              path: spec.topology.config.numShards
               uiType: number
               validation:
                 int: true
@@ -404,7 +404,7 @@ spec:
                 modes:
                   edit:
                     celExpressions:
-                      - celExpr: spec.topology.config.shards >= original.spec.topology.config.shards
+                      - celExpr: spec.topology.config.numShards >= original.spec.topology.config.numShards
                         message: Number of shards cannot be decreased
                 required: true
           componentsOrder:
