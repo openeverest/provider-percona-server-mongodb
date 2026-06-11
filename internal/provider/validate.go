@@ -163,7 +163,7 @@ func validateShardedTopology(c *controller.Context) error {
 	var shardedConfig sharded.ShardedTopologyConfig
 	if c.TryDecodeTopologyConfig(&shardedConfig) {
 		if shardedConfig.NumShards < 1 {
-			return fmt.Errorf("spec.topology.sharded.numShards must be >= 1, got %d", shardedConfig.NumShards)
+			return fmt.Errorf("spec.topology.config.numShards must be >= 1, got %d", shardedConfig.NumShards)
 		}
 	}
 
