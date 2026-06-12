@@ -17,6 +17,13 @@ spec:
       type: mongod
       # Version is optional - will use default from provider metadata
       # version: 8.0.8-3
+      resources:
+        limits:
+          cpu: "1"
+          memory: 4G
+        requests:
+          cpu: 500m
+          memory: 2G
       replicas: 3
       storage:
         size: 10Gi
@@ -34,9 +41,9 @@ spec:
       replicas: 1
 
     # Optional: monitoring
-    monitoring:
-      type: pmm
-      # version: 2.44.1
+    # monitoring:
+    #   type: pmm
+    #   version: 2.44.1
 
 # status:
 #   phase: Ready

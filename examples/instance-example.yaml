@@ -17,7 +17,7 @@ spec:
     type: sharded
     config:
       # Topology-specific configuration (schema defined by provider)
-      shards: 3
+      numShards: 3
 
   # Global provider configuration
   global:
@@ -52,8 +52,8 @@ spec:
     proxy:
       type: mongos
       replicas: 3
-      service:
-        exposeType: LoadBalancer
+      # service:
+      #   exposeType: LoadBalancer
       affinity:
         podAntiAffinity:
           preferredDuringSchedulingIgnoredDuringExecution:
@@ -80,13 +80,13 @@ spec:
       replicas: 1
 
     # Monitoring (optional)
-    monitoring:
-      type: pmm
-      config:
-        # Reference to monitoring configuration
-        secretRef:
-          name: pmm-config
-        key: pmm.yaml
+    # monitoring:
+    #   type: pmm
+    #   config:
+    #     # Reference to monitoring configuration
+    #     secretRef:
+    #       name: pmm-config
+    #     key: pmm.yaml
 
 # status:
 #   phase: Ready
