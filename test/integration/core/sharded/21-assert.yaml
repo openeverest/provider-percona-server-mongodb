@@ -1,0 +1,265 @@
+apiVersion: kuttl.dev/v1
+kind: TestAssert
+timeout: 10
+collectors:
+  - command: kubectl get in/test-psmdb-cluster -n ${NAMESPACE} -o yaml
+  - command: kubectl get psmdb/test-psmdb-cluster -n ${NAMESPACE} -o yaml
+resourceRefs:
+  - apiVersion: core.openeverest.io/v1alpha1
+    kind: Instance
+    name: test-psmdb-cluster
+    ref: in
+  - apiVersion: psmdb.percona.com/v1
+    kind: PerconaServerMongoDB
+    name: test-psmdb-cluster
+    ref: psmdb
+assertAll:
+  # Verify engine affinity is set in the Instance
+  - celExpr: "has(in.spec.components.engine.affinity)"
+    message: "engine affinity is not set in Instance"
+
+  - celExpr: "has(in.spec.components.engine.affinity.podAntiAffinity)"
+    message: "engine podAntiAffinity is not set in Instance"
+
+  # Verify proxy affinity is set in the Instance
+  - celExpr: "has(in.spec.components.proxy.affinity)"
+    message: "proxy affinity is not set in Instance"
+
+  - celExpr: "has(in.spec.components.proxy.affinity.podAffinity)"
+    message: "proxy podAffinity is not set in Instance"
+
+  # Verify configServer affinity is set in the Instance
+  - celExpr: "has(in.spec.components.configServer.affinity)"
+    message: "configServer affinity is not set in Instance"
+
+  - celExpr: "has(in.spec.components.configServer.affinity.nodeAffinity)"
+    message: "configServer nodeAffinity is not set in Instance"
+
+  # Verify affinity is applied to PSMDB shards (rs0, rs1, rs2)
+  - celExpr: "size(psmdb.spec.replsets) == 3"
+    message: "expected 3 replsets (shards)"
+
+  - celExpr: "has(psmdb.spec.replsets[0].affinity.advanced)"
+    message: "affinity is not set in PSMDB replset rs0"
+
+  - celExpr: "has(psmdb.spec.replsets[0].affinity.advanced.podAntiAffinity)"
+    message: "podAntiAffinity is not set in PSMDB replset rs0"
+
+  - celExpr: "psmdb.spec.replsets[0].affinity.advanced.podAntiAffinity.preferredDuringSchedulingIgnoredDuringExecution[0].weight == 100"
+    message: "engine podAntiAffinity weight is not 100 in rs0"
+
+  - celExpr: "has(psmdb.spec.replsets[1].affinity.advanced)"
+    message: "affinity is not set in PSMDB replset rs1"
+
+  - celExpr: "has(psmdb.spec.replsets[2].affinity.advanced)"
+    message: "affinity is not set in PSMDB replset rs2"
+
+  # Verify affinity is applied to configServer
+  - celExpr: "has(psmdb.spec.sharding.configsvrReplSet.affinity.advanced)"
+    message: "affinity is not set in PSMDB configServer"
+
+  - celExpr: "has(psmdb.spec.sharding.configsvrReplSet.affinity.advanced.nodeAffinity)"
+    message: "nodeAffinity is not set in PSMDB configServer"
+
+  - celExpr: "psmdb.spec.sharding.configsvrReplSet.affinity.advanced.nodeAffinity.preferredDuringSchedulingIgnoredDuringExecution[0].weight == 1"
+    message: "configServer nodeAffinity weight is not 1"
+
+  # Verify affinity is applied to mongos (proxy)
+  - celExpr: "has(psmdb.spec.sharding.mongos.affinity.advanced)"
+    message: "affinity is not set in PSMDB mongos"
+
+  - celExpr: "has(psmdb.spec.sharding.mongos.affinity.advanced.podAffinity)"
+    message: "podAffinity is not set in PSMDB mongos"
+
+  - celExpr: "psmdb.spec.sharding.mongos.affinity.advanced.podAffinity.requiredDuringSchedulingIgnoredDuringExecution[0].topologyKey == 'failure-domain.beta.kubernetes.io/zone'"
+    message: "mongos podAffinity topologyKey is not failure-domain.beta.kubernetes.io/zone"
+---
+apiVersion: core.openeverest.io/v1alpha1
+kind: Instance
+metadata:
+  name: test-psmdb-cluster
+spec:
+  provider: percona-server-mongodb
+  topology:
+    type: sharded
+    config:
+      numShards: 3
+  components:
+    engine:
+      type: mongod
+      replicas: 3
+      resources:
+        limits:
+          cpu: "1"
+          memory: 4G
+        requests:
+          cpu: 500m
+          memory: 2G
+      storage:
+        size: 25Gi
+      affinity:
+        podAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchExpressions:
+                  - key: security
+                    operator: In
+                    values:
+                      - S1
+              topologyKey: failure-domain.beta.kubernetes.io/zone
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: security
+                      operator: In
+                      values:
+                        - S2
+                topologyKey: kubernetes.io/hostname
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: kubernetes.io/e2e-az-name
+                    operator: In
+                    values:
+                      - e2e-az1
+                      - e2e-az2
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 1
+              preference:
+                matchExpressions:
+                  - key: another-node-label-key
+                    operator: In
+                    values:
+                      - another-node-label-value
+    proxy:
+      type: mongod
+      replicas: 3
+      affinity:
+        podAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchExpressions:
+                  - key: security
+                    operator: In
+                    values:
+                      - S1
+              topologyKey: failure-domain.beta.kubernetes.io/zone
+    configServer:
+      type: mongod
+      replicas: 3
+      storage:
+        size: 25Gi
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: kubernetes.io/e2e-az-name
+                    operator: In
+                    values:
+                      - e2e-az1
+                      - e2e-az2
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 1
+              preference:
+                matchExpressions:
+                  - key: another-node-label-key
+                    operator: In
+                    values:
+                      - another-node-label-value
+status:
+  phase: Ready
+---
+apiVersion: psmdb.percona.com/v1
+kind: PerconaServerMongoDB
+metadata:
+  name: test-psmdb-cluster
+spec:
+  replsets:
+    - name: rs0
+      size: 3
+      affinity:
+        advanced:
+          podAntiAffinity:
+            preferredDuringSchedulingIgnoredDuringExecution:
+              - weight: 100
+                podAffinityTerm:
+                  labelSelector:
+                    matchExpressions:
+                      - key: security
+                        operator: In
+                        values:
+                          - S2
+                  topologyKey: kubernetes.io/hostname
+    - name: rs1
+      size: 3
+      affinity:
+        advanced:
+          podAntiAffinity:
+            preferredDuringSchedulingIgnoredDuringExecution:
+              - weight: 100
+                podAffinityTerm:
+                  labelSelector:
+                    matchExpressions:
+                      - key: security
+                        operator: In
+                        values:
+                          - S2
+                  topologyKey: kubernetes.io/hostname
+    - name: rs2
+      size: 3
+      affinity:
+        advanced:
+          podAntiAffinity:
+            preferredDuringSchedulingIgnoredDuringExecution:
+              - weight: 100
+                podAffinityTerm:
+                  labelSelector:
+                    matchExpressions:
+                      - key: security
+                        operator: In
+                        values:
+                          - S2
+                  topologyKey: kubernetes.io/hostname
+  sharding:
+    enabled: true
+    configsvrReplSet:
+      size: 3
+      affinity:
+        advanced:
+          nodeAffinity:
+            requiredDuringSchedulingIgnoredDuringExecution:
+              nodeSelectorTerms:
+                - matchExpressions:
+                    - key: kubernetes.io/e2e-az-name
+                      operator: In
+                      values:
+                        - e2e-az1
+                        - e2e-az2
+            preferredDuringSchedulingIgnoredDuringExecution:
+              - weight: 1
+                preference:
+                  matchExpressions:
+                    - key: another-node-label-key
+                      operator: In
+                      values:
+                        - another-node-label-value
+    mongos:
+      size: 3
+      affinity:
+        advanced:
+          podAffinity:
+            requiredDuringSchedulingIgnoredDuringExecution:
+              - labelSelector:
+                  matchExpressions:
+                    - key: security
+                      operator: In
+                      values:
+                        - S1
+                topologyKey: failure-domain.beta.kubernetes.io/zone
+status:
+  state: ready

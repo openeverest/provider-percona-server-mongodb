@@ -1,0 +1,75 @@
+apiVersion: kuttl.dev/v1
+kind: TestStep
+timeout: 10
+---
+apiVersion: core.openeverest.io/v1alpha1
+kind: Instance
+metadata:
+  name: test-psmdb-cluster
+spec:
+  provider: percona-server-mongodb
+  topology:
+    type: sharded
+    config:
+      numShards: 3
+  components:
+    engine:
+      type: mongod
+      replicas: 3
+      resources:
+        limits:
+          cpu: "1"
+          memory: 4G
+        requests:
+          cpu: 500m
+          memory: 2G
+      storage:
+        size: 25Gi
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: security
+                      operator: In
+                      values:
+                        - S2
+                topologyKey: kubernetes.io/hostname
+    proxy:
+      type: mongod
+      replicas: 3
+      affinity:
+        podAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchExpressions:
+                  - key: security
+                    operator: In
+                    values:
+                      - S1
+              topologyKey: failure-domain.beta.kubernetes.io/zone
+    configServer:
+      type: mongod
+      replicas: 3
+      storage:
+        size: 25Gi
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: kubernetes.io/e2e-az-name
+                    operator: In
+                    values:
+                      - e2e-az1
+                      - e2e-az2
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 1
+              preference:
+                matchExpressions:
+                  - key: another-node-label-key
+                    operator: In
+                    values:
+                      - another-node-label-value
