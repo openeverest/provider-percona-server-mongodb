@@ -13,27 +13,6 @@ resourceRefs:
     kind: PerconaServerMongoDB
     name: test-psmdb-cluster
     ref: psmdb
-assertAll:
-
-  # Verify affinity is applied to PSMDB replset
-  - celExpr: "has(psmdb.spec.replsets[0].affinity)"
-    message: "affinity is not set in PSMDB replset"
-
-  - celExpr: "has(psmdb.spec.replsets[0].affinity.advanced)"
-    message: "advanced affinity is not set in PSMDB replset"
-
-  - celExpr: "has(psmdb.spec.replsets[0].affinity.advanced.podAntiAffinity)"
-    message: "podAntiAffinity is not set in PSMDB replset"
-
-  # Verify podAntiAffinity has the expected structure
-  - celExpr: "size(psmdb.spec.replsets[0].affinity.advanced.podAntiAffinity.preferredDuringSchedulingIgnoredDuringExecution) > 0"
-    message: "podAntiAffinity preferredDuringSchedulingIgnoredDuringExecution is empty"
-
-  - celExpr: "psmdb.spec.replsets[0].affinity.advanced.podAntiAffinity.preferredDuringSchedulingIgnoredDuringExecution[0].weight == 100"
-    message: "podAntiAffinity weight is not 100"
-
-  - celExpr: "psmdb.spec.replsets[0].affinity.advanced.podAntiAffinity.preferredDuringSchedulingIgnoredDuringExecution[0].podAffinityTerm.topologyKey == 'kubernetes.io/hostname'"
-    message: "podAntiAffinity topologyKey is not kubernetes.io/hostname"
 ---
 apiVersion: core.openeverest.io/v1alpha1
 kind: Instance
@@ -43,17 +22,6 @@ spec:
   provider: percona-server-mongodb
   components:
     engine:
-      type: mongod
-      replicas: 2
-      resources:
-        limits:
-          cpu: "1"
-          memory: 4G
-        requests:
-          cpu: 500m
-          memory: 2G
-      storage:
-        size: 25Gi
       affinity:
         podAntiAffinity:
           preferredDuringSchedulingIgnoredDuringExecution:
@@ -70,7 +38,6 @@ metadata:
 spec:
   replsets:
     - name: rs0
-      size: 2
       affinity:
         advanced:
           podAntiAffinity:

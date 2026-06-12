@@ -10,17 +10,6 @@ spec:
   provider: percona-server-mongodb
   components:
     engine:
-      type: mongod
-      replicas: 2
-      resources:
-        limits:
-          cpu: "1"
-          memory: 4G
-        requests:
-          cpu: 500m
-          memory: 2G
-      storage:
-        size: 25Gi
       affinity:
         podAntiAffinity:
           preferredDuringSchedulingIgnoredDuringExecution:
