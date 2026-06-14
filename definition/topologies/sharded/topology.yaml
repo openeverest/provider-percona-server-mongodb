@@ -36,6 +36,8 @@ ui:
             modes:
               edit:
                 disabled: true
+              restore:
+                disabled: true
           validation:
             required: true
     resources:
@@ -44,7 +46,7 @@ ui:
       components:
         shards:
           uiType: number
-          path: "spec.topology.config.shards"
+          path: "spec.topology.config.numShards"
           fieldParams:
             label: "Nº of shards"
             defaultValue: 1
@@ -55,7 +57,7 @@ ui:
             modes:
               edit:
                 celExpressions:
-                  - celExpr: "spec.topology.config.shards >= original.spec.topology.config.shards"
+                  - celExpr: "spec.topology.config.numShards >= original.spec.topology.config.numShards"
                     message: "Number of shards cannot be decreased"
         numberOfnodes:
           path: "spec.components.engine.replicas"
@@ -204,6 +206,8 @@ ui:
             label: "Storage class"
             modes:
               edit:
+                disabled: true
+              restore:
                 disabled: true
           validation:
             required: true

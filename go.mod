@@ -5,7 +5,7 @@ go 1.26.2
 require (
 	github.com/AlekSi/pointer v1.2.0
 	github.com/hashicorp/go-version v1.9.0
-	github.com/openeverest/openeverest/v2 v2.0.0-20260527105045-0eb76280ca74
+	github.com/openeverest/openeverest/v2 v2.0.0-dev.1
 	github.com/percona/percona-server-mongodb-operator v1.22.0
 	github.com/stretchr/testify v1.11.1
 	k8s.io/api v0.36.0
@@ -197,7 +197,7 @@ require (
 	github.com/nunnatsa/ginkgolinter v0.23.0 // indirect
 	github.com/oasdiff/yaml v0.0.9 // indirect
 	github.com/oasdiff/yaml3 v0.0.12 // indirect
-	github.com/openeverest/provider-sdk v0.0.0-20260515081427-9b0123488524 // indirect
+	github.com/openeverest/provider-sdk v0.1.0 // indirect
 	github.com/pelletier/go-toml/v2 v2.2.4 // indirect
 	github.com/percona/percona-backup-mongodb v1.8.1-0.20251104101930-05ab6d7e1004 // indirect
 	github.com/perimeterx/marshmallow v1.1.5 // indirect

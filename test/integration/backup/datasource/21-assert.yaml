@@ -1,0 +1,24 @@
+apiVersion: kuttl.dev/v1
+kind: TestAssert
+timeout: 30
+---
+apiVersion: backup.openeverest.io/v1alpha1
+kind: Backup
+metadata:
+  name: src-backup
+status:
+  state: Succeeded
+---
+apiVersion: psmdb.percona.com/v1
+kind: PerconaServerMongoDBBackup
+metadata:
+  name: src-backup
+spec:
+  storageName: test-storage-s3
+  clusterName: src-psmdb-cluster
+status:
+  state: ready
+  completed: 2025-01-01T01:02:03Z
+  storageName: test-storage-s3
+  type: logical
+  destination: s3://test-storage-s3/src-psmdb-cluster/dee8317b-b24e-45f5-bd8d-bf2aff04819d/2025-01-01T01:02:03Z

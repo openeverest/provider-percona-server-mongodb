@@ -160,7 +160,7 @@ jobs:
             --version-metadata-url=https://check-dev.percona.com \
             --skip-db-namespace \
             --skip-wizard \
-            --helm.set server.image=ghcr.io/openeverest/openeverest-dev \
+            --helm.set server.image.repository=ghcr.io/openeverest/openeverest-dev \
             --helm.set server.apiRequestsRateLimit=500 \
             --helm.set server.sessionRequestsRateLimit=200 \
             --helm.set versionMetadataURL=https://check-dev.percona.com \

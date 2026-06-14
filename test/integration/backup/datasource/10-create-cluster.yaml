@@ -5,13 +5,21 @@ timeout: 10
 apiVersion: core.openeverest.io/v1alpha1
 kind: Instance
 metadata:
-  name: test-psmdb-cluster
+  name: src-psmdb-cluster
 spec:
   provider: percona-server-mongodb
+  backup:
+    enabled: true
+    classRef:
+      name: percona-backup-mongodb
+    storages:
+    - name: test-storage-s3
+      storageRef: 
+        name: test-storage-s3
   components:
     engine:
       type: mongod
-      replicas: 5
+      replicas: 3
       resources:
         limits:
           cpu: "1"
@@ -21,16 +29,4 @@ spec:
           memory: 2G
       storage:
         size: 25Gi
-  # engine:
-  #   replicas: 2
-  #   resources:
-  #     cpu: "1"
-  #     memory: 4G
-  #   storage:
-  #     size: 25Gi
-  #   type: psmdb
-  #   userSecretsName: everest-secrets-test-psmdb-cluster
-  # proxy:
-  #   expose:
-  #     type: internal
-
+        storageClass: standard

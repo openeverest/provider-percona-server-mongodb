@@ -93,6 +93,18 @@ metadata:
   name: psmdb-mc
 spec:
   components:
+    engine:
+      type: mongod
+      replicas: 3
+      storage:
+        size: 4Gi
+      resources:
+        limits:
+          cpu: 600m
+          memory: 512Mi
+    proxy:
+      type: mongod
+      replicas: 1
     monitoring:
       type: pmm
       customSpec:

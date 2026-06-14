@@ -20,11 +20,9 @@ componentTypes:
       default: true
   backup:
     versions:
-    - version: "2.11.0"
-      image: percona/percona-backup-mongodb:2.11.0
+    - version: "2.12.0"
+      image: percona/percona-backup-mongodb:2.12.0
       default: true
-    - version: "2.9.1"
-      image: percona/percona-backup-mongodb:2.9.1
   pmm:
     versions:
     - version: "2.44.1"
@@ -43,40 +41,40 @@ versions:
     engine: "8.0.12-4"
     configServer: "8.0.12-4"
     proxy: "8.0.12-4"
-    backupAgent: "2.11.0"
+    backupAgent: "2.12.0"
     monitoring: "3.7.0"
 - name: "8.0.8"
   components:
     engine: "8.0.8-3"
     configServer: "8.0.8-3"
     proxy: "8.0.8-3"
-    backupAgent: "2.11.0"
+    backupAgent: "2.12.0"
     monitoring: "3.7.0"
 - name: "8.0.4"
   components:
     engine: "8.0.4-1"
     configServer: "8.0.4-1"
     proxy: "8.0.4-1"
-    backupAgent: "2.11.0"
+    backupAgent: "2.12.0"
     monitoring: "3.7.0"
 - name: "7.0.18"
   components:
     engine: "7.0.18-11"
     configServer: "7.0.18-11"
     proxy: "7.0.18-11"
-    backupAgent: "2.11.0"
+    backupAgent: "2.12.0"
     monitoring: "3.7.0"
 - name: "6.0.21"
   components:
     engine: "6.0.21-18"
     configServer: "6.0.21-18"
     proxy: "6.0.21-18"
-    backupAgent: "2.11.0"
+    backupAgent: "2.12.0"
     monitoring: "3.7.0"
 - name: "6.0.19"
   components:
     engine: "6.0.19-16"
     configServer: "6.0.19-16"
     proxy: "6.0.19-16"
-    backupAgent: "2.11.0"
+    backupAgent: "2.12.0"
     monitoring: "3.7.0"

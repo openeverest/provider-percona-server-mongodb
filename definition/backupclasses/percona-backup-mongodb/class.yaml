@@ -33,6 +33,7 @@ providerManaged:
     # enforces this engine-specific rule defensively, but declaring it here
     # makes the constraint visible to the UI and to other callers.
     maxPITREnabledStorages: 1
+    maxStorages: 1
   pitrConfigSchema: PerconaPITRConfig
 
 config:
