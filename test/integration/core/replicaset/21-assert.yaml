@@ -1,0 +1,49 @@
+apiVersion: kuttl.dev/v1
+kind: TestAssert
+timeout: 10
+collectors:
+  - command: kubectl get in/test-psmdb-cluster -n ${NAMESPACE} -o yaml
+  - command: kubectl get psmdb/test-psmdb-cluster -n ${NAMESPACE} -o yaml
+resourceRefs:
+  - apiVersion: core.openeverest.io/v1alpha1
+    kind: Instance
+    name: test-psmdb-cluster
+    ref: in
+  - apiVersion: psmdb.percona.com/v1
+    kind: PerconaServerMongoDB
+    name: test-psmdb-cluster
+    ref: psmdb
+---
+apiVersion: core.openeverest.io/v1alpha1
+kind: Instance
+metadata:
+  name: test-psmdb-cluster
+spec:
+  provider: percona-server-mongodb
+  components:
+    engine:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+status:
+  phase: Ready
+---
+apiVersion: psmdb.percona.com/v1
+kind: PerconaServerMongoDB
+metadata:
+  name: test-psmdb-cluster
+spec:
+  replsets:
+    - name: rs0
+      affinity:
+        advanced:
+          podAntiAffinity:
+            preferredDuringSchedulingIgnoredDuringExecution:
+              - weight: 100
+                podAffinityTerm:
+                  topologyKey: kubernetes.io/hostname
+status:
+  state: ready
