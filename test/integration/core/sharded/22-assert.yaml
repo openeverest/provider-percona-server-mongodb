@@ -1,0 +1,69 @@
+apiVersion: kuttl.dev/v1beta1
+kind: TestAssert
+timeout: 10
+collectors:
+  - command: kubectl get in/test-psmdb-cluster -n ${NAMESPACE} -o yaml
+  - command: kubectl get psmdb/test-psmdb-cluster -n ${NAMESPACE} -o yaml
+resourceRefs:
+  - apiVersion: core.openeverest.io/v1alpha1
+    kind: Instance
+    name: test-psmdb-cluster
+    ref: in
+  - apiVersion: psmdb.percona.com/v1
+    kind: PerconaServerMongoDB
+    name: test-psmdb-cluster
+    ref: psmdb
+---
+apiVersion: core.openeverest.io/v1alpha1
+kind: Instance
+metadata:
+  name: test-psmdb-cluster
+spec:
+  provider: percona-server-mongodb
+  topology:
+    type: sharded
+    config:
+      numShards: 3
+  components:
+    proxy:
+      service:
+        exposeType: LoadBalancer
+        loadBalancerService:
+          sourceRanges:
+            - "10.0.0.0/8"
+            - "172.16.0.0/12"
+            - "192.168.1.100"
+          annotations:
+            service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+            service.beta.kubernetes.io/aws-load-balancer-internal: "true"
+---
+apiVersion: psmdb.percona.com/v1
+kind: PerconaServerMongoDB
+metadata:
+  name: test-psmdb-cluster
+spec:
+  # Verify replsets (shards) are NOT exposed
+  replsets:
+    - expose:
+        enabled: false
+        exposeType: ClusterIP
+  # Verify mongos (proxy) IS exposed
+  sharding:
+    enabled: true
+    mongos:
+      expose:
+        exposeType: LoadBalancer
+        serviceAnnotations:
+          service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+          service.beta.kubernetes.io/aws-load-balancer-internal: "true"
+        loadBalancerSourceRanges:
+          - "10.0.0.0/8"
+          - "172.16.0.0/12"
+          - "192.168.1.100/32"
+    # Verify config server is NOT exposed
+    configsvrReplSet:
+      expose:
+        enabled: false
+        exposeType: ClusterIP
+status:
+  state: ready
