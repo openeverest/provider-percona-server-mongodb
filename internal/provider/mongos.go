@@ -95,13 +95,8 @@ func configureMongos(c *controller.Context) (*psmdbv1.MongosSpec, error) {
 		}
 	}
 
-	// TODO: implement exposing mongos
-	mongosSpec.Expose = psmdbv1.MongosExpose{
-		Expose: psmdbv1.Expose{
-			ExposeType:         corev1.ServiceTypeClusterIP,
-			ServiceAnnotations: map[string]string{},
-		},
-	}
+	// Configure service exposure
+	mongosSpec.Expose = psmdbv1.MongosExpose{Expose: configureExpose(proxy.Service)}
 
 	return mongosSpec, nil
 }
