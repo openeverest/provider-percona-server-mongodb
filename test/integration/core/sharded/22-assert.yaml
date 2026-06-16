@@ -27,7 +27,7 @@ spec:
   components:
     proxy:
       service:
-        exposeType: LoadBalancer
+        serviceType: LoadBalancer
         loadBalancerService:
           sourceRanges:
             - "10.0.0.0/8"
@@ -36,6 +36,8 @@ spec:
           annotations:
             service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
             service.beta.kubernetes.io/aws-load-balancer-internal: "true"
+status:
+  phase: Ready
 ---
 apiVersion: psmdb.percona.com/v1
 kind: PerconaServerMongoDB
@@ -46,14 +48,20 @@ spec:
   replsets:
     - expose:
         enabled: false
-        exposeType: ClusterIP
+        type: ClusterIP
+    - expose:
+        enabled: false
+        type: ClusterIP
+    - expose:
+        enabled: false
+        type: ClusterIP
   # Verify mongos (proxy) IS exposed
   sharding:
     enabled: true
     mongos:
       expose:
-        exposeType: LoadBalancer
-        serviceAnnotations:
+        type: LoadBalancer
+        annotations:
           service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
           service.beta.kubernetes.io/aws-load-balancer-internal: "true"
         loadBalancerSourceRanges:
@@ -64,6 +72,6 @@ spec:
     configsvrReplSet:
       expose:
         enabled: false
-        exposeType: ClusterIP
+        type: ClusterIP
 status:
   state: ready

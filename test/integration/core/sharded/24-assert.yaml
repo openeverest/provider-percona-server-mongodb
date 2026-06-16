@@ -20,16 +20,14 @@ metadata:
   name: test-psmdb-cluster
 spec:
   provider: percona-server-mongodb
+  topology:
+    type: sharded
+    config:
+      numShards: 3
   components:
-    engine:
+    proxy:
       service:
-        serviceType: LoadBalancer
-        loadBalancerService:
-          sourceRanges:
-            - "10.0.0.0/8"
-            - "192.168.1.100"
-          annotations:
-            test-annotation: "test-value"
+        serviceType: NodePort
 status:
   phase: Ready
 ---
@@ -38,14 +36,27 @@ kind: PerconaServerMongoDB
 metadata:
   name: test-psmdb-cluster
 spec:
+  # Verify replsets (shards) are NOT exposed
   replsets:
     - expose:
-        enabled: true
-        type: LoadBalancer
-        annotations:
-          test-annotation: "test-value"
-        loadBalancerSourceRanges:
-          - "10.0.0.0/8"
-          - "192.168.1.100/32"
+        enabled: false
+        type: ClusterIP
+    - expose:
+        enabled: false
+        type: ClusterIP
+    - expose:
+        enabled: false
+        type: ClusterIP
+  # Verify mongos (proxy) IS exposed
+  sharding:
+    enabled: true
+    mongos:
+      expose:
+        type: NodePort
+    # Verify config server is NOT exposed
+    configsvrReplSet:
+      expose:
+        enabled: false
+        type: ClusterIP
 status:
   state: ready

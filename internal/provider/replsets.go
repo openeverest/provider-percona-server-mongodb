@@ -29,19 +29,7 @@ import (
 )
 
 // configureReplset configures a single replset based on the provided parameters.
-func configureReplset(name string, replicas *int32, resources *corev1.ResourceRequirements, storageSize *corev1alpha1.Storage, componentSpec *corev1alpha1.ComponentSpec, c *controller.Context) *psmdbv1.ReplsetSpec {
-	var config string
-	var affinity *corev1.Affinity
-
-	// Extract config and affinity from componentSpec if provided
-	if componentSpec != nil {
-		cfg, err := c.ComponentConfig(*componentSpec)
-		if err == nil {
-			config = cfg
-		}
-		affinity = componentSpec.Affinity
-	}
-
+func configureReplset(name string, replicas *int32, resources *corev1.ResourceRequirements, storageSize *corev1alpha1.Storage, expose bool, config string, affinity *corev1.Affinity, service *corev1alpha1.Service) *psmdbv1.ReplsetSpec {
 	configuration := psmdbDefaultConfigurationTemplate
 	if config != "" {
 		configuration = config
@@ -94,7 +82,10 @@ func configureReplset(name string, replicas *int32, resources *corev1.ResourceRe
 				},
 			},
 		},
-		Expose: configureReplsetExpose(componentSpec, c),
+		Expose: psmdbv1.ExposeTogglable{
+			Enabled: expose,
+			Expose:  configureExpose(service),
+		},
 	}
 
 	if replicas != nil {
@@ -133,7 +124,7 @@ func configureReplset(name string, replicas *int32, resources *corev1.ResourceRe
 	return rsSpec
 }
 
-// configureExpose configures the common Expose configuration from a Service spec.
+// configureExpose configures the Expose configuration from a Service spec.
 // If service is nil, returns a default configuration with ClusterIP.
 func configureExpose(service *corev1alpha1.Service) psmdbv1.Expose {
 	ex := psmdbv1.Expose{
@@ -152,36 +143,18 @@ func configureExpose(service *corev1alpha1.Service) psmdbv1.Expose {
 			if len(service.LoadBalancerService.SourceRanges) > 0 {
 				ex.LoadBalancerSourceRanges = service.LoadBalancerService.SourceRanges.NormalizedSourceRanges()
 			}
-			ex.ServiceAnnotations = map[string]string{}
+
 			if service.LoadBalancerService.Annotations != nil {
 				ex.ServiceAnnotations = service.LoadBalancerService.Annotations
 			}
 		}
 	case "NodePort":
 		ex.ExposeType = corev1.ServiceTypeNodePort
-		ex.ServiceAnnotations = map[string]string{}
-	case "ClusterIP", "":
-		ex.ExposeType = corev1.ServiceTypeClusterIP
-		ex.ServiceAnnotations = map[string]string{}
+	default:
+		// nothing to do, ClusterIP is the default
 	}
 
 	return ex
-}
-
-// configureReplsetExpose configures the expose settings for a replset based on the Service spec.
-func configureReplsetExpose(componentSpec *corev1alpha1.ComponentSpec, c *controller.Context) psmdbv1.ExposeTogglable {
-	// If no component spec or service configuration is provided, keep it disabled
-	if componentSpec == nil || componentSpec.Service == nil {
-		return psmdbv1.ExposeTogglable{
-			Enabled: false,
-			Expose:  configureExpose(nil),
-		}
-	}
-
-	return psmdbv1.ExposeTogglable{
-		Enabled: true,
-		Expose:  configureExpose(componentSpec.Service),
-	}
 }
 
 // rsName generates a replset name based on the index (e.g., rs0, rs1, etc.)
@@ -195,11 +168,15 @@ func configureReplsets(c *controller.Context) ([]*psmdbv1.ReplsetSpec, error) {
 	spec := in.Spec
 	engine := spec.Components[common.ComponentEngine]
 
+	config, err := c.ComponentConfig(engine)
+	if err != nil {
+		return nil, fmt.Errorf("resolve engine config: %w", err)
+	}
+
 	// TODO: implement disabling
-	// For non-sharded (replicaSet) topology, configure a single replset that can be exposed
 	if spec.Topology == nil || spec.Topology.Type != "sharded" {
 		return []*psmdbv1.ReplsetSpec{
-			configureReplset(rsName(0), engine.Replicas, engine.Resources, engine.Storage, &engine, c),
+			configureReplset(rsName(0), engine.Replicas, engine.Resources, engine.Storage, true, config, engine.Affinity, engine.Service),
 		}, nil
 	}
 
@@ -210,10 +187,9 @@ func configureReplsets(c *controller.Context) ([]*psmdbv1.ReplsetSpec, error) {
 	}
 
 	// For sharded topology, replsets should not be exposed directly (clients connect via mongos)
-	// Pass nil for componentSpec to disable exposure
 	replsets := make([]*psmdbv1.ReplsetSpec, 0, numShards)
 	for i := 0; i < numShards; i++ {
-		replsets = append(replsets, configureReplset(rsName(i), engine.Replicas, engine.Resources, engine.Storage, nil, c))
+		replsets = append(replsets, configureReplset(rsName(i), engine.Replicas, engine.Resources, engine.Storage, false, config, engine.Affinity, engine.Service))
 	}
 
 	return replsets, nil
@@ -231,9 +207,13 @@ func configureConfigServerReplset(c *controller.Context) (*psmdbv1.ReplsetSpec, 
 
 	cfgSrv := spec.Components[common.ComponentConfigServer]
 
+	config, err := c.ComponentConfig(cfgSrv)
+	if err != nil {
+		return nil, fmt.Errorf("resolve configServer config: %w", err)
+	}
+
 	// TODO: check if this is okay. It adds the configuration, expose.type,
 	// name, podDisruptionBudget that we didn't have in the everest operator
 	// Config servers should never be exposed directly - they are internal infrastructure
-	// Pass nil for componentSpec to disable exposure
-	return configureReplset("configsvr", cfgSrv.Replicas, cfgSrv.Resources, cfgSrv.Storage, nil, c), nil
+	return configureReplset("configsvr", cfgSrv.Replicas, cfgSrv.Resources, cfgSrv.Storage, false, config, cfgSrv.Affinity, cfgSrv.Service), nil
 }
