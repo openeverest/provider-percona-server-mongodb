@@ -80,6 +80,17 @@ spec:
                     slowOpThresholdMs: 200
               path: spec.components.engine.configuration
               uiType: text
+            externalAccess:
+              fieldParams:
+                defaultValue: ClusterIP
+                label: External access
+                options:
+                  - label: ClusterIP
+                    value: ClusterIP
+                  - label: NodePort
+                    value: NodePort
+              path: spec.components.engine.service.serviceType
+              uiType: select
             storageClass:
               dataSource:
                 provider: storageClasses
@@ -222,6 +233,17 @@ spec:
                     slowOpThresholdMs: 200
               path: spec.components.engine.configuration
               uiType: text
+            externalAccess:
+              fieldParams:
+                defaultValue: ClusterIP
+                label: External access
+                options:
+                  - label: ClusterIP
+                    value: ClusterIP
+                  - label: NodePort
+                    value: NodePort
+              path: spec.components.proxy.service.serviceType
+              uiType: select
             storageClass:
               dataSource:
                 provider: storageClasses
