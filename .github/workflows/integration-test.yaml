@@ -21,7 +21,7 @@ permissions:
 env:
   IMG: provider-percona-server-mongodb:ci
   # Branch of openeverest/openeverest to build the platform from.
-  OPENEVEREST_BRANCH: release-2.0
+  OPENEVEREST_BRANCH: loadbalancer
 
 jobs:
   run:
