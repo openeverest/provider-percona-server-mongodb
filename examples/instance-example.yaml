@@ -52,8 +52,9 @@ spec:
     proxy:
       type: mongos
       replicas: 3
-      # service:
-      #   exposeType: LoadBalancer
+      # Service exposure configuration (defaults to ClusterIP if omitted)
+      service:
+        serviceType: NodePort
       affinity:
         podAntiAffinity:
           preferredDuringSchedulingIgnoredDuringExecution:
