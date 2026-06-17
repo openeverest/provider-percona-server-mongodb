@@ -87,6 +87,8 @@ spec:
                 options:
                   - label: ClusterIP
                     value: ClusterIP
+                  - label: LoadBalancer
+                    value: LoadBalancer
                   - label: NodePort
                     value: NodePort
               path: spec.components.engine.service.serviceType
@@ -240,6 +242,8 @@ spec:
                 options:
                   - label: ClusterIP
                     value: ClusterIP
+                  - label: LoadBalancer
+                    value: LoadBalancer
                   - label: NodePort
                     value: NodePort
               path: spec.components.proxy.service.serviceType

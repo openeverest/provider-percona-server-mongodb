@@ -222,9 +222,11 @@ ui:
             options:
               - label: "ClusterIP"
                 value: "ClusterIP"
+              - label: "LoadBalancer"
+                value: "LoadBalancer"
               - label: "NodePort"
                 value: "NodePort"
-            # TODO: Support LoadBalancer annotation and source ranges configuration
+            # TODO: Support Service annotation and LoadBalancer source ranges configuration
             # https://github.com/openeverest/openeverest/issues/1959
             # https://github.com/openeverest/openeverest/issues/2398
         configuration:

@@ -136,22 +136,16 @@ func configureExpose(service *corev1alpha1.Service) psmdbv1.Expose {
 		return ex
 	}
 
-	switch service.ServiceType {
-	case "LoadBalancer":
-		ex.ExposeType = corev1.ServiceTypeLoadBalancer
-		if service.LoadBalancerService != nil {
-			if len(service.LoadBalancerService.SourceRanges) > 0 {
-				ex.LoadBalancerSourceRanges = service.LoadBalancerService.SourceRanges.NormalizedSourceRanges()
-			}
+	ex.ExposeType = service.ServiceType
 
-			if service.LoadBalancerService.Annotations != nil {
-				ex.ServiceAnnotations = service.LoadBalancerService.Annotations
-			}
-		}
-	case "NodePort":
-		ex.ExposeType = corev1.ServiceTypeNodePort
-	default:
-		// nothing to do, ClusterIP is the default
+	if service.Annotations != nil {
+		ex.ServiceAnnotations = service.Annotations
+	}
+
+	if service.ServiceType == corev1.ServiceTypeLoadBalancer &&
+		service.LoadBalancerService != nil &&
+		service.LoadBalancerService.SourceRanges != nil {
+		ex.LoadBalancerSourceRanges = service.LoadBalancerService.SourceRanges.NormalizedSourceRanges()
 	}
 
 	return ex
@@ -189,7 +183,7 @@ func configureReplsets(c *controller.Context) ([]*psmdbv1.ReplsetSpec, error) {
 	// For sharded topology, replsets should not be exposed directly (clients connect via mongos)
 	replsets := make([]*psmdbv1.ReplsetSpec, 0, numShards)
 	for i := 0; i < numShards; i++ {
-		replsets = append(replsets, configureReplset(rsName(i), engine.Replicas, engine.Resources, engine.Storage, false, config, engine.Affinity, engine.Service))
+		replsets = append(replsets, configureReplset(rsName(i), engine.Replicas, engine.Resources, engine.Storage, false, config, engine.Affinity, nil))
 	}
 
 	return replsets, nil
@@ -215,5 +209,5 @@ func configureConfigServerReplset(c *controller.Context) (*psmdbv1.ReplsetSpec, 
 	// TODO: check if this is okay. It adds the configuration, expose.type,
 	// name, podDisruptionBudget that we didn't have in the everest operator
 	// Config servers should never be exposed directly - they are internal infrastructure
-	return configureReplset("configsvr", cfgSrv.Replicas, cfgSrv.Resources, cfgSrv.Storage, false, config, cfgSrv.Affinity, cfgSrv.Service), nil
+	return configureReplset("configsvr", cfgSrv.Replicas, cfgSrv.Resources, cfgSrv.Storage, false, config, cfgSrv.Affinity, nil), nil
 }
