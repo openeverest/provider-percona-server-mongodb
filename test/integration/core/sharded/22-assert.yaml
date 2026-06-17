@@ -48,13 +48,10 @@ spec:
   replsets:
     - expose:
         enabled: false
-        type: ClusterIP
     - expose:
         enabled: false
-        type: ClusterIP
     - expose:
         enabled: false
-        type: ClusterIP
   # Verify mongos (proxy) IS exposed
   sharding:
     enabled: true
@@ -72,6 +69,5 @@ spec:
     configsvrReplSet:
       expose:
         enabled: false
-        type: ClusterIP
 status:
   state: ready

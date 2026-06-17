@@ -226,7 +226,9 @@ func validateService(c *controller.Context, componentName string) error {
 	}
 
 	switch spec.Service.ServiceType {
-	case corev1.ServiceTypeClusterIP, corev1.ServiceTypeLoadBalancer, corev1.ServiceTypeNodePort:
+	case corev1.ServiceTypeClusterIP,
+		corev1.ServiceTypeLoadBalancer,
+		corev1.ServiceTypeNodePort:
 		return nil
 	default:
 		return fmt.Errorf("spec.components.%s.service.serviceType must be one of ClusterIP, LoadBalancer or NodePort", componentName)

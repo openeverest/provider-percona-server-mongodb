@@ -54,7 +54,13 @@ spec:
       replicas: 3
       # Service exposure configuration (defaults to ClusterIP if omitted)
       service:
-        serviceType: NodePort
+        serviceType: LoadBalancer
+        annotations:
+          service.beta.kubernetes.io/aws-load-balancer-internal: "true"
+        # loadBalancerService:
+        #   sourceRanges:
+        #     - "192.168.1.100"
+
       affinity:
         podAntiAffinity:
           preferredDuringSchedulingIgnoredDuringExecution:
