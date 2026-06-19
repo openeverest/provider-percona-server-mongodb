@@ -135,7 +135,7 @@ func SyncPSMDB(c *controller.Context) error {
 	// Get the engine component spec
 	engine := c.Instance().Spec.Components[common.ComponentEngine]
 	// No need to check if engine is nil, it is guaranteed to be present by the validator
-	psmdb.Spec.Unsafe = unsafeFlags(engine.Replicas)
+	psmdb.Spec.Unsafe = unsafeFlags(c)
 
 	// Set the image: use the user-specified image if provided, otherwise resolve
 	// from the version bundle (engine.Version is populated by the provider-runtime)
@@ -181,8 +181,6 @@ func SyncPSMDB(c *controller.Context) error {
 		return err
 	}
 	psmdb.Spec.Backup = backupSpec
-
-	applyUnsafeFlags(c, psmdb)
 
 	usersSecretName := "everest-secrets-" + c.Name()
 
@@ -245,10 +243,10 @@ func SyncPSMDB(c *controller.Context) error {
 	return nil
 }
 
-// disabling unsafe flags for replset and mongos size when needed
-// keeping others enabled for now due to uncertainty
-// the expectation is that Presets will deal with safety on the latter stages
-func applyUnsafeFlags(c *controller.Context, psmdb *psmdbv1.PerconaServerMongoDB) {
+// allow unsafe for replset and mongos when the configured replicas fall below the
+// production-safe minimum; the rest are kept at their safe defaults
+// (Presets are expected to relax them when needed).
+func unsafeFlags(c *controller.Context) psmdbv1.UnsafeFlags {
 	const (
 		productionSafeReplsetSize = 3
 		productionSafeMongosSize  = 3
@@ -261,8 +259,7 @@ func applyUnsafeFlags(c *controller.Context, psmdb *psmdbv1.PerconaServerMongoDB
 	engineReplicas := components[common.ComponentEngine].Replicas
 	proxyReplicas := components[common.ComponentProxy].Replicas
 
-	psmdb.Spec.UnsafeConf = false
-	psmdb.Spec.Unsafe = psmdbv1.UnsafeFlags{
+	return psmdbv1.UnsafeFlags{
 		TLS:                    allowUnsafeTLS,
 		ReplsetSize:            engineReplicas != nil && *engineReplicas < productionSafeReplsetSize,
 		MongosSize:             proxyReplicas != nil && *proxyReplicas < productionSafeMongosSize,
