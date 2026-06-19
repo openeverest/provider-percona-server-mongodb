@@ -164,6 +164,8 @@ func SyncPSMDB(c *controller.Context) error {
 	}
 	psmdb.Spec.Backup = backupSpec
 
+	applyUnsafeFlags(c, psmdb)
+
 	usersSecretName := "everest-secrets-" + c.Name()
 
 	pmmSpec, err := configureMonitoring(c, usersSecretName)
@@ -185,6 +187,32 @@ func SyncPSMDB(c *controller.Context) error {
 	}
 
 	return nil
+}
+
+// disabling unsafe flags for replset and mongos size when needed
+// keeping others enabled for now due to uncertainty
+// the expectation is that Presets will deal with safety on the latter stages
+func applyUnsafeFlags(c *controller.Context, psmdb *psmdbv1.PerconaServerMongoDB) {
+	const (
+		productionSafeReplsetSize = 3
+		productionSafeMongosSize  = 3
+		allowUnsafeTLS            = false
+		allowUnsafeTermination    = false
+		allowUnsafeBackup         = false
+	)
+
+	components := c.Instance().Spec.Components
+	engineReplicas := components[common.ComponentEngine].Replicas
+	proxyReplicas := components[common.ComponentProxy].Replicas
+
+	psmdb.Spec.UnsafeConf = false
+	psmdb.Spec.Unsafe = psmdbv1.UnsafeFlags{
+		TLS:                    allowUnsafeTLS,
+		ReplsetSize:            engineReplicas != nil && *engineReplicas < productionSafeReplsetSize,
+		MongosSize:             proxyReplicas != nil && *proxyReplicas < productionSafeMongosSize,
+		TerminationGracePeriod: allowUnsafeTermination,
+		BackupIfUnhealthy:      allowUnsafeBackup,
+	}
 }
 
 // StatusPSMDB computes the current status of the PSMDB cluster.
