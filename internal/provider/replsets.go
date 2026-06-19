@@ -29,10 +29,33 @@ import (
 )
 
 // configureReplset configures a single replset based on the provided parameters.
-func configureReplset(name string, replicas *int32, resources *corev1.ResourceRequirements, storageSize *corev1alpha1.Storage, expose bool, config string) *psmdbv1.ReplsetSpec {
+func configureReplset(name string, replicas *int32, resources *corev1.ResourceRequirements, storageSize *corev1alpha1.Storage, expose bool, config string, affinity *corev1.Affinity) *psmdbv1.ReplsetSpec {
 	configuration := psmdbDefaultConfigurationTemplate
 	if config != "" {
 		configuration = config
+	}
+
+	// Set default affinity if none is provided
+	podAffinity := &psmdbv1.PodAffinity{
+		Advanced: &corev1.Affinity{
+			PodAntiAffinity: &corev1.PodAntiAffinity{
+				PreferredDuringSchedulingIgnoredDuringExecution: []corev1.WeightedPodAffinityTerm{
+					{
+						Weight: 1,
+						PodAffinityTerm: corev1.PodAffinityTerm{
+							TopologyKey: "kubernetes.io/hostname",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	// Override with user-provided affinity if specified
+	if affinity != nil {
+		podAffinity = &psmdbv1.PodAffinity{
+			Advanced: affinity,
+		}
 	}
 
 	rsSpec := &psmdbv1.ReplsetSpec{
@@ -45,6 +68,7 @@ func configureReplset(name string, replicas *int32, resources *corev1.ResourceRe
 			Resources: corev1.ResourceRequirements{
 				Limits: corev1.ResourceList{},
 			},
+			Affinity: podAffinity,
 		},
 		Size: 3,
 		VolumeSpec: &psmdbv1.VolumeSpec{
@@ -123,7 +147,7 @@ func configureReplsets(c *controller.Context) ([]*psmdbv1.ReplsetSpec, error) {
 	// TODO: implement disabling
 	if spec.Topology == nil || spec.Topology.Type != "sharded" {
 		return []*psmdbv1.ReplsetSpec{
-			configureReplset(rsName(0), engine.Replicas, engine.Resources, engine.Storage, true, config),
+			configureReplset(rsName(0), engine.Replicas, engine.Resources, engine.Storage, true, config, engine.Affinity),
 		}, nil
 	}
 
@@ -135,7 +159,7 @@ func configureReplsets(c *controller.Context) ([]*psmdbv1.ReplsetSpec, error) {
 
 	replsets := make([]*psmdbv1.ReplsetSpec, 0, numShards)
 	for i := 0; i < numShards; i++ {
-		replsets = append(replsets, configureReplset(rsName(i), engine.Replicas, engine.Resources, engine.Storage, false, config))
+		replsets = append(replsets, configureReplset(rsName(i), engine.Replicas, engine.Resources, engine.Storage, false, config, engine.Affinity))
 	}
 
 	return replsets, nil
@@ -160,5 +184,5 @@ func configureConfigServerReplset(c *controller.Context) (*psmdbv1.ReplsetSpec, 
 
 	// TODO: check if this is okay. It adds the configuration, expose.type,
 	// name, podDisruptionBudget that we didn't have in the everest operator
-	return configureReplset("configsvr", cfgSrv.Replicas, cfgSrv.Resources, cfgSrv.Storage, false, config), nil
+	return configureReplset("configsvr", cfgSrv.Replicas, cfgSrv.Resources, cfgSrv.Storage, false, config, cfgSrv.Affinity), nil
 }

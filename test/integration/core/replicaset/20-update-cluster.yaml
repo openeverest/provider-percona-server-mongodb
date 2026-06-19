@@ -11,7 +11,7 @@ spec:
   components:
     engine:
       type: mongod
-      replicas: 2
+      replicas: 5
       resources:
         limits:
           cpu: "1"

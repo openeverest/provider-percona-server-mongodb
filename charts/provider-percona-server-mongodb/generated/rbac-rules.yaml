@@ -41,8 +41,10 @@
     - backup.openeverest.io
   resources:
     - backups
+    - restores
   verbs:
     - create
+    - delete
     - get
     - list
     - patch
@@ -57,16 +59,6 @@
     - get
     - patch
     - update
-- apiGroups:
-    - backup.openeverest.io
-  resources:
-    - restores
-  verbs:
-    - get
-    - list
-    - patch
-    - update
-    - watch
 - apiGroups:
     - coordination.k8s.io
   resources:

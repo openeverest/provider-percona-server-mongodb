@@ -25,6 +25,7 @@ spec:
   providerManaged:
     limits:
       maxPITREnabledStorages: 1
+      maxStorages: 1
     pitrConfigSchema:
       properties:
         compressionType:
@@ -39,81 +40,3 @@ spec:
       type: object
   supportedProviders:
     - percona-server-mongodb
-  uiSchema:
-    backup:
-      components:
-        compressionLevel:
-          fieldParams:
-            defaultValue: 6
-          label: Compression Level
-          path: compressionLevel
-          uiType: number
-          validation:
-            maximum: 22
-            minimum: 0
-        compressionType:
-          fieldParams:
-            defaultValue: snappy
-            options:
-              - label: None
-                value: none
-              - label: Gzip
-                value: gzip
-              - label: Snappy
-                value: snappy
-              - label: LZ4
-                value: lz4
-              - label: Zstandard
-                value: zstd
-          label: Compression
-          path: compressionType
-          uiType: select
-        type:
-          fieldParams:
-            defaultValue: logical
-            options:
-              - label: Logical
-                value: logical
-              - label: Physical
-                value: physical
-          label: Backup Type
-          path: type
-          required: true
-          uiType: select
-      componentsOrder:
-        - type
-        - compressionType
-        - compressionLevel
-      label: Backup Configuration
-    pitr:
-      components:
-        compressionType:
-          fieldParams:
-            defaultValue: snappy
-            options:
-              - label: None
-                value: none
-              - label: Snappy
-                value: snappy
-              - label: Zstandard
-                value: zstd
-          label: Oplog Compression
-          path: compressionType
-          uiType: select
-        oplogSpanMin:
-          fieldParams:
-            defaultValue: 10
-          label: Oplog Span (minutes)
-          path: oplogSpanMin
-          tooltip: Interval between oplog chunk boundaries
-          uiType: number
-          validation:
-            minimum: 1
-      componentsOrder:
-        - oplogSpanMin
-        - compressionType
-      label: PITR Configuration
-    restore:
-      components: {}
-      componentsOrder: []
-      label: Restore Configuration

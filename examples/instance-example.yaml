@@ -17,7 +17,7 @@ spec:
     type: sharded
     config:
       # Topology-specific configuration (schema defined by provider)
-      shards: 3
+      numShards: 3
 
   # Component instances — versions are resolved from the bundle above.
   # Explicitly specifying a version here overrides the bundle for that component.
@@ -36,13 +36,25 @@ spec:
         limits:
           cpu: 2
           memory: 4Gi
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 1
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
 
     # Proxy/router (required for sharded topology)
     proxy:
       type: mongos
       replicas: 3
-      service:
-        exposeType: LoadBalancer
+      # service:
+      #   exposeType: LoadBalancer
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 1
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
 
     # Config server (required for sharded topology)
     configServer:
@@ -50,6 +62,12 @@ spec:
       replicas: 3
       storage:
         size: 5Gi
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 1
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
 
     # Backup agent (optional)
     backupAgent:
@@ -57,13 +75,13 @@ spec:
       replicas: 1
 
     # Monitoring (optional)
-    monitoring:
-      type: pmm
-      config:
-        # Reference to monitoring configuration
-        secretRef:
-          name: pmm-config
-        key: pmm.yaml
+    # monitoring:
+    #   type: pmm
+    #   config:
+    #     # Reference to monitoring configuration
+    #     secretRef:
+    #       name: pmm-config
+    #     key: pmm.yaml
 
 # status:
 #   phase: Ready

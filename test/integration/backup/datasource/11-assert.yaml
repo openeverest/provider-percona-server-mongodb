@@ -1,0 +1,51 @@
+apiVersion: kuttl.dev/v1
+kind: TestAssert
+timeout: 30
+collectors:
+  - command: kubectl get in/src-psmdb-cluster -n ${NAMESPACE} -o yaml
+  - command: kubectl get psmdb/src-psmdb-cluster -n ${NAMESPACE} -o yaml
+---
+apiVersion: core.openeverest.io/v1alpha1
+kind: Instance
+metadata:
+  name: src-psmdb-cluster
+status:
+  phase: Ready
+---
+apiVersion: psmdb.percona.com/v1
+kind: PerconaServerMongoDB
+metadata:
+  name: src-psmdb-cluster
+spec:
+  imagePullPolicy: IfNotPresent
+  backup:
+    enabled: true
+    storages:
+      test-storage-s3:
+        type: s3
+        s3:
+          bucket: test-backup-bucket
+          credentialsSecret: backup-storage-credentials
+          endpointUrl: http://fake
+          insecureSkipTLSVerify: true
+          region: us-east-1
+  secrets:
+    encryptionKey: src-psmdb-cluster-mongodb-encryption-key
+    sslInternal: src-psmdb-cluster-ssl-internal
+    users: everest-secrets-src-psmdb-cluster
+status:
+  state: ready
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: src-psmdb-cluster-conn
+type: Opaque
+data:
+  type: bW9uZ29kYg==
+  provider: cGVyY29uYS1zZXJ2ZXItbW9uZ29kYg==
+  host: c3JjLXBzbWRiLWNsdXN0ZXItcnMwLmRlZmF1bHQuc3ZjLmNsdXN0ZXIubG9jYWw=
+  port: MjcwMTc=
+  username: dGVzdC11c2Vy
+  password: dGVzdC1wYXNzd29yZA==
+  uri: bW9uZ29kYjovL3Rlc3QtdXNlcjp0ZXN0LXBhc3N3b3JkQHNyYy1wc21kYi1jbHVzdGVyLXJzMC5kZWZhdWx0LnN2Yy5jbHVzdGVyLmxvY2FsL2FkbWluP3NzbD1mYWxzZQ==

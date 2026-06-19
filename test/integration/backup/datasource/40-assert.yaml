@@ -1,0 +1,11 @@
+apiVersion: kuttl.dev/v1
+kind: TestAssert
+timeout: 30
+# Wait for all resources to be fully deleted
+commands:
+  - command: kubectl wait --for=delete restore --all -n $NAMESPACE --timeout=30s
+  - command: kubectl wait --for=delete psmdb-restore --all -n $NAMESPACE --timeout=30s
+  - command: kubectl wait --for=delete psmdb-backup --all -n $NAMESPACE --timeout=30s
+  - command: kubectl wait --for=delete psmdb --all -n $NAMESPACE --timeout=30s
+  - command: kubectl wait --for=delete backup --all -n $NAMESPACE --timeout=30s
+  - command: kubectl wait --for=delete instance --all -n $NAMESPACE --timeout=30s

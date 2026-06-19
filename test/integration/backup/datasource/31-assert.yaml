@@ -1,0 +1,41 @@
+apiVersion: kuttl.dev/v1
+kind: TestAssert
+timeout: 30
+collectors:
+  - command: kubectl get in/dest-psmdb-cluster -n ${NAMESPACE} -o yaml
+  - command: kubectl get psmdb/dest-psmdb-cluster -n ${NAMESPACE} -o yaml
+  - command: kubectl get restore -n ${NAMESPACE} -o yaml
+  - command: kubectl get psmdb-restore -n ${NAMESPACE} -o yaml
+---
+apiVersion: core.openeverest.io/v1alpha1
+kind: Instance
+metadata:
+  name: dest-psmdb-cluster
+status:
+  phase: Restoring
+---
+apiVersion: psmdb.percona.com/v1
+kind: PerconaServerMongoDB
+metadata:
+  name: dest-psmdb-cluster
+status:
+  state: ready
+---
+apiVersion: backup.openeverest.io/v1alpha1
+kind: Restore
+metadata:
+  name: dest-psmdb-cluster-datasource
+spec:
+  dataSource:
+    type: Backup
+    backup:
+      backupName: src-backup
+  instanceName: dest-psmdb-cluster
+---
+apiVersion: psmdb.percona.com/v1
+kind: PerconaServerMongoDBRestore
+metadata:
+  name: dest-psmdb-cluster-datasource
+spec:
+  clusterName: dest-psmdb-cluster
+  storageName: test-storage-s3

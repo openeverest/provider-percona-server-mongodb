@@ -1,0 +1,12 @@
+apiVersion: kuttl.dev/v1
+kind: TestStep
+timeout: 10
+---
+apiVersion: backup.openeverest.io/v1alpha1
+kind: Backup
+metadata:
+  name: src-backup
+spec:
+  instanceName: src-psmdb-cluster
+  backupClassName: percona-backup-mongodb
+  storageName: test-storage-s3
