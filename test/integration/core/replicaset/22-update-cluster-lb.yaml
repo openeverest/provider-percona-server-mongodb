@@ -1,0 +1,20 @@
+apiVersion: kuttl.dev/v1
+kind: TestStep
+timeout: 10
+---
+apiVersion: core.openeverest.io/v1alpha1
+kind: Instance
+metadata:
+  name: test-psmdb-cluster
+spec:
+  provider: percona-server-mongodb
+  components:
+    engine:
+      service:
+        serviceType: LoadBalancer
+        annotations:
+          test-annotation: "test-value"
+        loadBalancerService:
+          sourceRanges:
+            - "10.0.0.0/8"
+            - "192.168.1.100"

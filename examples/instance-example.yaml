@@ -52,8 +52,15 @@ spec:
     proxy:
       type: mongos
       replicas: 3
-      # service:
-      #   exposeType: LoadBalancer
+      # Service exposure configuration (defaults to ClusterIP if omitted)
+      service:
+        serviceType: LoadBalancer
+        annotations:
+          service.beta.kubernetes.io/aws-load-balancer-internal: "true"
+        # loadBalancerService:
+        #   sourceRanges:
+        #     - "192.168.1.100"
+
       affinity:
         podAntiAffinity:
           preferredDuringSchedulingIgnoredDuringExecution:

@@ -1,0 +1,26 @@
+apiVersion: kuttl.dev/v1
+kind: TestStep
+timeout: 10
+---
+apiVersion: core.openeverest.io/v1alpha1
+kind: Instance
+metadata:
+  name: test-psmdb-cluster
+spec:
+  provider: percona-server-mongodb
+  topology:
+    type: sharded
+    config:
+      numShards: 3
+  components:
+    proxy:
+      service:
+        serviceType: LoadBalancer
+        annotations:
+          service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+          service.beta.kubernetes.io/aws-load-balancer-internal: "true"
+        loadBalancerService:
+          sourceRanges:
+            - "10.0.0.0/8"
+            - "172.16.0.0/12"
+            - "192.168.1.100"

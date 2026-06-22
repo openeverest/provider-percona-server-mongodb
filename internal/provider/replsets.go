@@ -29,7 +29,7 @@ import (
 )
 
 // configureReplset configures a single replset based on the provided parameters.
-func configureReplset(name string, replicas *int32, resources *corev1.ResourceRequirements, storageSize *corev1alpha1.Storage, expose bool, config string, affinity *corev1.Affinity) *psmdbv1.ReplsetSpec {
+func configureReplset(name string, replicas *int32, resources *corev1.ResourceRequirements, storageSize *corev1alpha1.Storage, expose bool, config string, affinity *corev1.Affinity, service *corev1alpha1.Service) *psmdbv1.ReplsetSpec {
 	configuration := psmdbDefaultConfigurationTemplate
 	if config != "" {
 		configuration = config
@@ -84,11 +84,7 @@ func configureReplset(name string, replicas *int32, resources *corev1.ResourceRe
 		},
 		Expose: psmdbv1.ExposeTogglable{
 			Enabled: expose,
-			// TODO: implement exposing replset
-			Expose: psmdbv1.Expose{
-				ExposeType:         corev1.ServiceTypeClusterIP,
-				ServiceAnnotations: map[string]string{},
-			},
+			Expose:  configureExpose(service),
 		},
 	}
 
@@ -128,6 +124,33 @@ func configureReplset(name string, replicas *int32, resources *corev1.ResourceRe
 	return rsSpec
 }
 
+// configureExpose configures the Expose configuration from a Service spec.
+// If service is nil, returns a default configuration with ClusterIP.
+func configureExpose(service *corev1alpha1.Service) psmdbv1.Expose {
+	ex := psmdbv1.Expose{
+		ExposeType:         corev1.ServiceTypeClusterIP,
+		ServiceAnnotations: map[string]string{},
+	}
+
+	if service == nil {
+		return ex
+	}
+
+	ex.ExposeType = service.ServiceType
+
+	if service.Annotations != nil {
+		ex.ServiceAnnotations = service.Annotations
+	}
+
+	if service.ServiceType == corev1.ServiceTypeLoadBalancer &&
+		service.LoadBalancerService != nil &&
+		service.LoadBalancerService.SourceRanges != nil {
+		ex.LoadBalancerSourceRanges = service.LoadBalancerService.SourceRanges.NormalizedSourceRanges()
+	}
+
+	return ex
+}
+
 // rsName generates a replset name based on the index (e.g., rs0, rs1, etc.)
 func rsName(i int) string {
 	return fmt.Sprintf("rs%v", i)
@@ -147,7 +170,7 @@ func configureReplsets(c *controller.Context) ([]*psmdbv1.ReplsetSpec, error) {
 	// TODO: implement disabling
 	if spec.Topology == nil || spec.Topology.Type != "sharded" {
 		return []*psmdbv1.ReplsetSpec{
-			configureReplset(rsName(0), engine.Replicas, engine.Resources, engine.Storage, true, config, engine.Affinity),
+			configureReplset(rsName(0), engine.Replicas, engine.Resources, engine.Storage, true, config, engine.Affinity, engine.Service),
 		}, nil
 	}
 
@@ -157,9 +180,10 @@ func configureReplsets(c *controller.Context) ([]*psmdbv1.ReplsetSpec, error) {
 		numShards = int(shardedConfig.NumShards)
 	}
 
+	// For sharded topology, replsets should not be exposed directly (clients connect via mongos)
 	replsets := make([]*psmdbv1.ReplsetSpec, 0, numShards)
 	for i := 0; i < numShards; i++ {
-		replsets = append(replsets, configureReplset(rsName(i), engine.Replicas, engine.Resources, engine.Storage, false, config, engine.Affinity))
+		replsets = append(replsets, configureReplset(rsName(i), engine.Replicas, engine.Resources, engine.Storage, false, config, engine.Affinity, nil))
 	}
 
 	return replsets, nil
@@ -184,5 +208,6 @@ func configureConfigServerReplset(c *controller.Context) (*psmdbv1.ReplsetSpec, 
 
 	// TODO: check if this is okay. It adds the configuration, expose.type,
 	// name, podDisruptionBudget that we didn't have in the everest operator
-	return configureReplset("configsvr", cfgSrv.Replicas, cfgSrv.Resources, cfgSrv.Storage, false, config, cfgSrv.Affinity), nil
+	// Config servers should never be exposed directly - they are internal infrastructure
+	return configureReplset("configsvr", cfgSrv.Replicas, cfgSrv.Resources, cfgSrv.Storage, false, config, cfgSrv.Affinity, nil), nil
 }

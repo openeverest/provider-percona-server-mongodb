@@ -356,6 +356,32 @@ func TestValidatePSMDB(t *testing.T) {
 			expectErr: "memory must be >= 512Mi",
 		},
 		{
+			name: "engine unsupported service type",
+			instance: &corev1alpha1.Instance{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-instance"},
+				Spec: corev1alpha1.InstanceSpec{
+					Components: map[string]corev1alpha1.ComponentSpec{
+						common.ComponentEngine: {
+							Replicas: pointer.ToInt32(3),
+							Storage: &corev1alpha1.Storage{
+								Size: resource.MustParse("1Gi"),
+							},
+							Resources: &corev1.ResourceRequirements{
+								Limits: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("600m"),
+									corev1.ResourceMemory: resource.MustParse("512Mi"),
+								},
+							},
+							Service: &corev1alpha1.Service{
+								ServiceType: corev1.ServiceTypeExternalName,
+							},
+						},
+					},
+				},
+			},
+			expectErr: "spec.components.engine.service.serviceType must be one of ClusterIP, LoadBalancer or NodePort",
+		},
+		{
 			name: "valid sharded topology",
 			instance: &corev1alpha1.Instance{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-instance"},
@@ -386,6 +412,28 @@ func TestValidatePSMDB(t *testing.T) {
 				},
 			},
 			expectErr: "component \"proxy\" required for sharded topology",
+		},
+		{
+			name: "sharded proxy unsupported service type",
+			instance: &corev1alpha1.Instance{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-instance"},
+				Spec: corev1alpha1.InstanceSpec{
+					Topology: &corev1alpha1.TopologySpec{Type: "sharded"},
+					Components: map[string]corev1alpha1.ComponentSpec{
+						common.ComponentEngine: validEngine,
+						common.ComponentConfigServer: {
+							Replicas: pointer.ToInt32(3),
+						},
+						common.ComponentProxy: {
+							Replicas: pointer.ToInt32(2),
+							Service: &corev1alpha1.Service{
+								ServiceType: corev1.ServiceTypeExternalName,
+							},
+						},
+					},
+				},
+			},
+			expectErr: "spec.components.proxy.service.serviceType must be one of ClusterIP, LoadBalancer or NodePort",
 		},
 		{
 			name: "sharded missing configServer component",

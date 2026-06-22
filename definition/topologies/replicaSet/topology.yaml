@@ -139,6 +139,22 @@ ui:
             required: true
           dataSource:
             provider: storageClasses
+        externalAccess:
+          uiType: select
+          path: spec.components.engine.service.serviceType
+          fieldParams:
+            label: "External access"
+            defaultValue: "ClusterIP"
+            options:
+              - label: "ClusterIP"
+                value: "ClusterIP"
+              - label: "LoadBalancer"
+                value: "LoadBalancer"
+              - label: "NodePort"
+                value: "NodePort"
+            # TODO: Support Service annotation and LoadBalancer source ranges configuration
+            # https://github.com/openeverest/openeverest/issues/1959
+            # https://github.com/openeverest/openeverest/issues/2398
         configuration:
           uiType: text
           path: spec.components.engine.configuration

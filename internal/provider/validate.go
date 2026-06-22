@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"regexp"
 
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 
 	backupv1alpha1 "github.com/openeverest/openeverest/v2/api/backup/v1alpha1"
@@ -133,6 +134,10 @@ func validateEngine(c *controller.Context) error {
 		}
 	}
 
+	if err := validateService(c, common.ComponentEngine); err != nil {
+		return fmt.Errorf("engine service validation failed: %w", err)
+	}
+
 	return nil
 }
 
@@ -177,6 +182,10 @@ func validateShardedTopology(c *controller.Context) error {
 		return fmt.Errorf("component %q required for sharded topology", common.ComponentProxy)
 	}
 
+	if err := validateService(c, common.ComponentProxy); err != nil {
+		return fmt.Errorf("service validation failed: %w", err)
+	}
+
 	return nil
 }
 
@@ -207,4 +216,21 @@ func validateConfigServer(c *controller.Context) error {
 	}
 
 	return nil
+}
+
+func validateService(c *controller.Context, componentName string) error {
+	spec := c.Instance().Spec.Components[componentName]
+
+	if spec.Service == nil {
+		return nil
+	}
+
+	switch spec.Service.ServiceType {
+	case corev1.ServiceTypeClusterIP,
+		corev1.ServiceTypeLoadBalancer,
+		corev1.ServiceTypeNodePort:
+		return nil
+	default:
+		return fmt.Errorf("spec.components.%s.service.serviceType must be one of ClusterIP, LoadBalancer or NodePort", componentName)
+	}
 }

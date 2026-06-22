@@ -1,0 +1,58 @@
+apiVersion: kuttl.dev/v1beta1
+kind: TestAssert
+timeout: 10
+collectors:
+  - command: kubectl get in/test-psmdb-cluster -n ${NAMESPACE} -o yaml
+  - command: kubectl get psmdb/test-psmdb-cluster -n ${NAMESPACE} -o yaml
+resourceRefs:
+  - apiVersion: core.openeverest.io/v1alpha1
+    kind: Instance
+    name: test-psmdb-cluster
+    ref: in
+  - apiVersion: psmdb.percona.com/v1
+    kind: PerconaServerMongoDB
+    name: test-psmdb-cluster
+    ref: psmdb
+---
+apiVersion: core.openeverest.io/v1alpha1
+kind: Instance
+metadata:
+  name: test-psmdb-cluster
+spec:
+  provider: percona-server-mongodb
+  topology:
+    type: sharded
+    config:
+      numShards: 3
+  components:
+    proxy:
+      service:
+        serviceType: ClusterIP
+status:
+  phase: Ready
+---
+apiVersion: psmdb.percona.com/v1
+kind: PerconaServerMongoDB
+metadata:
+  name: test-psmdb-cluster
+spec:
+  # Verify replsets (shards) are NOT exposed
+  replsets:
+    - expose:
+        enabled: false
+    - expose:
+        enabled: false
+    - expose:
+        enabled: false
+  # Verify mongos (proxy) IS exposed
+  sharding:
+    enabled: true
+    mongos:
+      expose:
+        type: ClusterIP
+    # Verify config server is NOT exposed
+    configsvrReplSet:
+      expose:
+        enabled: false
+status:
+  state: ready
