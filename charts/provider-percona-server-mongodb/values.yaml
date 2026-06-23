@@ -127,6 +127,7 @@ presets:
       enabled: true
       spec:
         provider: percona-server-mongodb
+        version: 8.0.12-4
         topology:
           type: replicaSet
         components:
@@ -150,10 +151,11 @@ presets:
       enabled: true
       spec:
         provider: percona-server-mongodb
+        version: 8.0.12-4
         topology:
           type: sharded
           config:
-            numShards: 1
+            numShards: 2
         components:
           engine:
             replicas: 3
