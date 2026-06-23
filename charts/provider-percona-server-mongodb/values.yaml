@@ -119,6 +119,73 @@ provider:
   # -- The name to register for the Provider custom resource
   name: percona-server-mongodb
 
+# -- Default instance presets configuration
+# Each preset must have 'name', 'enabled', and 'spec' fields.
+# The 'spec' field contains the full InstancePresetSpec.
+presets:
+    - name: default-replicaset
+      enabled: true
+      spec:
+        provider: percona-server-mongodb
+        topology:
+          type: replicaSet
+        components:
+          engine:
+            replicas: 3
+            resources:
+              limits:
+                cpu: "1"
+                memory: 4Gi
+            storage:
+              size: 25Gi
+            affinity:
+              podAntiAffinity:
+                preferredDuringSchedulingIgnoredDuringExecution:
+                  - weight: 1
+                    podAffinityTerm:
+                      topologyKey: kubernetes.io/hostname
+            service:
+              serviceType: ClusterIP
+    - name: default-sharded
+      enabled: true
+      spec:
+        provider: percona-server-mongodb
+        topology:
+          type: sharded
+          config:
+            numShards: 1
+        components:
+          engine:
+            replicas: 3
+            resources:
+              limits:
+                cpu: "1"
+                memory: 4Gi
+            storage:
+              size: 25Gi
+            affinity:
+              podAntiAffinity:
+                preferredDuringSchedulingIgnoredDuringExecution:
+                  - weight: 1
+                    podAffinityTerm:
+                      topologyKey: kubernetes.io/hostname
+          proxy:
+            replicas: 3
+            resources:
+              limits:
+                cpu: "1"
+                memory: 2Gi
+            affinity:
+              podAntiAffinity:
+                preferredDuringSchedulingIgnoredDuringExecution:
+                  - weight: 1
+                    podAffinityTerm:
+                      topologyKey: kubernetes.io/hostname
+            service:
+              serviceType: ClusterIP
+          configServer:
+            replicas: 3
+
 # -- Additional environment variables to set on the provider container
 extraEnv: []
 # - name: MY_VAR
