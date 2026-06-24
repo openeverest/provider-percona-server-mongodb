@@ -1,17 +1,3 @@
-{{- /* Find default StorageClass using same logic as PVC */ -}}
-{{- /* If multiple defaults exist, use the newest one (latest creationTimestamp) */ -}}
-{{- $defaultStorageClass := "" }}
-{{- $latestTimestamp := "" }}
-{{- $storageClasses := lookup "storage.k8s.io/v1" "StorageClass" "" "" }}
-{{- range $sc := $storageClasses.items }}
-  {{- if eq (index $sc.metadata.annotations "storageclass.kubernetes.io/is-default-class" | default "") "true" }}
-    {{- if or (not $latestTimestamp) (gt $sc.metadata.creationTimestamp $latestTimestamp) }}
-      {{- $defaultStorageClass = $sc.metadata.name }}
-      {{- $latestTimestamp = $sc.metadata.creationTimestamp }}
-    {{- end }}
-  {{- end }}
-{{- end }}
-
 {{- range $preset := .Values.presets }}
 {{- if $preset.enabled }}
 ---
@@ -23,13 +9,6 @@ metadata:
     {{- include "provider-percona-server-mongodb.labels" $ | nindent 4 }}
     app.kubernetes.io/component: preset
 spec:
-  {{- $spec := $preset.spec | deepCopy }}
-  {{- /* Set default storageClass if not specified, same as PVC behavior */ -}}
-  {{- if and $defaultStorageClass (dig "components" "engine" "storage" false $spec) }}
-    {{- if not (dig "components" "engine" "storage" "storageClass" "" $spec) }}
-      {{- $_ := set $spec.components.engine.storage "storageClass" $defaultStorageClass }}
-    {{- end }}
-  {{- end }}
-  {{- toYaml $spec | nindent 2 }}
+  {{- toYaml $preset.spec | nindent 2 }}
 {{- end }}
 {{- end }}

@@ -139,7 +139,7 @@ presets:
                 memory: 4Gi
             storage:
               size: 25Gi
-              # storageClass: ""  # If not specified, template sets the cluster's default StorageClass (see https://kubernetes.io/docs/concepts/storage/storage-classes/)
+              # storageClass: ""  # Specify a storage class if you want to set the default
             affinity:
               podAntiAffinity:
                 preferredDuringSchedulingIgnoredDuringExecution:
@@ -166,7 +166,7 @@ presets:
                 memory: 4Gi
             storage:
               size: 25Gi
-              # storageClass: ""  # If not specified, template sets the cluster's default StorageClass (see https://kubernetes.io/docs/concepts/storage/storage-classes/)
+              # storageClass: ""  # Specify a storage class if you want to set the default
             affinity:
               podAntiAffinity:
                 preferredDuringSchedulingIgnoredDuringExecution:
