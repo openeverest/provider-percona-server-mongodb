@@ -3,3 +3,6 @@ bin
 
 *.tgz
 coverage.out
+
+# env file
+.env
