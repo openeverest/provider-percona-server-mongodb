@@ -16,6 +16,11 @@
 2. The Provider custom resource "{{ .Values.provider.name }}" has been created.
    Verify it with: kubectl get providers.core.openeverest.io {{ .Values.provider.name }}
 
+{{- if .Values.presets }}
+3. InstancePresets have been installed.
+   List them with: kubectl get instancepresets.core.openeverest.io
+{{- end }}
+
 NOTE: Ensure that the following prerequisites are installed in your cluster:
   - OpenEverest CRDs (Instances, Providers, MonitoringConfigs)
   - Percona Server MongoDB Operator (v1.21.1+)
