@@ -135,7 +135,7 @@ func SyncPSMDB(c *controller.Context) error {
 	// Get the engine component spec
 	engine := c.Instance().Spec.Components[common.ComponentEngine]
 	// No need to check if engine is nil, it is guaranteed to be present by the validator
-	psmdb.Spec.Unsafe = unsafeFlags(engine.Replicas)
+	psmdb.Spec.Unsafe = unsafeFlags(c)
 
 	// Set the image: use the user-specified image if provided, otherwise resolve
 	// from the version bundle (engine.Version is populated by the provider-runtime)
@@ -243,14 +243,29 @@ func SyncPSMDB(c *controller.Context) error {
 	return nil
 }
 
-// unsafeFlags returns psmdbv1.UnsafeFlags considering the given replicas configuration.
-func unsafeFlags(replicas *int32) psmdbv1.UnsafeFlags {
-	const productionSafeReplsetSize = 3
-	if replicas != nil && *replicas < productionSafeReplsetSize {
-		return psmdbv1.UnsafeFlags{ReplsetSize: true}
-	}
+// allow unsafe for replset and mongos when the configured replicas fall below the
+// production-safe minimum; the rest are kept at their safe defaults
+// (Presets are expected to relax them when needed).
+func unsafeFlags(c *controller.Context) psmdbv1.UnsafeFlags {
+	const (
+		productionSafeReplsetSize = 3
+		productionSafeMongosSize  = 3
+		allowUnsafeTLS            = false
+		allowUnsafeTermination    = false
+		allowUnsafeBackup         = false
+	)
 
-	return psmdbv1.UnsafeFlags{}
+	components := c.Instance().Spec.Components
+	engineReplicas := components[common.ComponentEngine].Replicas
+	proxyReplicas := components[common.ComponentProxy].Replicas
+
+	return psmdbv1.UnsafeFlags{
+		TLS:                    allowUnsafeTLS,
+		ReplsetSize:            engineReplicas != nil && *engineReplicas < productionSafeReplsetSize,
+		MongosSize:             proxyReplicas != nil && *proxyReplicas < productionSafeMongosSize,
+		TerminationGracePeriod: allowUnsafeTermination,
+		BackupIfUnhealthy:      allowUnsafeBackup,
+	}
 }
 
 // StatusPSMDB computes the current status of the PSMDB cluster.
