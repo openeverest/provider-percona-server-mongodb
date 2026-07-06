@@ -223,17 +223,14 @@ func enqueueMonitoringConfig(p *PSMDBProvider) func(ctx context.Context, obj cli
 			return []reconcile.Request{}
 		}
 
-		instanceList := &corev1alpha1.InstanceList{}
-		listOpts := &client.ListOptions{
-			FieldSelector: fields.OneTermEqualSelector(monitoringConfigPath, mc.GetName()),
-			Namespace:     mc.GetNamespace(),
-		}
-
-		if err := c.List(ctx, instanceList, listOpts); err != nil {
+		requests, err := controller.RequestsForInstancesMatching(ctx, c, p.Name(),
+			client.InNamespace(mc.GetNamespace()),
+			client.MatchingFields{monitoringConfigPath: mc.GetName()},
+		)
+		if err != nil {
 			return []reconcile.Request{}
 		}
-
-		return controller.FilterInstancesByProvider(instanceList.Items, p.Name())
+		return requests
 	}
 }
 
@@ -268,17 +265,14 @@ func enqueueMonitoringConfigSecret(p *PSMDBProvider) func(ctx context.Context, o
 
 		mc := mcList.Items[0]
 
-		instanceList := &corev1alpha1.InstanceList{}
-		instanceOpts := &client.ListOptions{
-			FieldSelector: fields.OneTermEqualSelector(monitoringConfigPath, mc.GetName()),
-			Namespace:     mc.GetNamespace(),
-		}
-
-		if err := c.List(ctx, instanceList, instanceOpts); err != nil {
+		requests, err := controller.RequestsForInstancesMatching(ctx, c, p.Name(),
+			client.InNamespace(mc.GetNamespace()),
+			client.MatchingFields{monitoringConfigPath: mc.GetName()},
+		)
+		if err != nil {
 			return []reconcile.Request{}
 		}
-
-		return controller.FilterInstancesByProvider(instanceList.Items, p.Name())
+		return requests
 	}
 }
 
