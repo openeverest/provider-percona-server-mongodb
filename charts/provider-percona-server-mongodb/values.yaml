@@ -122,8 +122,9 @@ provider:
 # -- Default instance presets configuration
 # Each preset must have 'name', 'enabled', and 'spec' fields.
 # The 'spec' field contains the full InstancePresetSpec.
+# Note: The '-psmdb' suffix (Percona Server for MongoDB) will be automatically added to each preset name.
 presets:
-    - name: default-replicaset
+    - name: replicaset
       enabled: true
       spec:
         provider: percona-server-mongodb
@@ -148,7 +149,7 @@ presets:
                       topologyKey: kubernetes.io/hostname
             service:
               serviceType: ClusterIP
-    - name: default-sharded
+    - name: sharded
       enabled: true
       spec:
         provider: percona-server-mongodb
