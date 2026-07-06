@@ -24,7 +24,6 @@ import (
 	psmdbv1 "github.com/percona/percona-server-mongodb-operator/pkg/apis/psmdb/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/fields"
-	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
@@ -234,17 +233,7 @@ func enqueueMonitoringConfig(p *PSMDBProvider) func(ctx context.Context, obj cli
 			return []reconcile.Request{}
 		}
 
-		requests := make([]reconcile.Request, len(instanceList.Items))
-		for i, item := range instanceList.Items {
-			requests[i] = reconcile.Request{
-				NamespacedName: types.NamespacedName{
-					Name:      item.GetName(),
-					Namespace: item.GetNamespace(),
-				},
-			}
-		}
-
-		return requests
+		return controller.FilterInstancesByProvider(instanceList.Items, p.Name())
 	}
 }
 
@@ -289,17 +278,7 @@ func enqueueMonitoringConfigSecret(p *PSMDBProvider) func(ctx context.Context, o
 			return []reconcile.Request{}
 		}
 
-		requests := make([]reconcile.Request, len(instanceList.Items))
-		for i, item := range instanceList.Items {
-			requests[i] = reconcile.Request{
-				NamespacedName: types.NamespacedName{
-					Name:      item.GetName(),
-					Namespace: item.GetNamespace(),
-				},
-			}
-		}
-
-		return requests
+		return controller.FilterInstancesByProvider(instanceList.Items, p.Name())
 	}
 }
 
