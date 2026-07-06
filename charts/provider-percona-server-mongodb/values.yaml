@@ -118,11 +118,15 @@ affinity: {}
 provider:
   # -- The name to register for the Provider custom resource
   name: percona-server-mongodb
+  # -- Short identifier for the provider, used in resource names and labels
+  # This appears in preset names (e.g., 'replicaset-<shortName>') and can be
+  # used in other contexts where a short concise provider identifier is needed.
+  shortName: psmdb
 
 # -- Default instance presets configuration
 # Each preset must have 'name', 'enabled', and 'spec' fields.
 # The 'spec' field contains the full InstancePresetSpec.
-# Note: The '-psmdb' suffix (Percona Server for MongoDB) will be automatically added to each preset name.
+# Note: The provider shortName will be automatically added to each preset name.
 presets:
     - name: replicaset
       enabled: true
