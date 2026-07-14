@@ -41,15 +41,3 @@ type PerconaBackupConfig struct {
 // restore-time options through OpenEverest; the struct is intentionally
 // empty and ships an empty schema until requirements crystallize.
 type PerconaRestoreConfig struct{}
-
-// PerconaPITRConfig describes the per-storage PITR custom config exposed to
-// Instance.spec.backup.storages[].pitr.config. Mirrors the fields surfaced
-// by ui.yaml's `pitr` section.
-type PerconaPITRConfig struct {
-	// OplogSpanMin is the interval (minutes) between PBM oplog chunk boundaries.
-	// +kubebuilder:validation:Minimum=1
-	OplogSpanMin *int32 `json:"oplogSpanMin,omitempty"`
-	// CompressionType selects the PBM oplog compression algorithm.
-	// +kubebuilder:validation:Enum=none;snappy;zstd
-	CompressionType string `json:"compressionType,omitempty"`
-}

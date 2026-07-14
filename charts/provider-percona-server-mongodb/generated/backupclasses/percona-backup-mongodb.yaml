@@ -26,14 +26,6 @@ spec:
     limits:
       maxPITREnabledStorages: 1
       maxStorages: 1
-    pitrConfigSchema:
-      properties:
-        compressionType:
-          type: string
-        oplogSpanMin:
-          format: int32
-          type: integer
-      type: object
     supportsPITR: true
   restoreConfig:
     openAPIV3Schema:
