@@ -451,6 +451,14 @@ func NewPSMDBProviderInterface() *PSMDBProvider {
 			// Succeeded the Instance reconciler re-evaluates and exits
 			// the Restoring phase.
 			controller.WatchOwned(&backupv1alpha1.Restore{}),
+			// Watch operator backups so latestRestorableTime refreshes
+			// (stamped by PBM on ready backups) propagate to
+			// instance.status.backup.storages via BackupStorageStatuses.
+			// Operator backups are not owned by the Instance, so map them
+			// to the parent via spec.clusterName.
+			controller.WatchExternal(&psmdbv1.PerconaServerMongoDBBackup{},
+				handler.EnqueueRequestsFromMapFunc(enqueueOperatorBackupInstance()),
+			),
 			controller.WatchExternal(&monitoringv1alpha1.MonitoringConfig{},
 				handler.EnqueueRequestsFromMapFunc(enqueueMonitoringConfig(p)),
 				monitoringConfigPredicate(),
@@ -533,3 +541,4 @@ var _ controller.BackupProvider = (*PSMDBProvider)(nil)
 var _ controller.BackupWatcher = (*PSMDBProvider)(nil)
 var _ controller.RestoreWatcher = (*PSMDBProvider)(nil)
 var _ controller.BackupMirror = (*PSMDBProvider)(nil)
+var _ controller.InstanceBackupStatusReporter = (*PSMDBProvider)(nil)
