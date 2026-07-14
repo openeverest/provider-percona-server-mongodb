@@ -18,6 +18,7 @@ import (
 	"fmt"
 
 	psmdbv1 "github.com/percona/percona-server-mongodb-operator/pkg/apis/psmdb/v1"
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -203,7 +204,8 @@ func SyncPSMDB(c *controller.Context) error {
 	// embeds credential hashes; mismatched secrets render the restored data
 	// inaccessible. Copy BEFORE applying the PSMDB CR so the operator never
 	// initializes the secret with random passwords.
-	if c.Instance().Spec.DataSource != nil {
+	ds := c.Instance().Spec.DataSource
+	if ds != nil && ds.Type == backupv1alpha1.DataSourceTypeBackup {
 		if err := ensureDataSourceCredentials(c, usersSecretName); err != nil {
 			return err
 		}
@@ -219,24 +221,49 @@ func SyncPSMDB(c *controller.Context) error {
 	// hang in a Waiting state. While the gate is not satisfied the helper is
 	// not invoked and StatusPSMDB will report Restoring so callers know the
 	// Instance is still being seeded.
-	if c.Instance().Spec.DataSource != nil {
+	if ds != nil {
 		current := &psmdbv1.PerconaServerMongoDB{}
 		if err := c.Get(current, c.Name()); err != nil {
 			// Cluster has not been created yet (first Sync). The next
 			// reconcile after the PSMDB CR appears will re-enter this branch.
 			return nil
 		}
-		if current.Status.State != psmdbv1.AppStateReady || current.Status.BackupVersion == "" {
-			c.SetDataSourceStatus(controller.DataSourceStatus{
-				Done:    false,
-				State:   controller.DataSourceStateWaiting,
-				Reason:  corev1alpha1.ReasonDataSourceWaitingForCluster,
-				Message: "waiting for PerconaServerMongoDB to be Ready and publish a BackupVersion",
-			})
-			return nil
-		}
-		if _, err := c.ReconcileDataSource(); err != nil {
-			return fmt.Errorf("reconcile data source: %w", err)
+
+		switch ds.Type {
+		case backupv1alpha1.DataSourceTypeBackup:
+			// For Backup type, wait for Ready + BackupVersion before restore
+			if current.Status.State != psmdbv1.AppStateReady || current.Status.BackupVersion == "" {
+				c.SetDataSourceStatus(controller.DataSourceStatus{
+					Done:    false,
+					State:   controller.DataSourceStateWaiting,
+					Reason:  corev1alpha1.ReasonDataSourceWaitingForCluster,
+					Message: "waiting for PerconaServerMongoDB to be Ready and publish a BackupVersion",
+				})
+				return nil
+			}
+			if _, err := c.ReconcileDataSource(); err != nil {
+				return fmt.Errorf("reconcile data source: %w", err)
+			}
+
+		case backupv1alpha1.DataSourceTypeExternal:
+			// For External type, wait for Ready before import
+			if current.Status.State != psmdbv1.AppStateReady {
+				c.SetDataSourceStatus(controller.DataSourceStatus{
+					Done:    false,
+					State:   controller.DataSourceStateWaiting,
+					Reason:  corev1alpha1.ReasonDataSourceWaitingForCluster,
+					Message: "waiting for PerconaServerMongoDB to be Ready before starting import",
+				})
+				return nil
+			}
+			// Build connection details for the import job
+			connDetails, err := buildConnectionDetails(c, current)
+			if err != nil {
+				return fmt.Errorf("build connection details for import: %w", err)
+			}
+			if err := ReconcileExternalDataSource(c, connDetails); err != nil {
+				return fmt.Errorf("reconcile external data source: %w", err)
+			}
 		}
 	}
 
@@ -451,6 +478,10 @@ func NewPSMDBProviderInterface() *PSMDBProvider {
 			// Succeeded the Instance reconciler re-evaluates and exits
 			// the Restoring phase.
 			controller.WatchOwned(&backupv1alpha1.Restore{}),
+			// Watch import Jobs (owned by the Instance). When the Job
+			// completes or fails, the Instance reconciler updates the
+			// DataSourceStatus accordingly.
+			controller.WatchOwned(&batchv1.Job{}),
 			controller.WatchExternal(&monitoringv1alpha1.MonitoringConfig{},
 				handler.EnqueueRequestsFromMapFunc(enqueueMonitoringConfig(p)),
 				monitoringConfigPredicate(),

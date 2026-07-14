@@ -169,6 +169,113 @@ func TestValidatePSMDB(t *testing.T) {
 			expectErr: "missing spec.dataSource.backup.backupName",
 		},
 		{
+			name: "dataSource unsupported type",
+			instance: &corev1alpha1.Instance{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-instance"},
+				Spec: corev1alpha1.InstanceSpec{
+					DataSource: &backupv1alpha1.DataSource{
+						Type: "InvalidType",
+					},
+					Components: map[string]corev1alpha1.ComponentSpec{
+						common.ComponentEngine: validEngine,
+					},
+				},
+			},
+			expectErr: "unsupported dataSource.type",
+		},
+		{
+			name: "dataSource external missing external details",
+			instance: &corev1alpha1.Instance{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-instance"},
+				Spec: corev1alpha1.InstanceSpec{
+					DataSource: &backupv1alpha1.DataSource{
+						Type: backupv1alpha1.DataSourceTypeExternal,
+					},
+					Components: map[string]corev1alpha1.ComponentSpec{
+						common.ComponentEngine: validEngine,
+					},
+				},
+			},
+			expectErr: "missing spec.dataSource.external",
+		},
+		{
+			name: "dataSource external missing backupClassName",
+			instance: &corev1alpha1.Instance{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-instance"},
+				Spec: corev1alpha1.InstanceSpec{
+					DataSource: &backupv1alpha1.DataSource{
+						Type: backupv1alpha1.DataSourceTypeExternal,
+						External: &backupv1alpha1.DataSourceExternal{
+							StorageName: "my-storage",
+							Config:      &runtime.RawExtension{Raw: []byte(`{"path": "/backup"}`)},
+						},
+					},
+					Components: map[string]corev1alpha1.ComponentSpec{
+						common.ComponentEngine: validEngine,
+					},
+				},
+			},
+			expectErr: "missing spec.dataSource.external.backupClassName",
+		},
+		{
+			name: "dataSource external missing storageName",
+			instance: &corev1alpha1.Instance{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-instance"},
+				Spec: corev1alpha1.InstanceSpec{
+					DataSource: &backupv1alpha1.DataSource{
+						Type: backupv1alpha1.DataSourceTypeExternal,
+						External: &backupv1alpha1.DataSourceExternal{
+							BackupClassName: "my-backupclass",
+							Config:          &runtime.RawExtension{Raw: []byte(`{"path": "/backup"}`)},
+						},
+					},
+					Components: map[string]corev1alpha1.ComponentSpec{
+						common.ComponentEngine: validEngine,
+					},
+				},
+			},
+			expectErr: "missing spec.dataSource.external.storageName",
+		},
+		{
+			name: "dataSource external missing config",
+			instance: &corev1alpha1.Instance{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-instance"},
+				Spec: corev1alpha1.InstanceSpec{
+					DataSource: &backupv1alpha1.DataSource{
+						Type: backupv1alpha1.DataSourceTypeExternal,
+						External: &backupv1alpha1.DataSourceExternal{
+							BackupClassName: "my-backupclass",
+							StorageName:     "my-storage",
+						},
+					},
+					Components: map[string]corev1alpha1.ComponentSpec{
+						common.ComponentEngine: validEngine,
+					},
+				},
+			},
+			expectErr: "missing spec.dataSource.external.config",
+		},
+		{
+			name: "dataSource external backupClass not found",
+			instance: &corev1alpha1.Instance{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-instance"},
+				Spec: corev1alpha1.InstanceSpec{
+					DataSource: &backupv1alpha1.DataSource{
+						Type: backupv1alpha1.DataSourceTypeExternal,
+						External: &backupv1alpha1.DataSourceExternal{
+							BackupClassName: "non-existent-backupclass",
+							StorageName:     "my-storage",
+							Config:          &runtime.RawExtension{Raw: []byte(`{"path": "/backup"}`)},
+						},
+					},
+					Components: map[string]corev1alpha1.ComponentSpec{
+						common.ComponentEngine: validEngine,
+					},
+				},
+			},
+			expectErr: "failed to get BackupClass",
+		},
+		{
 			name: "missing engine component",
 			instance: &corev1alpha1.Instance{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-instance"},

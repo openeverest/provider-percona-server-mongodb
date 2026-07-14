@@ -145,16 +145,76 @@ func validateEngine(c *controller.Context) error {
 func validateDataSource(c *controller.Context) error {
 	ds := c.Instance().Spec.DataSource
 
-	if ds == nil || ds.Type != backupv1alpha1.DataSourceTypeBackup {
+	if ds == nil {
 		return nil
 	}
 
+	switch ds.Type {
+	case backupv1alpha1.DataSourceTypeBackup:
+		return validateDataSourceBackup(c, ds)
+	case backupv1alpha1.DataSourceTypeExternal:
+		return validateDataSourceExternal(c, ds)
+	default:
+		return fmt.Errorf("unsupported dataSource.type: %q", ds.Type)
+	}
+}
+
+// validateDataSourceBackup validates dataSource when type=Backup.
+func validateDataSourceBackup(c *controller.Context, ds *backupv1alpha1.DataSource) error {
 	if ds.Backup == nil {
 		return fmt.Errorf("missing spec.dataSource.backup")
 	}
 
 	if ds.Backup.BackupName == "" {
 		return fmt.Errorf("missing spec.dataSource.backup.backupName")
+	}
+
+	return nil
+}
+
+// validateDataSourceExternal validates dataSource when type=External.
+func validateDataSourceExternal(c *controller.Context, ds *backupv1alpha1.DataSource) error {
+	if ds.External == nil {
+		return fmt.Errorf("missing spec.dataSource.external")
+	}
+
+	ext := ds.External
+
+	if ext.BackupClassName == "" {
+		return fmt.Errorf("missing spec.dataSource.external.backupClassName")
+	}
+
+	if ext.StorageName == "" {
+		return fmt.Errorf("missing spec.dataSource.external.storageName")
+	}
+
+	if ext.Config == nil {
+		return fmt.Errorf("missing spec.dataSource.external.config")
+	}
+
+	// Validate BackupClass exists, supports this provider, and has importJob defined
+	bc, err := c.BackupClass(ext.BackupClassName)
+	if err != nil {
+		return fmt.Errorf("failed to get BackupClass %q: %w", ext.BackupClassName, err)
+	}
+
+	providerName := c.Instance().Spec.Provider
+	if !bc.Spec.SupportedProviders.Has(providerName) {
+		return fmt.Errorf("BackupClass %q does not support provider %q", ext.BackupClassName, providerName)
+	}
+
+	if bc.Spec.ImportJob == nil {
+		return fmt.Errorf("BackupClass %q does not have importJob defined", ext.BackupClassName)
+	}
+
+	// Validate config against BackupClass.spec.importConfig schema
+	if err := bc.Spec.ImportConfig.Validate(ext.Config); err != nil {
+		return fmt.Errorf("spec.dataSource.external.config validation failed: %w", err)
+	}
+
+	// Validate BackupStorage exists
+	if _, err := c.BackupStorage(ext.StorageName); err != nil {
+		return fmt.Errorf("failed to get BackupStorage %q: %w", ext.StorageName, err)
 	}
 
 	return nil
