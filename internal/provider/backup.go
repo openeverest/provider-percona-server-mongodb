@@ -24,8 +24,10 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	backupv1alpha1 "github.com/openeverest/openeverest/v2/api/backup/v1alpha1"
 	corev1alpha1 "github.com/openeverest/openeverest/v2/api/core/v1alpha1"
@@ -92,7 +94,7 @@ func buildBackupSpec(c *controller.Context) (psmdbv1.BackupSpec, error) {
 			Message: err.Error(),
 		}
 	}
-	pitrEnabled, err := resolvePSMDBPITR(backupCfg.Storages)
+	pitrSpec, err := buildPSMDBPITRSpec(backupCfg.Storages)
 	if err != nil {
 		return psmdbv1.BackupSpec{}, &controller.BackupConfigError{
 			Reason:  "PITRConfigInvalid",
@@ -102,24 +104,43 @@ func buildBackupSpec(c *controller.Context) (psmdbv1.BackupSpec, error) {
 	bs.Enabled = true
 	bs.Storages = storages
 	bs.Tasks = buildPSMDBTasks(backupCfg.Storages)
-	bs.PITR.Enabled = pitrEnabled
+	bs.PITR = pitrSpec
 	return bs, nil
 }
 
-// resolvePSMDBPITR returns true when exactly one storage has PITR enabled.
-// PSMDB only supports a single PITR stream per cluster, so configuring more
-// than one PITR-enabled storage is rejected as a configuration error.
-func resolvePSMDBPITR(storages []corev1alpha1.InstanceBackupStorage) (bool, error) {
-	var enabled []string
-	for _, s := range storages {
+// pitrStorage returns the single storage entry with PITR enabled, or nil when
+// no storage has PITR enabled. PSMDB only supports a single PITR stream per
+// cluster, so configuring more than one PITR-enabled storage is rejected as a
+// configuration error.
+func pitrStorage(storages []corev1alpha1.InstanceBackupStorage) (*corev1alpha1.InstanceBackupStorage, error) {
+	var found *corev1alpha1.InstanceBackupStorage
+	var names []string
+	for i := range storages {
+		s := &storages[i]
 		if s.PITR != nil && s.PITR.Enabled {
-			enabled = append(enabled, s.Name)
+			found = s
+			names = append(names, s.Name)
 		}
 	}
-	if len(enabled) > 1 {
-		return false, fmt.Errorf("PSMDB supports at most one PITR-enabled storage, got %d: %v", len(enabled), enabled)
+	if len(names) > 1 {
+		return nil, fmt.Errorf("PSMDB supports at most one PITR-enabled storage, got %d: %v", len(names), names)
 	}
-	return len(enabled) == 1, nil
+	return found, nil
+}
+
+// buildPSMDBPITRSpec translates the Instance's per-storage PITR configuration
+// into the engine's cluster-global PITR spec. PSMDB supports a single PITR
+// stream, so PITR is enabled when exactly one storage has it enabled.
+//
+// Per-storage custom PITR config (oplog span, compression) is not yet
+// supported by this provider: the BackupClass declares no pitrConfigSchema,
+// so the runtime rejects any pitr.config payload at admission time.
+func buildPSMDBPITRSpec(storages []corev1alpha1.InstanceBackupStorage) (psmdbv1.PITRSpec, error) {
+	storage, err := pitrStorage(storages)
+	if err != nil {
+		return psmdbv1.PITRSpec{}, err
+	}
+	return psmdbv1.PITRSpec{Enabled: storage != nil}, nil
 }
 
 // =============================================================================
@@ -199,6 +220,66 @@ func (p *PSMDBProvider) Mirror(ctx context.Context, c client.Client, obj client.
 // OperatorBackupType implements controller.BackupMirror.
 func (p *PSMDBProvider) OperatorBackupType() client.Object {
 	return &psmdbv1.PerconaServerMongoDBBackup{}
+}
+
+// enqueueOperatorBackupInstance maps a PerconaServerMongoDBBackup event to a
+// reconcile request for the Instance named by spec.clusterName. This keeps
+// instance.status.backup fresh as PBM refreshes latestRestorableTime on
+// operator backup CRs, which are not owned by the Instance.
+func enqueueOperatorBackupInstance() func(ctx context.Context, obj client.Object) []reconcile.Request {
+	return func(_ context.Context, obj client.Object) []reconcile.Request {
+		ub, ok := obj.(*psmdbv1.PerconaServerMongoDBBackup)
+		if !ok || ub.Spec.ClusterName == "" {
+			return nil
+		}
+		return []reconcile.Request{{
+			NamespacedName: types.NamespacedName{
+				Namespace: ub.Namespace,
+				Name:      ub.Spec.ClusterName,
+			},
+		}}
+	}
+}
+
+// BackupStorageStatuses implements controller.InstanceBackupStatusReporter.
+// It aggregates the latest restorable time reported by the PSMDB operator on
+// PerconaServerMongoDBBackup CRs (refreshed by PBM on ready backups) into one
+// entry per storage declared on the Instance. The runtime publishes the
+// result on instance.status.backup.storages after every successful Sync.
+func (p *PSMDBProvider) BackupStorageStatuses(c *controller.Context) ([]corev1alpha1.InstanceBackupStorageStatus, error) {
+	backupCfg := c.Instance().Spec.Backup
+	if backupCfg == nil || !backupCfg.Enabled {
+		return nil, nil
+	}
+
+	list := &psmdbv1.PerconaServerMongoDBBackupList{}
+	if err := c.List(list); err != nil {
+		return nil, fmt.Errorf("list PSMDB backups: %w", err)
+	}
+
+	latestPerStorage := make(map[string]*metav1.Time)
+	for i := range list.Items {
+		ub := &list.Items[i]
+		if ub.Spec.ClusterName != c.Name() || ub.Status.LatestRestorableTime == nil {
+			continue
+		}
+		storageName := ub.Spec.StorageName
+		if storageName == "" {
+			storageName = ub.Status.StorageName
+		}
+		if cur := latestPerStorage[storageName]; cur == nil || ub.Status.LatestRestorableTime.After(cur.Time) {
+			latestPerStorage[storageName] = ub.Status.LatestRestorableTime
+		}
+	}
+
+	out := make([]corev1alpha1.InstanceBackupStorageStatus, 0, len(backupCfg.Storages))
+	for _, s := range backupCfg.Storages {
+		out = append(out, corev1alpha1.InstanceBackupStorageStatus{
+			Name:                 s.Name,
+			LatestRestorableTime: latestPerStorage[s.Name],
+		})
+	}
+	return out, nil
 }
 
 // selectMainStorageName returns the logical name of the storage that should be
@@ -409,8 +490,9 @@ func (p *PSMDBProvider) SyncRestore(c *controller.Context, restore *backupv1alph
 			psmdbRestore.Spec.BackupName = operatorBackupName
 			psmdbRestore.Spec.BackupSource = nil
 		}
-		// PITR support: the runtime reconciler validates that PITR is only
-		// requested when the BackupClass advertises it; we just translate.
+		// PITR support: the runtime restore reconciler rejects PITR requests
+		// whose BackupClass does not advertise providerManaged.supportsPITR
+		// before dispatching SyncRestore; here we only translate.
 		if restore.Spec.DataSource.Backup.PITR != nil {
 			psmdbRestore.Spec.PITR = &psmdbv1.PITRestoreSpec{
 				Type: psmdbv1.PITRestoreType(restore.Spec.DataSource.Backup.PITR.Type),
