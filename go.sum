@@ -432,8 +432,8 @@ github.com/onsi/ginkgo/v2 v2.28.2 h1:DTrMfpqxiNUyQ3Y0zhn1n3cOO2euFgQPYIpkWwxVFps
 github.com/onsi/ginkgo/v2 v2.28.2/go.mod h1:CLtbVInNckU3/+gC8LzkGUb9oF+e8W8TdUsxPwvdOgE=
 github.com/onsi/gomega v1.39.1 h1:1IJLAad4zjPn2PsnhH70V4DKRFlrCzGBNrNaru+Vf28=
 github.com/onsi/gomega v1.39.1/go.mod h1:hL6yVALoTOxeWudERyfppUcZXjMwIMLnuSfruD2lcfg=
-github.com/openeverest/openeverest/v2 v2.0.0-dev.1.0.20260714155433-aa0552fd41a1 h1:mdHobMondKywpR4dEFzp4J4ZJO8ofUjyMsHLSOewEz0=
-github.com/openeverest/openeverest/v2 v2.0.0-dev.1.0.20260714155433-aa0552fd41a1/go.mod h1:98xG9QdbFBImhgnkDjLIja3t5c6SMCEfdJMome1DM7U=
+github.com/openeverest/openeverest/v2 v2.0.0-dev.1.0.20260716072713-81dec7419040 h1:hq/XXEHF44Mxriz5IzD/WjY239pTuPV5SEK+N86BaNY=
+github.com/openeverest/openeverest/v2 v2.0.0-dev.1.0.20260716072713-81dec7419040/go.mod h1:RU2i08pPJgSgj7lYtItPIYptleAjiAf21S14/ds4osU=
 github.com/openeverest/provider-sdk v0.1.0 h1:/teOKfgGI6cHiEGjNh3efIBK+921vczDNSEtlqVeVvc=
 github.com/openeverest/provider-sdk v0.1.0/go.mod h1:tZzPC8LePmrSrx28lPytER/rWuJX1aaftJtACUF9jRo=
 github.com/otiai10/copy v1.2.0/go.mod h1:rrF5dJ5F0t/EWSYODDu4j9/vEeYHMkc8jt0zJChqQWw=
