@@ -17,8 +17,10 @@ package provider
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
-	batchv1 "k8s.io/api/batch/v1"
+	pbmdefs "github.com/percona/percona-backup-mongodb/pbm/defs"
+	psmdbv1 "github.com/percona/percona-server-mongodb-operator/pkg/apis/psmdb/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -28,68 +30,27 @@ import (
 	backupv1alpha1 "github.com/openeverest/openeverest/v2/api/backup/v1alpha1"
 	corev1alpha1 "github.com/openeverest/openeverest/v2/api/core/v1alpha1"
 	"github.com/openeverest/openeverest/v2/provider-runtime/controller"
+
+	pbm "github.com/openeverest/provider-percona-server-mongodb/definition/backupclasses/percona-backup-mongodb"
 )
 
 const (
-	// ImportJobNameSuffix is appended to the Instance name to form the import Job name.
-	ImportJobNameSuffix = "-import"
-	// ImportPayloadSecretSuffix is appended to the Instance name to form the payload Secret name.
-	ImportPayloadSecretSuffix = "-import-payload"
-	// PayloadMountPath is where the payload secret is mounted in the import job container.
-	PayloadMountPath = "/payload"
-	// PayloadFileName is the name of the file containing the import request JSON.
-	PayloadFileName = "request.json"
+	// ImportRestoreSuffix is appended to the Instance name to form the import restore CR name.
+	ImportRestoreSuffix = "-import"
+	// ImportCredentialsSecretSuffix is appended to the Instance name to form the S3 credentials secret name.
+	ImportCredentialsSecretSuffix = "-import-s3-creds"
+
+	// ManagedByDataImportAnnotation marks a PerconaServerMongoDBRestore as created by the import workflow.
+	// This prevents the Everest operator from creating a DatabaseBackupRestore (DBR) for this restore.
+	ManagedByDataImportAnnotation      = "openeverest.io/managed-by-data-import"
+	ManagedByDataImportAnnotationValue = "true"
 )
 
-// ImportPayload represents the JSON payload mounted into the import job container.
-// This matches the dataimporterspec.Spec shape from v1.
-type ImportPayload struct {
-	Source ImportPayloadSource `json:"source"`
-	Target ImportPayloadTarget `json:"target"`
-}
-
-// ImportPayloadSource contains the S3 source configuration.
-type ImportPayloadSource struct {
-	S3   ImportPayloadS3 `json:"s3"`
-	Path string          `json:"path"`
-}
-
-// ImportPayloadS3 contains S3 connection details.
-type ImportPayloadS3 struct {
-	Bucket         string `json:"bucket"`
-	Region         string `json:"region"`
-	EndpointURL    string `json:"endpointURL"`
-	AccessKeyID    string `json:"accessKeyID"`
-	SecretKey      string `json:"secretKey"`
-	VerifyTLS      bool   `json:"verifyTLS"`
-	ForcePathStyle bool   `json:"forcePathStyle"`
-}
-
-// ImportPayloadTarget contains the target database configuration.
-type ImportPayloadTarget struct {
-	DatabaseClusterRef ImportClusterRef `json:"databaseClusterRef"`
-	Host               string           `json:"host"`
-	Port               string           `json:"port"`
-	User               string           `json:"user"`
-	Password           string           `json:"password"`
-	Type               string           `json:"type"`
-}
-
-// ImportClusterRef references the target database cluster.
-type ImportClusterRef struct {
-	Name      string `json:"name"`
-	Namespace string `json:"namespace"`
-}
-
-// ImportConfig represents the parsed import config from Instance.spec.dataSource.external.config.
-type ImportConfig struct {
-	Path                  string `json:"path"`
-	CredentialsSecretName string `json:"credentialsSecretName"`
-}
-
 // ReconcileExternalDataSource handles the import workflow for type=External data sources.
-// It creates a payload Secret and import Job, then monitors the Job status.
-func ReconcileExternalDataSource(c *controller.Context, connectionDetails controller.ConnectionDetails) error {
+//
+// This implementation uses ProviderManaged mode: it creates a PerconaServerMongoDBRestore
+// CR directly and lets the PSMDB operator's PBM agent perform the actual restore.
+func ReconcileExternalDataSource(c *controller.Context) error {
 	l := log.FromContext(c.Context())
 	ds := c.Instance().Spec.DataSource
 	if ds == nil || ds.Type != backupv1alpha1.DataSourceTypeExternal {
@@ -97,135 +58,146 @@ func ReconcileExternalDataSource(c *controller.Context, connectionDetails contro
 	}
 
 	ext := ds.External
-	l.Info("Reconciling external data source import", "backupClass", ext.BackupClassName, "storage", ext.StorageName)
+	l.Info("Reconciling external data source import", "backupClass", ext.BackupClassRef.Name, "storage", ext.StorageRef.Name)
 
 	// Parse import config
-	var importCfg ImportConfig
+	var importCfg pbm.PerconaImportConfig
 	if err := json.Unmarshal(ext.Config.Raw, &importCfg); err != nil {
 		return fmt.Errorf("failed to parse import config: %w", err)
 	}
 
-	// Get BackupClass for import job spec
-	bc, err := c.BackupClass(ext.BackupClassName)
+	// Get BackupClass to determine execution mode
+	bc, err := c.BackupClass(ext.BackupClassRef.Name)
 	if err != nil {
-		return fmt.Errorf("failed to get BackupClass %q: %w", ext.BackupClassName, err)
+		return fmt.Errorf("failed to get BackupClass %q: %w", ext.BackupClassRef.Name, err)
+	}
+
+	// Route to the appropriate handler based on execution mode
+	switch bc.Spec.ExecutionMode {
+	case backupv1alpha1.BackupExecutionModeProviderManaged:
+		if bc.Spec.ProviderManaged == nil || !bc.Spec.ProviderManaged.SupportsImport {
+			return fmt.Errorf("BackupClass %q is ProviderManaged but does not support import", bc.Name)
+		}
+
+		return reconcileProviderManagedImport(c, ext, importCfg)
+
+	case backupv1alpha1.BackupExecutionModeJob:
+		if bc.Spec.ImportJob == nil {
+			return fmt.Errorf("BackupClass %q is Job mode but does not have importJob defined", bc.Name)
+		}
+
+		return reconcileJobModeImport(c, ext, importCfg, bc)
+
+	default:
+		return fmt.Errorf("unsupported execution mode %q for import", bc.Spec.ExecutionMode)
+	}
+}
+
+// reconcileProviderManagedImport handles import using the PSMDB operator's restore mechanism.
+// This creates a PerconaServerMongoDBRestore CR directly, and PBM performs the actual restore.
+func reconcileProviderManagedImport(c *controller.Context, ext *backupv1alpha1.DataSourceExternal, importCfg pbm.PerconaImportConfig) error {
+	l := log.FromContext(c.Context())
+
+	// Validate that credentials secret is provided
+	if importCfg.CredentialsSecretRef.Name == "" {
+		return fmt.Errorf("credentialsSecretRef.name is required for ProviderManaged import: " +
+			"PBM backups embed credential hashes, the target Instance must use the same " +
+			"credentials as the source database")
 	}
 
 	// Get BackupStorage for S3 credentials
-	storage, err := c.BackupStorage(ext.StorageName)
+	storage, err := c.BackupStorage(ext.StorageRef.Name)
 	if err != nil {
-		return fmt.Errorf("failed to get BackupStorage %q: %w", ext.StorageName, err)
+		return fmt.Errorf("failed to get BackupStorage %q: %w", ext.StorageRef.Name, err)
 	}
 
-	// Get S3 credentials from BackupStorage's referenced secret
-	s3Creds, err := getS3Credentials(c, storage)
-	if err != nil {
-		return fmt.Errorf("failed to get S3 credentials: %w", err)
+	// Set owner reference on the user-provided credentials secret so it's
+	// cleaned up when the Instance is deleted. The user created this secret
+	// specifically for this import operation.
+	if err := ensureImportCredentialsOwnership(c, importCfg.CredentialsSecretRef.Name); err != nil {
+		return fmt.Errorf("failed to ensure import credentials ownership: %w", err)
 	}
 
-	// Get database credentials from the user-provided secret
-	dbCreds, err := getDBCredentials(c, importCfg.CredentialsSecretName)
-	if err != nil {
-		return fmt.Errorf("failed to get DB credentials: %w", err)
+	// Ensure S3 credentials secret for the restore
+	s3CredSecretName := c.Name() + ImportCredentialsSecretSuffix
+	if err := ensureS3CredentialsSecret(c, s3CredSecretName, storage); err != nil {
+		return fmt.Errorf("failed to ensure S3 credentials secret: %w", err)
 	}
 
-	// Build the import payload
-	payload := buildImportPayload(c, s3Creds, importCfg, connectionDetails, dbCreds)
-
-	// Create or update the payload secret
-	payloadSecretName := c.Name() + ImportPayloadSecretSuffix
-	if err := ensurePayloadSecret(c, payloadSecretName, payload); err != nil {
-		return fmt.Errorf("failed to ensure payload secret: %w", err)
+	// Create or get the PerconaServerMongoDBRestore CR
+	restoreName := c.Name() + ImportRestoreSuffix
+	if err := ensureImportRestore(c, restoreName, s3CredSecretName, storage, importCfg); err != nil {
+		return fmt.Errorf("failed to ensure import restore CR: %w", err)
 	}
 
-	// Create or update the import job
-	jobName := c.Name() + ImportJobNameSuffix
-	if err := ensureImportJob(c, jobName, payloadSecretName, bc); err != nil {
-		return fmt.Errorf("failed to ensure import job: %w", err)
-	}
-
-	// Check job status and update data source status
-	return updateImportStatus(c, jobName)
+	// Observe the restore status and update data source status
+	return observeImportRestoreStatus(c, restoreName, l)
 }
 
-// getS3Credentials retrieves S3 credentials from the BackupStorage's referenced secret.
-func getS3Credentials(c *controller.Context, storage *backupv1alpha1.BackupStorage) (ImportPayloadS3, error) {
-	if storage.Spec.S3 == nil {
-		return ImportPayloadS3{}, fmt.Errorf("BackupStorage does not have S3 config")
+// getExternalImportCredentialsSecretName returns the credentials secret name
+// from the external import config. This is called from provider.go to set
+// psmdb.Spec.Secrets.Users to use the user-provided secret directly.
+func getExternalImportCredentialsSecretName(c *controller.Context) string {
+	ds := c.Instance().Spec.DataSource
+	if ds == nil || ds.External == nil || ds.External.Config == nil {
+		return ""
 	}
 
-	s3Cfg := storage.Spec.S3
-	result := ImportPayloadS3{
-		Bucket:         s3Cfg.Bucket,
-		Region:         s3Cfg.Region,
-		EndpointURL:    s3Cfg.EndpointURL,
-		VerifyTLS:      s3Cfg.VerifyTLS == nil || *s3Cfg.VerifyTLS,
-		ForcePathStyle: s3Cfg.ForcePathStyle != nil && *s3Cfg.ForcePathStyle,
+	var importCfg pbm.PerconaImportConfig
+	if err := json.Unmarshal(ds.External.Config.Raw, &importCfg); err != nil {
+		return ""
 	}
-
-	// Get credentials from secret if referenced
-	if s3Cfg.CredentialsSecretName != "" {
-		secret := &corev1.Secret{}
-		if err := c.Get(secret, s3Cfg.CredentialsSecretName); err != nil {
-			return ImportPayloadS3{}, fmt.Errorf("failed to get S3 credentials secret %q: %w", s3Cfg.CredentialsSecretName, err)
-		}
-		result.AccessKeyID = string(secret.Data["AWS_ACCESS_KEY_ID"])
-		result.SecretKey = string(secret.Data["AWS_SECRET_ACCESS_KEY"])
-	} else {
-		// Use inline credentials if provided (write-only fields, may be empty)
-		result.AccessKeyID = s3Cfg.AccessKeyID
-		result.SecretKey = s3Cfg.SecretAccessKey
-	}
-
-	return result, nil
+	return importCfg.CredentialsSecretRef.Name
 }
 
-// getDBCredentials retrieves database credentials from the user-provided secret.
-func getDBCredentials(c *controller.Context, secretName string) (map[string]string, error) {
+// ensureImportCredentialsOwnership sets owner reference on the user-provided
+// credentials secret so it's cleaned up when the Instance is deleted.
+//
+// The PSMDB CR's spec.secrets.users is set to this secret name directly
+// (see provider.go), so no copying is needed.
+func ensureImportCredentialsOwnership(c *controller.Context, secretName string) error {
 	secret := &corev1.Secret{}
 	if err := c.Get(secret, secretName); err != nil {
-		return nil, fmt.Errorf("failed to get credentials secret %q: %w", secretName, err)
+		return fmt.Errorf("failed to get credentials secret %q: %w", secretName, err)
 	}
 
-	result := make(map[string]string)
-	for k, v := range secret.Data {
-		result[k] = string(v)
+	// Set owner reference so the secret is cleaned up with the Instance
+	if !hasOwnerReference(secret, c.Instance()) {
+		if err := controllerutil.SetOwnerReference(c.Instance(), secret, c.Client().Scheme()); err != nil {
+			return fmt.Errorf("failed to set owner reference: %w", err)
+		}
+		if err := c.Client().Update(c.Context(), secret); err != nil {
+			return fmt.Errorf("failed to update secret with owner reference: %w", err)
+		}
 	}
-	return result, nil
+
+	return nil
 }
 
-// buildImportPayload constructs the ImportPayload for the import job.
-func buildImportPayload(
-	c *controller.Context,
-	s3Creds ImportPayloadS3,
-	importCfg ImportConfig,
-	connDetails controller.ConnectionDetails,
-	dbCreds map[string]string,
-) ImportPayload {
-	return ImportPayload{
-		Source: ImportPayloadSource{
-			S3:   s3Creds,
-			Path: importCfg.Path,
-		},
-		Target: ImportPayloadTarget{
-			DatabaseClusterRef: ImportClusterRef{
-				Name:      c.Name(),
-				Namespace: c.Namespace(),
-			},
-			Host:     connDetails.Host,
-			Port:     connDetails.Port,
-			User:     dbCreds["MONGODB_DATABASE_ADMIN_USER"],
-			Password: dbCreds["MONGODB_DATABASE_ADMIN_PASSWORD"],
-			Type:     "mongodb",
-		},
+// hasOwnerReference checks if the object has an owner reference to the given owner.
+func hasOwnerReference(obj, owner metav1.Object) bool {
+	for _, ref := range obj.GetOwnerReferences() {
+		if ref.UID == owner.GetUID() {
+			return true
+		}
 	}
+	return false
 }
 
-// ensurePayloadSecret creates or updates the payload secret for the import job.
-func ensurePayloadSecret(c *controller.Context, name string, payload ImportPayload) error {
-	payloadJSON, err := json.Marshal(payload)
-	if err != nil {
-		return fmt.Errorf("failed to marshal payload: %w", err)
+// ensureS3CredentialsSecret creates a secret with S3 credentials for the import restore.
+func ensureS3CredentialsSecret(c *controller.Context, name string, storage *backupv1alpha1.BackupStorage) error {
+	if storage.Spec.S3 == nil {
+		return fmt.Errorf("BackupStorage does not have S3 config")
+	}
+
+	// Get credentials from the BackupStorage's referenced secret
+	if storage.Spec.S3.CredentialsSecretName == "" {
+		return fmt.Errorf("BackupStorage S3 config does not specify credentialsSecret")
+	}
+
+	srcSecret := &corev1.Secret{}
+	if err := c.Get(srcSecret, storage.Spec.S3.CredentialsSecretName); err != nil {
+		return fmt.Errorf("failed to get S3 credentials secret %q: %w", storage.Spec.S3.CredentialsSecretName, err)
 	}
 
 	secret := &corev1.Secret{
@@ -235,142 +207,165 @@ func ensurePayloadSecret(c *controller.Context, name string, payload ImportPaylo
 		},
 	}
 
-	_, err = controllerutil.CreateOrUpdate(c.Context(), c.Client(), secret, func() error {
-		if secret.Labels == nil {
-			secret.Labels = make(map[string]string)
+	_, err := controllerutil.CreateOrUpdate(c.Context(), c.Client(), secret, func() error {
+		secret.Type = corev1.SecretTypeOpaque
+		secret.StringData = map[string]string{
+			"AWS_ACCESS_KEY_ID":     string(srcSecret.Data["AWS_ACCESS_KEY_ID"]),
+			"AWS_SECRET_ACCESS_KEY": string(srcSecret.Data["AWS_SECRET_ACCESS_KEY"]),
 		}
-		secret.Labels["app.kubernetes.io/managed-by"] = "openeverest"
-		secret.Labels["app.kubernetes.io/instance"] = c.Name()
-		secret.Labels["app.kubernetes.io/component"] = "import"
-
-		secret.Data = map[string][]byte{
-			PayloadFileName: payloadJSON,
-		}
-
 		return controllerutil.SetControllerReference(c.Instance(), secret, c.Client().Scheme())
 	})
 
 	return err
 }
 
-// ensureImportJob creates or updates the import job.
-func ensureImportJob(c *controller.Context, jobName, payloadSecretName string, bc *backupv1alpha1.BackupClass) error {
-	if bc.Spec.ImportJob == nil || bc.Spec.ImportJob.JobSpec == nil {
-		return fmt.Errorf("BackupClass %q does not have importJob.jobSpec defined", bc.Name)
+// ensureImportRestore creates or updates the PerconaServerMongoDBRestore CR for the import.
+func ensureImportRestore(
+	c *controller.Context,
+	restoreName, s3CredSecretName string,
+	storage *backupv1alpha1.BackupStorage,
+	importCfg pbm.PerconaImportConfig,
+) error {
+	s3Cfg := storage.Spec.S3
+
+	// Parse the backup path to extract prefix and destination
+	// Path format: "path/to/backup" -> prefix: "path/to", destination: "s3://bucket/path/to/backup"
+	backupPath := strings.Trim(importCfg.Path, "/")
+	split := strings.Split(backupPath, "/")
+	prefix := ""
+	if len(split) > 1 {
+		prefix = strings.Join(split[:len(split)-1], "/")
 	}
+	destination := fmt.Sprintf("s3://%s/%s", s3Cfg.Bucket, backupPath)
 
-	jobSpec := bc.Spec.ImportJob.JobSpec
-	var backoffLimit int32 = 0 // Don't retry failed imports
+	forcePathStyle := s3Cfg.ForcePathStyle != nil && *s3Cfg.ForcePathStyle
+	verifyTLS := s3Cfg.VerifyTLS == nil || *s3Cfg.VerifyTLS
 
-	job := &batchv1.Job{
+	psmdbRestore := &psmdbv1.PerconaServerMongoDBRestore{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      jobName,
+			Name:      restoreName,
 			Namespace: c.Namespace(),
 		},
 	}
 
-	_, err := controllerutil.CreateOrUpdate(c.Context(), c.Client(), job, func() error {
-		if job.Labels == nil {
-			job.Labels = make(map[string]string)
+	_, err := controllerutil.CreateOrUpdate(c.Context(), c.Client(), psmdbRestore, func() error {
+		// Mark as managed by data import so other controllers don't create DBR for it
+		if psmdbRestore.Annotations == nil {
+			psmdbRestore.Annotations = make(map[string]string)
 		}
-		job.Labels["app.kubernetes.io/managed-by"] = "openeverest"
-		job.Labels["app.kubernetes.io/instance"] = c.Name()
-		job.Labels["app.kubernetes.io/component"] = "import"
+		psmdbRestore.Annotations[ManagedByDataImportAnnotation] = ManagedByDataImportAnnotationValue
 
-		// Only set spec on create (Jobs are immutable)
-		if job.CreationTimestamp.IsZero() {
-			job.Spec = batchv1.JobSpec{
-				BackoffLimit: &backoffLimit,
-				Template: corev1.PodTemplateSpec{
-					ObjectMeta: metav1.ObjectMeta{
-						Labels: map[string]string{
-							"app.kubernetes.io/managed-by": "everest",
-							"app.kubernetes.io/instance":   c.Name(),
-							"app.kubernetes.io/component":  "import",
-						},
-					},
-					Spec: corev1.PodSpec{
-						RestartPolicy: corev1.RestartPolicyNever,
-						Containers: []corev1.Container{
-							{
-								Name:    "importer",
-								Image:   jobSpec.Image,
-								Command: jobSpec.Command,
-								VolumeMounts: []corev1.VolumeMount{
-									{
-										Name:      "payload",
-										MountPath: PayloadMountPath,
-										ReadOnly:  true,
-									},
-								},
-							},
-						},
-						Volumes: []corev1.Volume{
-							{
-								Name: "payload",
-								VolumeSource: corev1.VolumeSource{
-									Secret: &corev1.SecretVolumeSource{
-										SecretName: payloadSecretName,
-									},
-								},
-							},
-						},
-					},
+		// Labels to identify the object
+		if psmdbRestore.Labels == nil {
+			psmdbRestore.Labels = make(map[string]string)
+		}
+		psmdbRestore.Labels["app.kubernetes.io/managed-by"] = "openeverest"
+		psmdbRestore.Labels["app.kubernetes.io/instance"] = c.Name()
+		psmdbRestore.Labels["app.kubernetes.io/component"] = "import"
+
+		// Set owner reference for cleanup
+		if err := controllerutil.SetOwnerReference(c.Instance(), psmdbRestore, c.Client().Scheme()); err != nil {
+			return fmt.Errorf("failed to set owner reference: %w", err)
+		}
+
+		psmdbRestore.Spec = psmdbv1.PerconaServerMongoDBRestoreSpec{
+			ClusterName: c.Name(),
+			BackupSource: &psmdbv1.PerconaServerMongoDBBackupStatus{
+				Type:        pbmdefs.LogicalBackup,
+				Destination: destination,
+				S3: &psmdbv1.BackupStorageS3Spec{
+					Bucket:                s3Cfg.Bucket,
+					Region:                s3Cfg.Region,
+					EndpointURL:           s3Cfg.EndpointURL,
+					CredentialsSecret:     s3CredSecretName,
+					Prefix:                prefix,
+					InsecureSkipTLSVerify: !verifyTLS,
+					ForcePathStyle:        &forcePathStyle,
 				},
-			}
+			},
 		}
-
-		return controllerutil.SetControllerReference(c.Instance(), job, c.Client().Scheme())
+		return nil
 	})
 
 	return err
 }
 
-// updateImportStatus checks the import job status and updates the data source status.
-func updateImportStatus(c *controller.Context, jobName string) error {
-	job := &batchv1.Job{}
-	if err := c.Get(job, jobName); err != nil {
+// observeImportRestoreStatus checks the PerconaServerMongoDBRestore status and updates the data source status.
+func observeImportRestoreStatus(c *controller.Context, restoreName string, l interface {
+	Info(msg string, keysAndValues ...any)
+}) error {
+	psmdbRestore := &psmdbv1.PerconaServerMongoDBRestore{}
+	if err := c.Get(psmdbRestore, restoreName); err != nil {
 		if apierrors.IsNotFound(err) {
 			c.SetDataSourceStatus(controller.DataSourceStatus{
 				Done:    false,
 				State:   controller.DataSourceStateWaiting,
 				Reason:  corev1alpha1.ReasonDataSourceWaitingForCluster,
-				Message: "waiting for import job to be created",
+				Message: "waiting for import restore CR to be created",
 			})
 			return nil
 		}
-		return fmt.Errorf("failed to get import job %q: %w", jobName, err)
+		return fmt.Errorf("failed to get import restore %q: %w", restoreName, err)
 	}
 
-	// Check job conditions
-	for _, cond := range job.Status.Conditions {
-		if cond.Type == batchv1.JobComplete && cond.Status == corev1.ConditionTrue {
-			c.SetDataSourceStatus(controller.DataSourceStatus{
-				Done:    true,
-				State:   controller.DataSourceStateSucceeded,
-				Reason:  corev1alpha1.ReasonDataSourceSucceeded,
-				Message: fmt.Sprintf("Import completed successfully via Job %q", jobName),
-			})
-			return nil
-		}
-		if cond.Type == batchv1.JobFailed && cond.Status == corev1.ConditionTrue {
-			c.SetDataSourceStatus(controller.DataSourceStatus{
-				Done:    true,
-				State:   controller.DataSourceStateFailed,
-				Reason:  corev1alpha1.ReasonDataSourceFailed,
-				Message: fmt.Sprintf("Import job %q failed: %s", jobName, cond.Message),
-			})
-			return nil
-		}
+	switch psmdbRestore.Status.State {
+	case psmdbv1.RestoreStateReady:
+		l.Info("Import restore completed successfully", "restore", restoreName)
+		c.SetDataSourceStatus(controller.DataSourceStatus{
+			Done:    true,
+			State:   controller.DataSourceStateSucceeded,
+			Reason:  corev1alpha1.ReasonDataSourceSucceeded,
+			Message: fmt.Sprintf("Import completed successfully via restore %q", restoreName),
+		})
+		return nil
+
+	case psmdbv1.RestoreStateError:
+		l.Info("Import restore failed", "restore", restoreName, "error", psmdbRestore.Status.Error)
+		c.SetDataSourceStatus(controller.DataSourceStatus{
+			Done:    true,
+			State:   controller.DataSourceStateFailed,
+			Reason:  corev1alpha1.ReasonDataSourceFailed,
+			Message: fmt.Sprintf("Import restore %q failed: %s", restoreName, psmdbRestore.Status.Error),
+		})
+		return nil
+
+	default:
+		// Restore is still running (Waiting, Requested, Running, etc.)
+		c.SetDataSourceStatus(controller.DataSourceStatus{
+			Done:    false,
+			State:   controller.DataSourceStateRestoring,
+			Reason:  corev1alpha1.ReasonDataSourceRestoring,
+			Message: fmt.Sprintf("Import restore %q in progress (state: %s)", restoreName, psmdbRestore.Status.State),
+		})
+		return nil
 	}
+}
 
-	// Job is still running
-	c.SetDataSourceStatus(controller.DataSourceStatus{
-		Done:    false,
-		State:   controller.DataSourceStateRestoring,
-		Reason:  corev1alpha1.ReasonDataSourceRestoring,
-		Message: fmt.Sprintf("Import job %q in progress", jobName),
-	})
+// =============================================================================
+// Job Mode Import (TODO: Implement for formats not supported by PBM)
+// =============================================================================
 
-	return nil
+// reconcileJobModeImport handles import using an external Kubernetes Job.
+// This is for formats that cannot be restored by PBM and require direct database access.
+//
+// TODO: Implement Job-mode import for formats like:
+// - JSON files (mongoimport)
+// - CSV files (mongoimport)
+// - Custom application-specific formats
+//
+// The Job should:
+// 1. Download data from S3 directly (using AWS SDK, s3cmd, or similar)
+// 2. Connect to the database using credentials from the payload secret
+// 3. Run the import tool (mongoimport, psql, mysql) directly
+// 4. Exit with success/failure based on the tool's exit code
+//
+// This is TRUE Job mode - the Job does the actual import work, not just
+// creating another CR and waiting for it.
+func reconcileJobModeImport(
+	_ *controller.Context,
+	_ *backupv1alpha1.DataSourceExternal,
+	_ pbm.PerconaImportConfig,
+	_ *backupv1alpha1.BackupClass,
+) error {
+	return fmt.Errorf("Job-mode import is not yet implemented")
 }

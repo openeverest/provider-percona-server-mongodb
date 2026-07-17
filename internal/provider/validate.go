@@ -180,31 +180,41 @@ func validateDataSourceExternal(c *controller.Context, ds *backupv1alpha1.DataSo
 
 	ext := ds.External
 
-	if ext.BackupClassName == "" {
-		return fmt.Errorf("missing spec.dataSource.external.backupClassName")
+	if ext.BackupClassRef.Name == "" {
+		return fmt.Errorf("missing spec.dataSource.external.backupClassRef.name")
 	}
 
-	if ext.StorageName == "" {
-		return fmt.Errorf("missing spec.dataSource.external.storageName")
+	if ext.StorageRef.Name == "" {
+		return fmt.Errorf("missing spec.dataSource.external.storageRef.name")
 	}
 
 	if ext.Config == nil {
 		return fmt.Errorf("missing spec.dataSource.external.config")
 	}
 
-	// Validate BackupClass exists, supports this provider, and has importJob defined
-	bc, err := c.BackupClass(ext.BackupClassName)
+	// Validate BackupClass exists and supports this provider
+	bc, err := c.BackupClass(ext.BackupClassRef.Name)
 	if err != nil {
-		return fmt.Errorf("failed to get BackupClass %q: %w", ext.BackupClassName, err)
+		return fmt.Errorf("failed to get BackupClass %q: %w", ext.BackupClassRef.Name, err)
 	}
 
 	providerName := c.Instance().Spec.Provider
 	if !bc.Spec.SupportedProviders.Has(providerName) {
-		return fmt.Errorf("BackupClass %q does not support provider %q", ext.BackupClassName, providerName)
+		return fmt.Errorf("BackupClass %q does not support provider %q", ext.BackupClassRef.Name, providerName)
 	}
 
-	if bc.Spec.ImportJob == nil {
-		return fmt.Errorf("BackupClass %q does not have importJob defined", ext.BackupClassName)
+	// Validate based on execution mode
+	switch bc.Spec.ExecutionMode {
+	case backupv1alpha1.BackupExecutionModeProviderManaged:
+		if bc.Spec.ProviderManaged == nil || !bc.Spec.ProviderManaged.SupportsImport {
+			return fmt.Errorf("BackupClass %q does not support import", ext.BackupClassRef.Name)
+		}
+	case backupv1alpha1.BackupExecutionModeJob:
+		if bc.Spec.ImportJob == nil {
+			return fmt.Errorf("BackupClass %q does not have importJob defined", ext.BackupClassRef.Name)
+		}
+	default:
+		return fmt.Errorf("BackupClass %q has unsupported executionMode %q for import", ext.BackupClassRef.Name, bc.Spec.ExecutionMode)
 	}
 
 	// Validate config against BackupClass.spec.importConfig schema
@@ -213,8 +223,8 @@ func validateDataSourceExternal(c *controller.Context, ds *backupv1alpha1.DataSo
 	}
 
 	// Validate BackupStorage exists
-	if _, err := c.BackupStorage(ext.StorageName); err != nil {
-		return fmt.Errorf("failed to get BackupStorage %q: %w", ext.StorageName, err)
+	if _, err := c.BackupStorage(ext.StorageRef.Name); err != nil {
+		return fmt.Errorf("failed to get BackupStorage %q: %w", ext.StorageRef.Name, err)
 	}
 
 	return nil

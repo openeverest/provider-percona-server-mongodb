@@ -1,0 +1,71 @@
+apiVersion: core.openeverest.io/v1alpha1
+kind: Instance
+metadata:
+  name: psmdb-imported
+  namespace: my-special-place
+spec:
+  # Provider identifier
+  provider: percona-server-mongodb
+
+  # Version bundle for the new instance
+  version: 8.0.12
+
+  # Data source configuration for importing from external S3 storage
+  dataSource:
+    # Type External triggers import from external storage
+    type: External
+    external:
+      # BackupClass with importJob defined
+      backupClassRef:
+        name: percona-backup-mongodb
+      # BackupStorage containing S3 credentials and endpoint
+      storageRef:
+        name: bs-msp-1
+      # Configuration validated against BackupClass.spec.importConfig schema
+      config:
+        # Path to mongodump directory in the S3 bucket
+        path: "/2026-07-17T06:29:55Z"
+        # Secret containing MongoDB credentials for import
+        # Must have keys matching the provider's import credential requirements
+        credentialsSecretRef:
+          name: import-credentials
+
+  # Topology configuration - must match the source database structure
+  topology:
+    type: replicaset
+
+  # Component configuration for the new instance
+  components:
+    engine:
+      type: mongod
+      replicas: 3
+      storage:
+        size: 10Gi
+      resources:
+        limits:
+          cpu: 1
+          memory: 4G
+        requests:
+          cpu: 500m
+          memory: 2Gi
+---
+# Example import credentials Secret
+apiVersion: v1
+kind: Secret
+metadata:
+  name: import-credentials
+  namespace: my-special-place
+  labels:
+    openeverest.io/definition: data-import-credentials
+type: Opaque
+stringData:
+  MONGODB_USER_ADMIN_PASSWORD: "<match-source-password>"
+  MONGODB_USER_ADMIN_USER: "<match-source-user>"
+  MONGODB_BACKUP_PASSWORD: "<match-source-backup-password>"
+  MONGODB_BACKUP_USER: "<match-source-backup-user>"
+  MONGODB_CLUSTER_MONITOR_USER: "<match-source-cluster-monitor-user>"
+  MONGODB_DATABASE_ADMIN_USER: "<match-source-database-admin-user>"
+  MONGODB_CLUSTER_ADMIN_PASSWORD: "<match-source-cluster-admin-password>"
+  MONGODB_CLUSTER_MONITOR_PASSWORD: "<match-source-cluster-monitor-password>"
+  MONGODB_DATABASE_ADMIN_PASSWORD: "<match-source-database-admin-password>"
+  MONGODB_CLUSTER_ADMIN_USER: "<match-source-cluster-admin-user>"

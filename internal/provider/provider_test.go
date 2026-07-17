@@ -199,15 +199,15 @@ func TestValidatePSMDB(t *testing.T) {
 			expectErr: "missing spec.dataSource.external",
 		},
 		{
-			name: "dataSource external missing backupClassName",
+			name: "dataSource external missing backupClass",
 			instance: &corev1alpha1.Instance{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-instance"},
 				Spec: corev1alpha1.InstanceSpec{
 					DataSource: &backupv1alpha1.DataSource{
 						Type: backupv1alpha1.DataSourceTypeExternal,
 						External: &backupv1alpha1.DataSourceExternal{
-							StorageName: "my-storage",
-							Config:      &runtime.RawExtension{Raw: []byte(`{"path": "/backup"}`)},
+							StorageRef: corev1.ObjectReference{Name: "my-storage"},
+							Config:     &runtime.RawExtension{Raw: []byte(`{"path": "/backup"}`)},
 						},
 					},
 					Components: map[string]corev1alpha1.ComponentSpec{
@@ -215,18 +215,18 @@ func TestValidatePSMDB(t *testing.T) {
 					},
 				},
 			},
-			expectErr: "missing spec.dataSource.external.backupClassName",
+			expectErr: "missing spec.dataSource.external.backupClassRef.name",
 		},
 		{
-			name: "dataSource external missing storageName",
+			name: "dataSource external missing storage",
 			instance: &corev1alpha1.Instance{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-instance"},
 				Spec: corev1alpha1.InstanceSpec{
 					DataSource: &backupv1alpha1.DataSource{
 						Type: backupv1alpha1.DataSourceTypeExternal,
 						External: &backupv1alpha1.DataSourceExternal{
-							BackupClassName: "my-backupclass",
-							Config:          &runtime.RawExtension{Raw: []byte(`{"path": "/backup"}`)},
+							BackupClassRef: corev1.ObjectReference{Name: "my-backupclass"},
+							Config:         &runtime.RawExtension{Raw: []byte(`{"path": "/backup"}`)},
 						},
 					},
 					Components: map[string]corev1alpha1.ComponentSpec{
@@ -234,7 +234,7 @@ func TestValidatePSMDB(t *testing.T) {
 					},
 				},
 			},
-			expectErr: "missing spec.dataSource.external.storageName",
+			expectErr: "missing spec.dataSource.external.storageRef.name",
 		},
 		{
 			name: "dataSource external missing config",
@@ -244,8 +244,8 @@ func TestValidatePSMDB(t *testing.T) {
 					DataSource: &backupv1alpha1.DataSource{
 						Type: backupv1alpha1.DataSourceTypeExternal,
 						External: &backupv1alpha1.DataSourceExternal{
-							BackupClassName: "my-backupclass",
-							StorageName:     "my-storage",
+							BackupClassRef: corev1.ObjectReference{Name: "my-backupclass"},
+							StorageRef:     corev1.ObjectReference{Name: "my-storage"},
 						},
 					},
 					Components: map[string]corev1alpha1.ComponentSpec{
@@ -263,9 +263,9 @@ func TestValidatePSMDB(t *testing.T) {
 					DataSource: &backupv1alpha1.DataSource{
 						Type: backupv1alpha1.DataSourceTypeExternal,
 						External: &backupv1alpha1.DataSourceExternal{
-							BackupClassName: "non-existent-backupclass",
-							StorageName:     "my-storage",
-							Config:          &runtime.RawExtension{Raw: []byte(`{"path": "/backup"}`)},
+							BackupClassRef: corev1.ObjectReference{Name: "non-existent-backupclass"},
+							StorageRef:     corev1.ObjectReference{Name: "my-storage"},
+							Config:         &runtime.RawExtension{Raw: []byte(`{"path": "/backup"}`)},
 						},
 					},
 					Components: map[string]corev1alpha1.ComponentSpec{
@@ -274,6 +274,48 @@ func TestValidatePSMDB(t *testing.T) {
 				},
 			},
 			expectErr: "failed to get BackupClass",
+		},
+		{
+			name: "dataSource external ProviderManaged without supportsImport",
+			instance: &corev1alpha1.Instance{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-instance"},
+				Spec: corev1alpha1.InstanceSpec{
+					Provider: "psmdb",
+					DataSource: &backupv1alpha1.DataSource{
+						Type: backupv1alpha1.DataSourceTypeExternal,
+						External: &backupv1alpha1.DataSourceExternal{
+							BackupClassRef: corev1.ObjectReference{Name: "provider-managed-no-import"},
+							StorageRef:     corev1.ObjectReference{Name: "my-storage"},
+							Config:         &runtime.RawExtension{Raw: []byte(`{"path": "/backup"}`)},
+						},
+					},
+					Components: map[string]corev1alpha1.ComponentSpec{
+						common.ComponentEngine: validEngine,
+					},
+				},
+			},
+			expectErr: `BackupClass "provider-managed-no-import" does not support import`,
+		},
+		{
+			name: "dataSource external Job mode without importJob",
+			instance: &corev1alpha1.Instance{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-instance"},
+				Spec: corev1alpha1.InstanceSpec{
+					Provider: "psmdb",
+					DataSource: &backupv1alpha1.DataSource{
+						Type: backupv1alpha1.DataSourceTypeExternal,
+						External: &backupv1alpha1.DataSourceExternal{
+							BackupClassRef: corev1.ObjectReference{Name: "job-mode-no-import"},
+							StorageRef:     corev1.ObjectReference{Name: "my-storage"},
+							Config:         &runtime.RawExtension{Raw: []byte(`{"path": "/backup"}`)},
+						},
+					},
+					Components: map[string]corev1alpha1.ComponentSpec{
+						common.ComponentEngine: validEngine,
+					},
+				},
+			},
+			expectErr: `BackupClass "job-mode-no-import" does not have importJob defined`,
 		},
 		{
 			name: "missing engine component",
@@ -662,7 +704,37 @@ func TestValidatePSMDB(t *testing.T) {
 			scheme := runtime.NewScheme()
 			require.NoError(t, corev1alpha1.AddToScheme(scheme))
 			require.NoError(t, backupv1alpha1.AddToScheme(scheme))
-			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(tt.instance).Build()
+
+			// Create BackupClass objects for external dataSource tests
+			providerManagedNoImportBC := &backupv1alpha1.BackupClass{
+				ObjectMeta: metav1.ObjectMeta{Name: "provider-managed-no-import"},
+				Spec: backupv1alpha1.BackupClassSpec{
+					SupportedProviders: backupv1alpha1.ProviderNameList{"psmdb"},
+					ExecutionMode:      backupv1alpha1.BackupExecutionModeProviderManaged,
+					ProviderManaged: &backupv1alpha1.ProviderManagedSpec{
+						SupportsImport: false,
+					},
+				},
+			}
+			jobModeNoImportBC := &backupv1alpha1.BackupClass{
+				ObjectMeta: metav1.ObjectMeta{Name: "job-mode-no-import"},
+				Spec: backupv1alpha1.BackupClassSpec{
+					SupportedProviders: backupv1alpha1.ProviderNameList{"psmdb"},
+					ExecutionMode:      backupv1alpha1.BackupExecutionModeJob,
+					Job: &backupv1alpha1.JobModeSpec{
+						Backup: backupv1alpha1.JobExecution{
+							JobSpec: &backupv1alpha1.BackupJobSpec{
+								Image: "test-image",
+							},
+						},
+					},
+				},
+			}
+
+			fakeClient := fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithObjects(tt.instance, providerManagedNoImportBC, jobModeNoImportBC).
+				Build()
 			ctx := controller.NewContext(context.Background(), fakeClient, tt.instance, "psmdb")
 			err := ValidatePSMDB(ctx)
 
