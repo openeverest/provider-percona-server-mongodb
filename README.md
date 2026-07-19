@@ -2,6 +2,36 @@
 
 This directory contains a implementation of a Percona Server MongoDB (PSMDB) provider.
 
+## Installation
+
+The provider chart is published as an OCI artifact to the GitHub Container
+Registry. It bundles the Percona Operator for MongoDB as a subchart, so a single
+install brings up both the provider and the operator.
+
+```bash
+helm install provider-percona-server-mongodb \
+  oci://ghcr.io/openeverest/charts/provider-percona-server-mongodb \
+  --version 0.1.0 \
+  --create-namespace
+```
+
+Upgrade to a newer chart version:
+
+```bash
+helm upgrade provider-percona-server-mongodb \
+  oci://ghcr.io/openeverest/charts/provider-percona-server-mongodb \
+  --version 0.1.0
+```
+
+Uninstall:
+
+```bash
+helm uninstall provider-percona-server-mongodb
+```
+
+> Browse available versions on the
+> [chart package page](https://github.com/openeverest/provider-percona-server-mongodb/pkgs/container/charts%2Fprovider-percona-server-mongodb).
+
 ## 🚀 Quick Start
 
 ### Prerequisites
