@@ -30,6 +30,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	backupv1alpha1 "github.com/openeverest/openeverest/v2/api/backup/v1alpha1"
+	commonv1alpha1 "github.com/openeverest/openeverest/v2/api/common/v1alpha1"
 	corev1alpha1 "github.com/openeverest/openeverest/v2/api/core/v1alpha1"
 	"github.com/openeverest/openeverest/v2/provider-runtime/controller"
 
@@ -119,7 +120,7 @@ func pitrStorage(storages []corev1alpha1.InstanceBackupStorage) (*corev1alpha1.I
 		s := &storages[i]
 		if s.PITR != nil && s.PITR.Enabled {
 			found = s
-			names = append(names, s.Name)
+			names = append(names, s.StorageRef.Name)
 		}
 	}
 	if len(names) > 1 {
@@ -160,7 +161,7 @@ func buildPSMDBTasks(storages []corev1alpha1.InstanceBackupStorage) []psmdbv1.Ba
 				Name:        s.Name,
 				Enabled:     s.Enabled,
 				Schedule:    s.Cron,
-				StorageName: st.Name,
+				StorageName: st.StorageRef.Name,
 			}
 			if s.RetentionCopies > 0 {
 				task.Retention = &psmdbv1.BackupTaskSpecRetention{
@@ -197,7 +198,7 @@ func (p *PSMDBProvider) Mirror(ctx context.Context, c client.Client, obj client.
 		}
 		return nil, fmt.Errorf("get parent Instance %q: %w", ub.Spec.ClusterName, err)
 	}
-	if instance.Spec.Provider != p.Name() {
+	if instance.Spec.ProviderRef.Name != p.Name() {
 		return nil, nil
 	}
 	if instance.Spec.Backup == nil || instance.Spec.Backup.ClassRef.Name == "" {
@@ -209,10 +210,10 @@ func (p *PSMDBProvider) Mirror(ctx context.Context, c client.Client, obj client.
 			Namespace: ub.Namespace,
 		},
 		Spec: backupv1alpha1.BackupSpec{
-			InstanceName:    ub.Spec.ClusterName,
-			BackupClassName: instance.Spec.Backup.ClassRef.Name,
-			StorageName:     ub.Spec.StorageName,
-			ScheduleName:    taskName,
+			InstanceRef:  commonv1alpha1.ObjectRef{Name: ub.Spec.ClusterName},
+			ClassRef:     commonv1alpha1.ObjectRef{Name: instance.Spec.Backup.ClassRef.Name},
+			StorageRef:   commonv1alpha1.ObjectRef{Name: ub.Spec.StorageName},
+			ScheduleName: taskName,
 		},
 	}, nil
 }
@@ -275,14 +276,14 @@ func (p *PSMDBProvider) BackupStorageStatuses(c *controller.Context) ([]corev1al
 	out := make([]corev1alpha1.InstanceBackupStorageStatus, 0, len(backupCfg.Storages))
 	for _, s := range backupCfg.Storages {
 		out = append(out, corev1alpha1.InstanceBackupStorageStatus{
-			Name:                 s.Name,
-			LatestRestorableTime: latestPerStorage[s.Name],
+			Name:                 s.StorageRef.Name,
+			LatestRestorableTime: latestPerStorage[s.StorageRef.Name],
 		})
 	}
 	return out, nil
 }
 
-// selectMainStorageName returns the logical name of the storage that should be
+// selectMainStorageName returns the name of the storage that should be
 // designated as the PBM main storage. The PITR-enabled storage is always
 // preferred because PSMDB requires PITR to write to the main storage. When no
 // storage has PITR enabled the first entry in the slice is used as the
@@ -290,17 +291,17 @@ func (p *PSMDBProvider) BackupStorageStatuses(c *controller.Context) ([]corev1al
 func selectMainStorageName(storages []corev1alpha1.InstanceBackupStorage) string {
 	for _, s := range storages {
 		if s.PITR != nil && s.PITR.Enabled {
-			return s.Name
+			return s.StorageRef.Name
 		}
 	}
 	if len(storages) > 0 {
-		return storages[0].Name
+		return storages[0].StorageRef.Name
 	}
 	return ""
 }
 
 // buildPSMDBStorages resolves each storage entry on the Instance into a
-// psmdbv1.BackupStorageSpec keyed by the storage's logical name. The main
+// psmdbv1.BackupStorageSpec keyed by the BackupStorage CR name. The main
 // storage is inferred via selectMainStorageName: the PITR-enabled storage wins;
 // the first entry is used as fallback when no storage has PITR enabled.
 func buildPSMDBStorages(
@@ -323,14 +324,14 @@ func buildPSMDBStorages(
 			continue
 		}
 		s3 := bs.Spec.S3
-		out[entry.Name] = psmdbv1.BackupStorageSpec{
+		out[entry.StorageRef.Name] = psmdbv1.BackupStorageSpec{
 			Type: psmdbv1.BackupStorageS3,
-			Main: entry.Name == mainName,
+			Main: entry.StorageRef.Name == mainName,
 			S3: psmdbv1.BackupStorageS3Spec{
 				Bucket:                s3.Bucket,
 				Region:                s3.Region,
 				EndpointURL:           s3.EndpointURL,
-				CredentialsSecret:     s3.CredentialsSecretName,
+				CredentialsSecret:     s3.CredentialsSecretRef.Name,
 				InsecureSkipTLSVerify: !pointer.Get(s3.VerifyTLS),
 			},
 		}
@@ -339,8 +340,8 @@ func buildPSMDBStorages(
 }
 
 // SyncBackup creates or updates a PerconaServerMongoDBBackup that references
-// the operator-registered storage matching backup.spec.storageName, then maps
-// operator status into the BackupExecutionStatus the runtime expects.
+// the operator-registered storage matching backup.spec.storageRef.name, then
+// maps operator status into the BackupExecutionStatus the runtime expects.
 func (p *PSMDBProvider) SyncBackup(c *controller.Context, backup *backupv1alpha1.Backup) (controller.BackupExecutionStatus, error) {
 	psmdb := &psmdbv1.PerconaServerMongoDB{}
 	if err := c.Get(psmdb, c.Name()); err != nil {
@@ -353,13 +354,13 @@ func (p *PSMDBProvider) SyncBackup(c *controller.Context, backup *backupv1alpha1
 		return controller.BackupExecutionStatus{}, fmt.Errorf("get PSMDB: %w", err)
 	}
 
-	// The storage name on the PSMDB cluster matches the logical storage name on the
-	// Instance and on the Backup CR. Reject up-front if the user pointed at a
-	// storage the cluster doesn't know about.
-	if _, ok := psmdb.Spec.Backup.Storages[backup.Spec.StorageName]; !ok {
+	// The storage name on the PSMDB cluster matches the BackupStorage CR name
+	// on the Instance and on the Backup CR. Reject up-front if the user pointed
+	// at a storage the cluster doesn't know about.
+	if _, ok := psmdb.Spec.Backup.Storages[backup.Spec.StorageRef.Name]; !ok {
 		return controller.BackupExecutionStatus{
 			State:   backupv1alpha1.BackupStatePending,
-			Message: fmt.Sprintf("Waiting for storage %q to be registered on PSMDB cluster", backup.Spec.StorageName),
+			Message: fmt.Sprintf("Waiting for storage %q to be registered on PSMDB cluster", backup.Spec.StorageRef.Name),
 		}, nil
 	}
 
@@ -372,7 +373,7 @@ func (p *PSMDBProvider) SyncBackup(c *controller.Context, backup *backupv1alpha1
 
 	if _, err := controllerutil.CreateOrUpdate(c.Context(), c.Client(), psmdbBackup, func() error {
 		psmdbBackup.Spec.ClusterName = c.Name()
-		psmdbBackup.Spec.StorageName = backup.Spec.StorageName
+		psmdbBackup.Spec.StorageName = backup.Spec.StorageRef.Name
 		controllerutil.AddFinalizer(psmdbBackup, psmdbDeleteBackupFinalizer)
 		return controllerutil.SetControllerReference(backup, psmdbBackup, c.Client().Scheme())
 	}); err != nil {
@@ -380,10 +381,10 @@ func (p *PSMDBProvider) SyncBackup(c *controller.Context, backup *backupv1alpha1
 	}
 
 	exec := controller.BackupExecutionStatus{
-		OperatorBackupRef: &corev1.TypedLocalObjectReference{
-			APIGroup: pointer.ToString(psmdbv1.SchemeGroupVersion.Group),
-			Kind:     "PerconaServerMongoDBBackup",
-			Name:     psmdbBackup.Name,
+		OperatorBackupRef: &commonv1alpha1.TypedObjectRef{
+			Group: psmdbv1.SchemeGroupVersion.Group,
+			Kind:  "PerconaServerMongoDBBackup",
+			Name:  psmdbBackup.Name,
 		},
 	}
 	switch psmdbBackup.Status.State {
@@ -407,9 +408,9 @@ func (p *PSMDBProvider) SyncBackup(c *controller.Context, backup *backupv1alpha1
 //
 // Two cases are handled:
 //
-//   - Same-cluster restore (source Backup.spec.instanceName == this Instance):
-//     the operator backup lives on the same PSMDB cluster, so we set
-//     .spec.backupName to its name.
+//   - Same-cluster restore (source Backup.spec.instanceRef.name == this
+//     Instance): the operator backup lives on the same PSMDB cluster, so we
+//     set .spec.backupName to its name.
 //   - Cross-cluster restore (e.g. seeding a new Instance from another
 //     Instance's Backup via .spec.dataSource): the source operator backup
 //     belongs to a different PSMDB CR. The PSMDB operator cannot resolve it
@@ -434,7 +435,7 @@ func (p *PSMDBProvider) SyncRestore(c *controller.Context, restore *backupv1alph
 	// Detect cross-cluster restores. When the source Backup was produced by a
 	// different Instance, fetch its PerconaServerMongoDBBackup so we can copy
 	// the destination/storage spec into Spec.BackupSource.
-	crossCluster := sourceBackup.Spec.InstanceName != c.Name()
+	crossCluster := sourceBackup.Spec.InstanceRef.Name != c.Name()
 	var sourceOpBackup *psmdbv1.PerconaServerMongoDBBackup
 	if crossCluster {
 		sourceOpBackup = &psmdbv1.PerconaServerMongoDBBackup{}
@@ -475,7 +476,7 @@ func (p *PSMDBProvider) SyncRestore(c *controller.Context, restore *backupv1alph
 			src := sourceOpBackup.Status
 			psmdbRestore.Spec.BackupSource = &psmdbv1.PerconaServerMongoDBBackupStatus{
 				Destination: src.Destination,
-				StorageName: sourceBackup.Spec.StorageName,
+				StorageName: sourceBackup.Spec.StorageRef.Name,
 				S3:          src.S3,
 				Azure:       src.Azure,
 				GCS:         src.GCS,
@@ -484,7 +485,7 @@ func (p *PSMDBProvider) SyncRestore(c *controller.Context, restore *backupv1alph
 				Type:        src.Type,
 				PBMname:     src.PBMname,
 			}
-			psmdbRestore.Spec.StorageName = sourceBackup.Spec.StorageName
+			psmdbRestore.Spec.StorageName = sourceBackup.Spec.StorageRef.Name
 			psmdbRestore.Spec.BackupName = ""
 		} else {
 			psmdbRestore.Spec.BackupName = operatorBackupName
@@ -507,10 +508,10 @@ func (p *PSMDBProvider) SyncRestore(c *controller.Context, restore *backupv1alph
 	}
 
 	out := controller.RestoreExecutionStatus{
-		OperatorRestoreRef: &corev1.TypedLocalObjectReference{
-			APIGroup: pointer.ToString(psmdbv1.SchemeGroupVersion.Group),
-			Kind:     "PerconaServerMongoDBRestore",
-			Name:     psmdbRestore.Name,
+		OperatorRestoreRef: &commonv1alpha1.TypedObjectRef{
+			Group: psmdbv1.SchemeGroupVersion.Group,
+			Kind:  "PerconaServerMongoDBRestore",
+			Name:  psmdbRestore.Name,
 		},
 	}
 	switch psmdbRestore.Status.State {
@@ -537,13 +538,13 @@ func resolveSourceBackup(
 	c *controller.Context,
 	restore *backupv1alpha1.Restore,
 ) (*backupv1alpha1.Backup, controller.RestoreExecutionStatus, error) {
-	if restore.Spec.DataSource.Backup == nil || restore.Spec.DataSource.Backup.BackupName == "" {
+	if restore.Spec.DataSource.Backup == nil || restore.Spec.DataSource.Backup.BackupRef.Name == "" {
 		return nil, controller.RestoreExecutionStatus{
 			State:   backupv1alpha1.RestoreStateFailed,
 			Message: "restore.spec.dataSource.backup is not set",
 		}, nil
 	}
-	backupName := restore.Spec.DataSource.Backup.BackupName
+	backupName := restore.Spec.DataSource.Backup.BackupRef.Name
 	backup := &backupv1alpha1.Backup{}
 	if err := c.Get(backup, backupName); err != nil {
 		if apierrors.IsNotFound(err) {

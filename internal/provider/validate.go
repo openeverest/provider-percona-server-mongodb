@@ -153,8 +153,8 @@ func validateDataSource(c *controller.Context) error {
 		return fmt.Errorf("missing spec.dataSource.backup")
 	}
 
-	if ds.Backup.BackupName == "" {
-		return fmt.Errorf("missing spec.dataSource.backup.backupName")
+	if ds.Backup.BackupRef.Name == "" {
+		return fmt.Errorf("missing spec.dataSource.backup.backupRef.name")
 	}
 
 	return nil

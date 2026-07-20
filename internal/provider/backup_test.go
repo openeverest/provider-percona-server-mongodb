@@ -27,6 +27,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
+	commonv1alpha1 "github.com/openeverest/openeverest/v2/api/common/v1alpha1"
 	corev1alpha1 "github.com/openeverest/openeverest/v2/api/core/v1alpha1"
 	"github.com/openeverest/openeverest/v2/provider-runtime/controller"
 )
@@ -45,39 +46,39 @@ func TestSelectMainStorageName(t *testing.T) {
 		{
 			name: "single storage without PITR returns its name",
 			storages: []corev1alpha1.InstanceBackupStorage{
-				{Name: "s3-main"},
+				{StorageRef: commonv1alpha1.ObjectRef{Name: "s3-main"}},
 			},
 			want: "s3-main",
 		},
 		{
 			name: "no PITR storage — first entry wins",
 			storages: []corev1alpha1.InstanceBackupStorage{
-				{Name: "first"},
-				{Name: "second"},
+				{StorageRef: commonv1alpha1.ObjectRef{Name: "first"}},
+				{StorageRef: commonv1alpha1.ObjectRef{Name: "second"}},
 			},
 			want: "first",
 		},
 		{
 			name: "second storage has PITR — it wins over first",
 			storages: []corev1alpha1.InstanceBackupStorage{
-				{Name: "first"},
-				{Name: "second", PITR: &corev1alpha1.InstanceBackupStoragePITR{Enabled: true}},
+				{StorageRef: commonv1alpha1.ObjectRef{Name: "first"}},
+				{StorageRef: commonv1alpha1.ObjectRef{Name: "second"}, PITR: &corev1alpha1.InstanceBackupStoragePITR{Enabled: true}},
 			},
 			want: "second",
 		},
 		{
 			name: "first storage has PITR — it wins",
 			storages: []corev1alpha1.InstanceBackupStorage{
-				{Name: "first", PITR: &corev1alpha1.InstanceBackupStoragePITR{Enabled: true}},
-				{Name: "second"},
+				{StorageRef: commonv1alpha1.ObjectRef{Name: "first"}, PITR: &corev1alpha1.InstanceBackupStoragePITR{Enabled: true}},
+				{StorageRef: commonv1alpha1.ObjectRef{Name: "second"}},
 			},
 			want: "first",
 		},
 		{
 			name: "PITR present but disabled — falls back to first",
 			storages: []corev1alpha1.InstanceBackupStorage{
-				{Name: "first"},
-				{Name: "second", PITR: &corev1alpha1.InstanceBackupStoragePITR{Enabled: false}},
+				{StorageRef: commonv1alpha1.ObjectRef{Name: "first"}},
+				{StorageRef: commonv1alpha1.ObjectRef{Name: "second"}, PITR: &corev1alpha1.InstanceBackupStoragePITR{Enabled: false}},
 			},
 			want: "first",
 		},
@@ -93,8 +94,8 @@ func TestSelectMainStorageName(t *testing.T) {
 
 func pitrStorageEntry(name string) corev1alpha1.InstanceBackupStorage {
 	return corev1alpha1.InstanceBackupStorage{
-		Name: name,
-		PITR: &corev1alpha1.InstanceBackupStoragePITR{Enabled: true},
+		StorageRef: commonv1alpha1.ObjectRef{Name: name},
+		PITR:       &corev1alpha1.InstanceBackupStoragePITR{Enabled: true},
 	}
 }
 
@@ -113,15 +114,15 @@ func TestBuildPSMDBPITRSpec(t *testing.T) {
 		{
 			name: "no PITR-enabled storage — PITR disabled",
 			storages: []corev1alpha1.InstanceBackupStorage{
-				{Name: "plain"},
-				{Name: "disabled", PITR: &corev1alpha1.InstanceBackupStoragePITR{Enabled: false}},
+				{StorageRef: commonv1alpha1.ObjectRef{Name: "plain"}},
+				{StorageRef: commonv1alpha1.ObjectRef{Name: "disabled"}, PITR: &corev1alpha1.InstanceBackupStoragePITR{Enabled: false}},
 			},
 			want: psmdbv1.PITRSpec{},
 		},
 		{
 			name: "single PITR-enabled storage — PITR enabled",
 			storages: []corev1alpha1.InstanceBackupStorage{
-				{Name: "plain"},
+				{StorageRef: commonv1alpha1.ObjectRef{Name: "plain"}},
 				pitrStorageEntry("s1"),
 			},
 			want: psmdbv1.PITRSpec{Enabled: true},
@@ -166,13 +167,13 @@ func TestBackupStorageStatuses(t *testing.T) {
 	instance := &corev1alpha1.Instance{
 		ObjectMeta: metav1.ObjectMeta{Name: "db", Namespace: "ns"},
 		Spec: corev1alpha1.InstanceSpec{
-			Provider: "percona-server-mongodb",
+			ProviderRef: commonv1alpha1.ObjectRef{Name: "percona-server-mongodb"},
 			Backup: &corev1alpha1.InstanceBackupSpec{
 				Enabled:  true,
-				ClassRef: corev1alpha1.BackupClassReference{Name: "pbm"},
+				ClassRef: commonv1alpha1.ObjectRef{Name: "pbm"},
 				Storages: []corev1alpha1.InstanceBackupStorage{
 					pitrStorageEntry("s1"),
-					{Name: "s2"},
+					{StorageRef: commonv1alpha1.ObjectRef{Name: "s2"}},
 				},
 			},
 		},

@@ -22,6 +22,7 @@ metadata:
 spec:
   type: pmm
   pmm:
-    credentialsSecretName: mc-psmdb-secret
+    credentialsSecretRef:
+      name: mc-psmdb-secret
     verifyTLS: false
     url: http://localhost-mc-psmdb

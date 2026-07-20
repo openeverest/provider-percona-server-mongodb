@@ -7,7 +7,8 @@ kind: Instance
 metadata:
   name: psmdb-mc
 spec:
-  provider: percona-server-mongodb
+  providerRef:
+    name: percona-server-mongodb
   components:
     engine:
       type: mongod

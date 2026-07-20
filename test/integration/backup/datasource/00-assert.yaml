@@ -30,7 +30,8 @@ spec:
     region: us-east-1
     endpointURL: http://fake
     forcePathStyle: true
-    credentialsSecretName: backup-storage-credentials
+    credentialsSecretRef:
+      name: backup-storage-credentials
     verifyTLS: false
 ---
 apiVersion: backup.openeverest.io/v1alpha1
