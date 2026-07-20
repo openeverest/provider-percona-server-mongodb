@@ -85,7 +85,7 @@ spec:
     # Monitoring (optional)
     # monitoring:
     #   type: pmm
-    #   customSpec:
+    #   parameters:
     #     monitoringConfigName: pmm-config
 
 # status:

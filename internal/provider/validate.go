@@ -164,11 +164,11 @@ func validateDataSource(c *controller.Context) error {
 func validateShardedTopology(c *controller.Context) error {
 	spec := c.Instance().Spec
 
-	// Validate sharded topology config.
-	var shardedConfig sharded.ShardedTopologyConfig
-	if c.TryDecodeTopologyConfig(&shardedConfig) {
-		if shardedConfig.NumShards < 1 {
-			return fmt.Errorf("spec.topology.config.numShards must be >= 1, got %d", shardedConfig.NumShards)
+	// Validate sharded topology parameters.
+	var shardedParams sharded.ShardedTopologyParameters
+	if c.TryDecodeTopologyParameters(&shardedParams) {
+		if shardedParams.NumShards < 1 {
+			return fmt.Errorf("spec.topology.parameters.numShards must be >= 1, got %d", shardedParams.NumShards)
 		}
 	}
 

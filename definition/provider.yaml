@@ -9,15 +9,20 @@ name: percona-server-mongodb
 
 # Components map logical component names to their type.
 # The type must match a key in versions.yaml's componentTypes.
-# Omit 'schema' for components that have no custom configuration fields.
+# parametersSchema references a Go type in definition/components/ describing
+# the component's parameters payload; omit it for components without parameters.
 components:
   engine:
     type: mongod
+    parametersSchema: MongodParameters
   configServer:
     type: mongod
+    parametersSchema: MongodParameters
   proxy:
     type: mongod
+    parametersSchema: MongosParameters
   backupAgent:
     type: backup
   monitoring:
     type: pmm
+    parametersSchema: PMMParameters

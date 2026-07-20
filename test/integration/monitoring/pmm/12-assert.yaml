@@ -106,7 +106,7 @@ spec:
         limits:
           cpu: 330m
           memory: 220M
-      customSpec:
+      parameters:
         monitoringConfigName: mc-psmdb
 ---
 apiVersion: psmdb.percona.com/v1

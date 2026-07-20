@@ -76,9 +76,10 @@ spec:
       storage:
         size: 25Gi
         storageClass: standard
-      config: |
-        operationProfiling:
-          mode: all
+      parameters:
+        configuration: |
+          operationProfiling:
+            mode: all
   # engine:
   #   replicas: 3
   #   resources:
