@@ -7,6 +7,9 @@ kind: Backup
 metadata:
   name: src-backup
 spec:
-  instanceName: src-psmdb-cluster
-  backupClassName: percona-backup-mongodb
-  storageName: test-storage-s3
+  instanceRef:
+    name: src-psmdb-cluster
+  classRef:
+    name: percona-backup-mongodb
+  storageRef:
+    name: test-storage-s3

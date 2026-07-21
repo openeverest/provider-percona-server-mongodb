@@ -44,7 +44,7 @@ const (
 
 	// credentialsSecretPath is the field index path for looking up MonitoringConfigs
 	// by their referenced credentials Secret name.
-	credentialsSecretPath = ".spec.pmm.credentialsSecretName"
+	credentialsSecretPath = ".spec.pmm.credentialsSecretRef.name"
 )
 
 // resolveMonitoringConfig looks up the MonitoringConfig referenced by the
@@ -108,7 +108,7 @@ func configureMonitoring(
 
 	// Copy the PMM API key from the MonitoringConfig credentials secret
 	// to the PSMDB users secret so the PMM sidecar can authenticate.
-	if err := copySecretData(c, mc.Spec.PMM.CredentialsSecretName, usersSecretName, "apiKey", "PMM_SERVER_TOKEN"); err != nil {
+	if err := copySecretData(c, mc.Spec.PMM.CredentialsSecretRef.Name, usersSecretName, "apiKey", "PMM_SERVER_TOKEN"); err != nil {
 		return nil, fmt.Errorf("copy PMM API key to users secret: %w", err)
 	}
 
@@ -315,11 +315,11 @@ func extractMonitoringConfigSecretName(obj client.Object) []string {
 		return nil
 	}
 
-	if mc.Spec.PMM == nil || mc.Spec.PMM.CredentialsSecretName == "" {
+	if mc.Spec.PMM == nil || mc.Spec.PMM.CredentialsSecretRef.Name == "" {
 		return nil
 	}
 
-	return []string{mc.Spec.PMM.CredentialsSecretName}
+	return []string{mc.Spec.PMM.CredentialsSecretRef.Name}
 }
 
 // monitoringConfigPredicate returns a predicate that filters events

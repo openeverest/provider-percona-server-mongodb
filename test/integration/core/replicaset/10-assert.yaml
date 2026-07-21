@@ -60,7 +60,8 @@ kind: Instance
 metadata:
   name: test-psmdb-cluster
 spec:
-  provider: percona-server-mongodb
+  providerRef:
+    name: percona-server-mongodb
   components:
     engine:
       type: mongod
@@ -75,10 +76,9 @@ spec:
       storage:
         size: 25Gi
         storageClass: standard
-      config:
-        configMapRef:
-          name: psmdb-engine-config
-        key: mongod.conf
+      config: |
+        operationProfiling:
+          mode: all
   # engine:
   #   replicas: 3
   #   resources:

@@ -5,7 +5,8 @@ metadata:
   namespace: default
 spec:
   # Provider identifier
-  provider: percona-server-mongodb
+  providerRef:
+    name: percona-server-mongodb
 
   # High-level version bundle — selects a curated, pre-validated set of
   # component versions. Omit this field to use the provider's default bundle.
@@ -84,11 +85,8 @@ spec:
     # Monitoring (optional)
     # monitoring:
     #   type: pmm
-    #   config:
-    #     # Reference to monitoring configuration
-    #     secretRef:
-    #       name: pmm-config
-    #     key: pmm.yaml
+    #   customSpec:
+    #     monitoringConfigName: pmm-config
 
 # status:
 #   phase: Ready

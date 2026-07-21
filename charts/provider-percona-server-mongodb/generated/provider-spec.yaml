@@ -78,7 +78,7 @@ spec:
                   operationProfiling:
                     mode: slowOps
                     slowOpThresholdMs: 200
-              path: spec.components.engine.configuration
+              path: spec.components.engine.config
               uiType: text
             externalAccess:
               fieldParams:
@@ -233,7 +233,7 @@ spec:
                   operationProfiling:
                     mode: slowOps
                     slowOpThresholdMs: 200
-              path: spec.components.engine.configuration
+              path: spec.components.engine.config
               uiType: text
             externalAccess:
               fieldParams:

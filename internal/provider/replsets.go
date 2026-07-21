@@ -162,10 +162,7 @@ func configureReplsets(c *controller.Context) ([]*psmdbv1.ReplsetSpec, error) {
 	spec := in.Spec
 	engine := spec.Components[common.ComponentEngine]
 
-	config, err := c.ComponentConfig(engine)
-	if err != nil {
-		return nil, fmt.Errorf("resolve engine config: %w", err)
-	}
+	config := engine.Config
 
 	// TODO: implement disabling
 	if spec.Topology == nil || spec.Topology.Type != "sharded" {
@@ -201,10 +198,7 @@ func configureConfigServerReplset(c *controller.Context) (*psmdbv1.ReplsetSpec, 
 
 	cfgSrv := spec.Components[common.ComponentConfigServer]
 
-	config, err := c.ComponentConfig(cfgSrv)
-	if err != nil {
-		return nil, fmt.Errorf("resolve configServer config: %w", err)
-	}
+	config := cfgSrv.Config
 
 	// TODO: check if this is okay. It adds the configuration, expose.type,
 	// name, podDisruptionBudget that we didn't have in the everest operator

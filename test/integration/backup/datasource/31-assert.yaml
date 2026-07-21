@@ -29,8 +29,10 @@ spec:
   dataSource:
     type: Backup
     backup:
-      backupName: src-backup
-  instanceName: dest-psmdb-cluster
+      backupRef:
+        name: src-backup
+  instanceRef:
+    name: dest-psmdb-cluster
 ---
 apiVersion: psmdb.percona.com/v1
 kind: PerconaServerMongoDBRestore
