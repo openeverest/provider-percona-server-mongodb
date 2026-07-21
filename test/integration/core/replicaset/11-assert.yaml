@@ -1,47 +1,3 @@
-apiVersion: kuttl.dev/v1
-kind: TestAssert
-timeout: 10
-#timeout: 30
-collectors:
-  - command: kubectl get in/test-psmdb-cluster -n ${NAMESPACE} -o yaml
-  - command: kubectl get psmdb/test-psmdb-cluster -n ${NAMESPACE} -o yaml
-
-  # - command: kubectl get deploy/everest-controller-manager -n everest-system -o yaml
-  # - type: pod
-  #   namespace: everest-system
-  #   selector: control-plane=controller-manager
-  #   tail: 100
-resourceRefs:
-  - apiVersion: core.openeverest.io/v1alpha1
-    kind: Instance
-    name: test-psmdb-cluster
-    ref: in
-  - apiVersion: psmdb.percona.com/v1
-    kind: PerconaServerMongoDB
-    name: test-psmdb-cluster
-    ref: psmdb
-assertAll:
-  # - celExpr: "has(db.metadata.finalizers)"
-  #   message: "db doesn't have finalizers"
-
-  # - celExpr: "'everest.percona.com/upstream-cluster-cleanup' in db.metadata.finalizers"
-  #   message: "'everest.percona.com/upstream-cluster-cleanup' is absent in db.metadata.finalizers"
-
-  # - celExpr: "'foregroundDeletion' in db.metadata.finalizers"
-  #   message: "foregroundDeletion' is absent in db.metadata.finalizers"
-
-  - celExpr: "!has(psmdb.spec.pmm.enabled)"
-    message: "psmdb.spec.pmm.enabled is not empty"
-
-  - celExpr: "!has(psmdb.spec.pmm.serverHost)"
-    message: "psmdb.spec.pmm.serverHost is not empty"
-
-  - celExpr: "!has(psmdb.spec.pmm.resources.limits)"
-    message: "psmdb.spec.pmm.resources.limits is not empty"
-
-  - celExpr: "!has(psmdb.spec.pmm.resources.requests)"
-    message: "psmdb.spec.pmm.resources.requests is not empty"
----
 apiVersion: core.openeverest.io/v1alpha1
 kind: Instance
 metadata:
@@ -83,6 +39,11 @@ kind: PerconaServerMongoDB
 metadata:
   name: test-psmdb-cluster
 spec:
+  # The provider must not configure PMM when monitoring is disabled.
+  (pmm.enabled == null): true
+  (pmm.serverHost == null): true
+  (pmm.resources.limits == null): true
+  (pmm.resources.requests == null): true
   imagePullPolicy: IfNotPresent
   backup:
     configuration:

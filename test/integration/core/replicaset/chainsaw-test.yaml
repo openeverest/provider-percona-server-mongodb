@@ -1,0 +1,163 @@
+---
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: core-replicaset
+spec:
+  description: |
+    Lifecycle of a replica-set Instance: create, scale, affinity and expose
+    updates, deletion, and a single-node cluster.
+  catch:
+    - script:
+        content: kubectl -n $NAMESPACE get instance,psmdb -o yaml
+    - podLogs:
+        namespace: provider-system
+        selector: app.kubernetes.io/name=provider-percona-server-mongodb
+        tail: 100
+  steps:
+    - name: provider-operator-installed
+      try:
+        - assert:
+            file: 00-assert.yaml
+
+    - name: create-cluster
+      try:
+        - apply:
+            file: 10-create-cluster.yaml
+        - assert:
+            file: 10-assert.yaml
+
+    # Create the users secret and then simulate the PSMDB operator (scaled to
+    # 0) marking the cluster ready. The secret must exist before the status
+    # patch triggers the reconcile, otherwise the provider reports Failed and
+    # nothing re-triggers reconciliation (the provider does not watch Secrets).
+    - name: cluster-ready
+      try:
+        - apply:
+            file: 11-cluster-ready.yaml
+        - script:
+            content: |
+              kubectl patch psmdb/test-psmdb-cluster --subresource status -n $NAMESPACE \
+                -p '{"status":{"state":"ready", "size":1, "ready":1, "host":"test-psmdb-cluster-rs0.default.svc.cluster.local"}}' --type=merge
+        - assert:
+            file: 11-assert.yaml
+
+    - name: scale-cluster
+      try:
+        - apply:
+            file: 20-update-cluster.yaml
+        - assert:
+            file: 20-assert.yaml
+
+    - name: update-affinity
+      try:
+        - apply:
+            file: 21-update-cluster-affinity.yaml
+        - assert:
+            file: 21-assert.yaml
+
+    - name: expose-load-balancer
+      try:
+        - apply:
+            file: 22-update-cluster-lb.yaml
+        - assert:
+            file: 22-assert.yaml
+
+    - name: expose-cluster-ip
+      try:
+        - apply:
+            file: 23-update-cluster-cluster-ip.yaml
+        - assert:
+            file: 23-assert.yaml
+
+    - name: expose-node-port
+      try:
+        - apply:
+            file: 24-update-cluster-node-port.yaml
+        - assert:
+            file: 24-assert.yaml
+
+    - name: delete-cluster
+      try:
+        - script:
+            content: |
+              kubectl -n $NAMESPACE delete in/test-psmdb-cluster psmdb/test-psmdb-cluster --wait=false && sleep 5
+              kubectl -n $NAMESPACE delete secret/everest-secrets-test-psmdb-cluster
+              kubectl -n $NAMESPACE delete configmap/psmdb-engine-config --ignore-not-found
+              # The PSMDB operator is scaled to 0, so nothing processes the psmdb finalizers.
+              kubectl -n $NAMESPACE patch psmdb/test-psmdb-cluster -p '{"metadata":{"finalizers":null}}' --type merge
+        - wait:
+            apiVersion: core.openeverest.io/v1alpha1
+            kind: Instance
+            name: test-psmdb-cluster
+            for:
+              deletion: {}
+        - wait:
+            apiVersion: psmdb.percona.com/v1
+            kind: PerconaServerMongoDB
+            name: test-psmdb-cluster
+            for:
+              deletion: {}
+        - wait:
+            apiVersion: v1
+            kind: Secret
+            name: everest-secrets-test-psmdb-cluster
+            for:
+              deletion: {}
+        - wait:
+            apiVersion: v1
+            kind: Secret
+            name: test-psmdb-cluster-conn
+            for:
+              deletion: {}
+
+    - name: create-single-node-cluster
+      try:
+        - apply:
+            file: 40-create-single-node-cluster.yaml
+        - assert:
+            file: 40-assert.yaml
+
+    - name: single-node-cluster-ready
+      try:
+        - apply:
+            file: 41-cluster-ready.yaml
+        - script:
+            content: |
+              kubectl patch psmdb/test-psmdb-cluster --subresource status -n $NAMESPACE \
+                -p '{"status":{"state":"ready", "size":1, "ready":1, "host":"test-psmdb-cluster-host"}}' --type=merge
+        - assert:
+            file: 41-assert.yaml
+
+    - name: delete-single-node-cluster
+      try:
+        - script:
+            content: |
+              kubectl -n $NAMESPACE delete in/test-psmdb-cluster psmdb/test-psmdb-cluster --wait=false && sleep 5
+              kubectl -n $NAMESPACE delete secret/everest-secrets-test-psmdb-cluster
+              # The PSMDB operator is scaled to 0, so nothing processes the psmdb finalizers.
+              kubectl -n $NAMESPACE patch psmdb/test-psmdb-cluster -p '{"metadata":{"finalizers":null}}' --type merge
+        - wait:
+            apiVersion: core.openeverest.io/v1alpha1
+            kind: Instance
+            name: test-psmdb-cluster
+            for:
+              deletion: {}
+        - wait:
+            apiVersion: psmdb.percona.com/v1
+            kind: PerconaServerMongoDB
+            name: test-psmdb-cluster
+            for:
+              deletion: {}
+        - wait:
+            apiVersion: v1
+            kind: Secret
+            name: everest-secrets-test-psmdb-cluster
+            for:
+              deletion: {}
+        - wait:
+            apiVersion: v1
+            kind: Secret
+            name: test-psmdb-cluster-conn
+            for:
+              deletion: {}

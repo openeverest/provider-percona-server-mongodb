@@ -1,0 +1,137 @@
+---
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: monitoring-pmm
+spec:
+  description: |
+    PMM monitoring lifecycle: enable monitoring on an Instance, resize the
+    cluster, customize monitoring resources, pin the monitoring version,
+    update the MonitoringConfig and its credentials, disable/re-enable
+    monitoring, and clean up.
+  catch:
+    - script:
+        content: kubectl -n $NAMESPACE get instance,psmdb,monitoringconfig,secret -o yaml
+    - podLogs:
+        namespace: provider-system
+        selector: app.kubernetes.io/name=provider-percona-server-mongodb
+        tail: 100
+  steps:
+    # We don't need the PSMDB operator to be running for the integration
+    # tests, but the deployment must exist in the test namespace.
+    - name: setup
+      try:
+        - script:
+            content: |
+              curl -fsSL "https://raw.githubusercontent.com/percona/percona-server-mongodb-operator/v${PSMDB_OPERATOR_VERSION:-1.21.1}/deploy/operator.yaml" \
+                | sed 's/replicas: [0-9]/replicas: 0/g' | kubectl apply -n $NAMESPACE -f -
+        - apply:
+            file: 00-install.yaml
+        - assert:
+            file: 00-assert.yaml
+
+    - name: create-cluster-with-monitoring
+      try:
+        - apply:
+            file: 10-create-cluster-small.yaml
+        - assert:
+            file: 10-assert.yaml
+
+    - name: resize-cluster-medium
+      try:
+        - apply:
+            file: 11-resize-cluster-medium.yaml
+        - assert:
+            file: 11-assert.yaml
+
+    - name: resize-cluster-large
+      try:
+        - apply:
+            file: 12-resize-cluster-large.yaml
+        - assert:
+            file: 12-assert.yaml
+
+    - name: custom-monitoring-limits
+      try:
+        - apply:
+            file: 13-cluster-custom-monitoring-limits.yaml
+        - assert:
+            file: 13-assert.yaml
+
+    - name: custom-monitoring-resources
+      try:
+        - apply:
+            file: 14-cluster-custom-monitoring-resource.yaml
+        - assert:
+            file: 14-assert.yaml
+
+    - name: set-monitoring-version
+      try:
+        - apply:
+            file: 15-set-monitoring-version.yaml
+        - assert:
+            file: 15-assert.yaml
+
+    - name: update-monitoring-config
+      try:
+        - apply:
+            file: 20-update-config.yaml
+        - assert:
+            file: 20-assert.yaml
+
+    - name: update-monitoring-credentials
+      try:
+        - apply:
+            file: 30-update-credentials.yaml
+        - assert:
+            file: 30-assert.yaml
+
+    - name: disable-monitoring
+      try:
+        - apply:
+            file: 40-disable-monitoring.yaml
+        - assert:
+            file: 40-assert.yaml
+
+    - name: enable-monitoring
+      try:
+        - apply:
+            file: 50-enable-monitoring.yaml
+        - assert:
+            file: 50-assert.yaml
+
+    - name: delete-cluster
+      try:
+        - script:
+            content: |
+              kubectl -n $NAMESPACE delete in/psmdb-mc psmdb/psmdb-mc --wait=false && sleep 5
+              # The PSMDB operator is scaled to 0, so nothing processes the psmdb finalizers.
+              kubectl -n $NAMESPACE patch psmdb/psmdb-mc -p '{"metadata":{"finalizers":null}}' --type merge
+        - wait:
+            apiVersion: core.openeverest.io/v1alpha1
+            kind: Instance
+            name: psmdb-mc
+            for:
+              deletion: {}
+        - wait:
+            apiVersion: psmdb.percona.com/v1
+            kind: PerconaServerMongoDB
+            name: psmdb-mc
+            for:
+              deletion: {}
+        # The MonitoringConfig and its secret must survive the cluster deletion.
+        - assert:
+            file: 60-assert.yaml
+
+    - name: cleanup
+      try:
+        - delete:
+            ref:
+              apiVersion: monitoring.openeverest.io/v1alpha1
+              kind: MonitoringConfig
+              name: mc-psmdb
+        - delete:
+            ref:
+              apiVersion: v1
+              kind: Secret
+              name: mc-psmdb-secret
