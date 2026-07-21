@@ -184,17 +184,12 @@ func SyncPSMDB(c *controller.Context) error {
 	}
 	psmdb.Spec.Backup = backupSpec
 
-	// Determine the users secret name.
-	// For external imports, use the user-provided credentials secret directly.
-	// PBM backups embed credential hashes, so the target Instance must use
-	// the same credentials as the source database.
+	// Always use the standard secret name for credentials. When seeding from
+	// a DataSource, we copy source credentials into this secret BEFORE applying
+	// the PSMDB CR. This ensures the PSMDB operator initializes its internal
+	// users secret with the correct password hashes.
 	usersSecretName := "everest-secrets-" + c.Name()
 	ds := c.Instance().Spec.DataSource
-	if ds != nil && ds.Type == backupv1alpha1.DataSourceTypeExternal && ds.External != nil {
-		if importSecretName := getExternalImportCredentialsSecretName(c); importSecretName != "" {
-			usersSecretName = importSecretName
-		}
-	}
 
 	pmmSpec, err := configureMonitoring(c, usersSecretName)
 	if err != nil {
@@ -210,14 +205,21 @@ func SyncPSMDB(c *controller.Context) error {
 		SSLInternal:   c.Name() + "-ssl-internal",
 	}
 
-	// When seeding from a DataSource (type=Backup), the target cluster's users
-	// secret must contain the same credentials as the source cluster. The PSMDB
-	// backup embeds credential hashes; mismatched secrets render the restored
-	// data inaccessible. Copy BEFORE applying the PSMDB CR so the operator never
-	// initializes the secret with random passwords.
-	if ds != nil && ds.Type == backupv1alpha1.DataSourceTypeBackup {
-		if err := ensureDataSourceCredentials(c, usersSecretName); err != nil {
-			return err
+	// When seeding from a DataSource (Backup or External), the target cluster's
+	// users secret must contain the same credentials as the source cluster.
+	// PBM backups embed credential hashes; mismatched secrets render the
+	// restored data inaccessible. Copy BEFORE applying the PSMDB CR so the
+	// operator never initializes the secret with random passwords.
+	if ds != nil {
+		switch ds.Type {
+		case backupv1alpha1.DataSourceTypeBackup:
+			if err := ensureDataSourceCredentials(c, usersSecretName); err != nil {
+				return err
+			}
+		case backupv1alpha1.DataSourceTypeExternal:
+			if err := ensureExternalImportCredentials(c, usersSecretName); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -256,13 +258,16 @@ func SyncPSMDB(c *controller.Context) error {
 			}
 
 		case backupv1alpha1.DataSourceTypeExternal:
-			// For External type, wait for Ready before import
-			if current.Status.State != psmdbv1.AppStateReady {
+			// For External type, wait for Ready + BackupVersion before import.
+			// PBM restores require the PSMDB operator to have selected a backup
+			// agent image (published as status.backupVersion). Without this,
+			// PBM cannot parse the backup metadata correctly.
+			if current.Status.State != psmdbv1.AppStateReady || current.Status.BackupVersion == "" {
 				c.SetDataSourceStatus(controller.DataSourceStatus{
 					Done:    false,
 					State:   controller.DataSourceStateWaiting,
 					Reason:  corev1alpha1.ReasonDataSourceWaitingForCluster,
-					Message: "waiting for PerconaServerMongoDB to be Ready before starting import",
+					Message: "waiting for PerconaServerMongoDB to be Ready and publish a BackupVersion",
 				})
 				return nil
 			}
@@ -342,15 +347,9 @@ func StatusPSMDB(c *controller.Context) (controller.Status, error) {
 // buildConnectionDetails reads the PSMDB Users secret and combines it with host info
 // to produce a set of well-known connection details.
 func buildConnectionDetails(c *controller.Context, psmdb *psmdbv1.PerconaServerMongoDB) (controller.ConnectionDetails, error) {
-	// Determine the users secret name.
-	// For external imports, use the user-provided credentials secret.
+	// Always use the standard secret name. For DataSource-seeded instances,
+	// credentials were copied into this secret before the cluster was created.
 	secretName := "everest-secrets-" + c.Name()
-	ds := c.Instance().Spec.DataSource
-	if ds != nil && ds.Type == backupv1alpha1.DataSourceTypeExternal && ds.External != nil {
-		if importSecretName := getExternalImportCredentialsSecretName(c); importSecretName != "" {
-			secretName = importSecretName
-		}
-	}
 
 	secret := &corev1.Secret{}
 	if err := c.Get(secret, secretName); err != nil {
@@ -441,6 +440,61 @@ func ensureDataSourceCredentials(c *controller.Context, targetSecretName string)
 	return nil
 }
 
+// ensureExternalImportCredentials copies the user-provided import credentials
+// secret to the target Instance's users secret. This is called before
+// applying the PSMDB CR to ensure the operator initializes its internal
+// users secret with the correct password hashes (matching the backup).
+// This is idempotent: if the target secret already exists it is not overwritten.
+func ensureExternalImportCredentials(c *controller.Context, targetSecretName string) error {
+	// If the target secret already exists, we're done. Either a previous
+	// reconcile created it or the user pre-provisioned it manually.
+	targetSecret := &corev1.Secret{}
+	if err := c.Get(targetSecret, targetSecretName); err == nil {
+		return nil
+	}
+
+	// Get the source credentials secret name from the import config.
+	sourceSecretName := getExternalImportCredentialsSecretName(c)
+
+	sourceSecret := &corev1.Secret{}
+	if err := c.Get(sourceSecret, sourceSecretName); err != nil {
+		if apierrors.IsNotFound(err) {
+			c.SetDataSourceStatus(controller.DataSourceStatus{
+				Done:    true,
+				State:   controller.DataSourceStateFailed,
+				Reason:  corev1alpha1.ReasonDataSourceFailed,
+				Message: fmt.Sprintf("import credentials secret %q not found", sourceSecretName),
+			})
+			return &controller.DataSourceConfigError{
+				Reason:  corev1alpha1.ReasonDataSourceFailed,
+				Message: fmt.Sprintf("import credentials secret %q not found", sourceSecretName),
+			}
+		}
+		return fmt.Errorf("get import credentials secret %q: %w", sourceSecretName, err)
+	}
+
+	// Create the target secret with the same data.
+	newSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      targetSecretName,
+			Namespace: c.Namespace(),
+			Labels: map[string]string{
+				"app.kubernetes.io/managed-by": "everest",
+				"app.kubernetes.io/instance":   c.Name(),
+			},
+		},
+		Data: sourceSecret.Data,
+	}
+	if err := c.Client().Create(c.Context(), newSecret); err != nil {
+		if apierrors.IsAlreadyExists(err) {
+			// Race: another reconcile beat us to it.
+			return nil
+		}
+		return fmt.Errorf("create target credentials secret %q: %w", targetSecretName, err)
+	}
+	return nil
+}
+
 // CleanupPSMDB handles deletion of the PSMDB cluster.
 func CleanupPSMDB(c *controller.Context) error {
 	l := log.FromContext(c.Context())
@@ -495,6 +549,10 @@ func NewPSMDBProviderInterface() *PSMDBProvider {
 			// we need to be notified when the status changes so we can
 			// update the Instance status.
 			controller.WatchOwned(&psmdbv1.PerconaServerMongoDB{}),
+			// Watch owned PerconaServerMongoDBRestore resources - import
+			// restores are owned by the Instance. When the restore completes
+			// or fails, the Instance reconciler updates the DataSourceStatus.
+			controller.WatchOwned(&psmdbv1.PerconaServerMongoDBRestore{}),
 			// Watch the datasource Restore CR (owned by the Instance via
 			// ReconcileDataSource). When the Restore reconciler marks it
 			// Succeeded the Instance reconciler re-evaluates and exits

@@ -199,15 +199,14 @@ func TestValidatePSMDB(t *testing.T) {
 			expectErr: "missing spec.dataSource.external",
 		},
 		{
-			name: "dataSource external missing backupClass",
+			name: "dataSource external missing parameters",
 			instance: &corev1alpha1.Instance{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-instance"},
 				Spec: corev1alpha1.InstanceSpec{
 					DataSource: &backupv1alpha1.DataSource{
 						Type: backupv1alpha1.DataSourceTypeExternal,
 						External: &backupv1alpha1.DataSourceExternal{
-							StorageRef: corev1.ObjectReference{Name: "my-storage"},
-							Config:     &runtime.RawExtension{Raw: []byte(`{"path": "/backup"}`)},
+							StorageRef: corev1.LocalObjectReference{Name: "my-storage"},
 						},
 					},
 					Components: map[string]corev1alpha1.ComponentSpec{
@@ -215,18 +214,18 @@ func TestValidatePSMDB(t *testing.T) {
 					},
 				},
 			},
-			expectErr: "missing spec.dataSource.external.backupClassRef.name",
+			expectErr: "missing spec.dataSource.external.parameters",
 		},
 		{
-			name: "dataSource external missing storage",
+			name: "dataSource external backup not enabled",
 			instance: &corev1alpha1.Instance{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-instance"},
 				Spec: corev1alpha1.InstanceSpec{
 					DataSource: &backupv1alpha1.DataSource{
 						Type: backupv1alpha1.DataSourceTypeExternal,
 						External: &backupv1alpha1.DataSourceExternal{
-							BackupClassRef: corev1.ObjectReference{Name: "my-backupclass"},
-							Config:         &runtime.RawExtension{Raw: []byte(`{"path": "/backup"}`)},
+							StorageRef: corev1.LocalObjectReference{Name: "my-storage"},
+							Parameters: &runtime.RawExtension{Raw: []byte(`{"path": "/backup"}`)},
 						},
 					},
 					Components: map[string]corev1alpha1.ComponentSpec{
@@ -234,18 +233,21 @@ func TestValidatePSMDB(t *testing.T) {
 					},
 				},
 			},
-			expectErr: "missing spec.dataSource.external.storageRef.name",
+			expectErr: "spec.backup must be enabled for external imports",
 		},
 		{
-			name: "dataSource external missing config",
+			name: "dataSource external missing backup classRef",
 			instance: &corev1alpha1.Instance{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-instance"},
 				Spec: corev1alpha1.InstanceSpec{
+					Backup: &corev1alpha1.InstanceBackupSpec{
+						Enabled: true,
+					},
 					DataSource: &backupv1alpha1.DataSource{
 						Type: backupv1alpha1.DataSourceTypeExternal,
 						External: &backupv1alpha1.DataSourceExternal{
-							BackupClassRef: corev1.ObjectReference{Name: "my-backupclass"},
-							StorageRef:     corev1.ObjectReference{Name: "my-storage"},
+							StorageRef: corev1.LocalObjectReference{Name: "my-storage"},
+							Parameters: &runtime.RawExtension{Raw: []byte(`{"path": "/backup"}`)},
 						},
 					},
 					Components: map[string]corev1alpha1.ComponentSpec{
@@ -253,19 +255,22 @@ func TestValidatePSMDB(t *testing.T) {
 					},
 				},
 			},
-			expectErr: "missing spec.dataSource.external.config",
+			expectErr: "spec.backup.classRef.name is required for external imports",
 		},
 		{
-			name: "dataSource external backupClass not found",
+			name: "dataSource external storage not found in backup storages",
 			instance: &corev1alpha1.Instance{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-instance"},
 				Spec: corev1alpha1.InstanceSpec{
+					Backup: &corev1alpha1.InstanceBackupSpec{
+						Enabled:  true,
+						ClassRef: corev1alpha1.BackupClassReference{Name: "provider-managed-no-import"},
+					},
 					DataSource: &backupv1alpha1.DataSource{
 						Type: backupv1alpha1.DataSourceTypeExternal,
 						External: &backupv1alpha1.DataSourceExternal{
-							BackupClassRef: corev1.ObjectReference{Name: "non-existent-backupclass"},
-							StorageRef:     corev1.ObjectReference{Name: "my-storage"},
-							Config:         &runtime.RawExtension{Raw: []byte(`{"path": "/backup"}`)},
+							StorageRef: corev1.LocalObjectReference{Name: "non-existent-storage"},
+							Parameters: &runtime.RawExtension{Raw: []byte(`{"path": "/backup"}`)},
 						},
 					},
 					Components: map[string]corev1alpha1.ComponentSpec{
@@ -273,7 +278,7 @@ func TestValidatePSMDB(t *testing.T) {
 					},
 				},
 			},
-			expectErr: "failed to get BackupClass",
+			expectErr: "not found in spec.backup.storages",
 		},
 		{
 			name: "dataSource external ProviderManaged without supportsImport",
@@ -281,12 +286,18 @@ func TestValidatePSMDB(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{Name: "test-instance"},
 				Spec: corev1alpha1.InstanceSpec{
 					Provider: "psmdb",
+					Backup: &corev1alpha1.InstanceBackupSpec{
+						Enabled:  true,
+						ClassRef: corev1alpha1.BackupClassReference{Name: "provider-managed-no-import"},
+						Storages: []corev1alpha1.InstanceBackupStorage{
+							{Name: "my-storage", StorageRef: corev1.LocalObjectReference{Name: "backup-storage"}},
+						},
+					},
 					DataSource: &backupv1alpha1.DataSource{
 						Type: backupv1alpha1.DataSourceTypeExternal,
 						External: &backupv1alpha1.DataSourceExternal{
-							BackupClassRef: corev1.ObjectReference{Name: "provider-managed-no-import"},
-							StorageRef:     corev1.ObjectReference{Name: "my-storage"},
-							Config:         &runtime.RawExtension{Raw: []byte(`{"path": "/backup"}`)},
+							StorageRef: corev1.LocalObjectReference{Name: "my-storage"},
+							Parameters: &runtime.RawExtension{Raw: []byte(`{"path": "/backup"}`)},
 						},
 					},
 					Components: map[string]corev1alpha1.ComponentSpec{
@@ -302,12 +313,18 @@ func TestValidatePSMDB(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{Name: "test-instance"},
 				Spec: corev1alpha1.InstanceSpec{
 					Provider: "psmdb",
+					Backup: &corev1alpha1.InstanceBackupSpec{
+						Enabled:  true,
+						ClassRef: corev1alpha1.BackupClassReference{Name: "job-mode-no-import"},
+						Storages: []corev1alpha1.InstanceBackupStorage{
+							{Name: "my-storage", StorageRef: corev1.LocalObjectReference{Name: "backup-storage"}},
+						},
+					},
 					DataSource: &backupv1alpha1.DataSource{
 						Type: backupv1alpha1.DataSourceTypeExternal,
 						External: &backupv1alpha1.DataSourceExternal{
-							BackupClassRef: corev1.ObjectReference{Name: "job-mode-no-import"},
-							StorageRef:     corev1.ObjectReference{Name: "my-storage"},
-							Config:         &runtime.RawExtension{Raw: []byte(`{"path": "/backup"}`)},
+							StorageRef: corev1.LocalObjectReference{Name: "my-storage"},
+							Parameters: &runtime.RawExtension{Raw: []byte(`{"path": "/backup"}`)},
 						},
 					},
 					Components: map[string]corev1alpha1.ComponentSpec{
