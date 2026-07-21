@@ -12,16 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package sharded contains custom spec types for the sharded cluster topology.
+// Package sharded contains parameters types for the sharded cluster topology.
 //
-// The ShardedTopologyConfig struct is referenced by topology.yaml via configSchema
-// and is converted to an OpenAPI schema during generation.
+// The ShardedTopologyParameters struct is referenced by topology.yaml via
+// parametersSchema and is converted to an OpenAPI schema during generation.
 //
 // +k8s:openapi-gen=true
 package sharded
 
-// ShardedTopologyConfig defines configuration for sharded cluster topology.
-type ShardedTopologyConfig struct {
+// ShardedTopologyParameters defines structured parameters for the sharded
+// cluster topology.
+type ShardedTopologyParameters struct {
 	// NumShards specifies the initial number of shards.
 	// +k8s:validation:minimum=1
 	// +default=2

@@ -24,6 +24,7 @@ import (
 	corev1alpha1 "github.com/openeverest/openeverest/v2/api/core/v1alpha1"
 	"github.com/openeverest/openeverest/v2/provider-runtime/controller"
 
+	"github.com/openeverest/provider-percona-server-mongodb/definition/components"
 	"github.com/openeverest/provider-percona-server-mongodb/definition/topologies/sharded"
 	"github.com/openeverest/provider-percona-server-mongodb/internal/common"
 )
@@ -162,7 +163,11 @@ func configureReplsets(c *controller.Context) ([]*psmdbv1.ReplsetSpec, error) {
 	spec := in.Spec
 	engine := spec.Components[common.ComponentEngine]
 
-	config := engine.Config
+	// The engine configuration file is the conventional `configuration`
+	// property inside the component's parameters.
+	var engineParams components.MongodParameters
+	_ = c.TryDecodeComponentParameters(engine, &engineParams)
+	config := engineParams.Configuration
 
 	// TODO: implement disabling
 	if spec.Topology == nil || spec.Topology.Type != "sharded" {
@@ -172,9 +177,9 @@ func configureReplsets(c *controller.Context) ([]*psmdbv1.ReplsetSpec, error) {
 	}
 
 	numShards := 2 // default
-	var shardedConfig sharded.ShardedTopologyConfig
-	if c.TryDecodeTopologyConfig(&shardedConfig) && shardedConfig.NumShards > 0 {
-		numShards = int(shardedConfig.NumShards)
+	var shardedParams sharded.ShardedTopologyParameters
+	if c.TryDecodeTopologyParameters(&shardedParams) && shardedParams.NumShards > 0 {
+		numShards = int(shardedParams.NumShards)
 	}
 
 	// For sharded topology, replsets should not be exposed directly (clients connect via mongos)
@@ -198,7 +203,11 @@ func configureConfigServerReplset(c *controller.Context) (*psmdbv1.ReplsetSpec, 
 
 	cfgSrv := spec.Components[common.ComponentConfigServer]
 
-	config := cfgSrv.Config
+	// The engine configuration file is the conventional `configuration`
+	// property inside the component's parameters.
+	var cfgSrvParams components.MongodParameters
+	_ = c.TryDecodeComponentParameters(cfgSrv, &cfgSrvParams)
+	config := cfgSrvParams.Configuration
 
 	// TODO: check if this is okay. It adds the configuration, expose.type,
 	// name, podDisruptionBudget that we didn't have in the everest operator

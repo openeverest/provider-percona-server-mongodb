@@ -20,10 +20,10 @@
 // +k8s:openapi-gen=true
 package perconabackupmongodb
 
-// PerconaBackupConfig describes the configuration accepted by Backup CRs that
-// target this class (spec.config). Mirrors the fields surfaced by ui.yaml's
-// `backup` section.
-type PerconaBackupConfig struct {
+// PerconaBackupParameters describes the parameters accepted by Backup CRs
+// that target this class (spec.parameters). Mirrors the fields surfaced by
+// ui.yaml's `backup` section.
+type PerconaBackupParameters struct {
 	// Type selects between logical and physical PBM backups.
 	// +kubebuilder:validation:Enum=logical;physical
 	Type string `json:"type,omitempty"`
@@ -36,8 +36,8 @@ type PerconaBackupConfig struct {
 	CompressionLevel *int32 `json:"compressionLevel,omitempty"`
 }
 
-// PerconaRestoreConfig describes the configuration accepted by Restore CRs
-// that target this class (spec.config). PSMDB does not currently expose
+// PerconaRestoreParameters describes the parameters accepted by Restore CRs
+// that target this class (spec.parameters). PSMDB does not currently expose
 // restore-time options through OpenEverest; the struct is intentionally
 // empty and ships an empty schema until requirements crystallize.
-type PerconaRestoreConfig struct{}
+type PerconaRestoreParameters struct{}

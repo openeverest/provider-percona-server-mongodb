@@ -24,7 +24,7 @@ spec:
       replicas: 1
     monitoring:
       type: pmm
-      customSpec:
+      parameters:
         monitoringConfigName: mc-psmdb
 # ---
 # apiVersion: everest.percona.com/v1alpha1

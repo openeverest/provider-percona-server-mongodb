@@ -133,9 +133,9 @@ func pitrStorage(storages []corev1alpha1.InstanceBackupStorage) (*corev1alpha1.I
 // into the engine's cluster-global PITR spec. PSMDB supports a single PITR
 // stream, so PITR is enabled when exactly one storage has it enabled.
 //
-// Per-storage custom PITR config (oplog span, compression) is not yet
-// supported by this provider: the BackupClass declares no pitrConfigSchema,
-// so the runtime rejects any pitr.config payload at admission time.
+// Per-storage custom PITR parameters (oplog span, compression) are not yet
+// supported by this provider: the BackupClass declares no pitrParametersSchema,
+// so the runtime rejects any pitr.parameters payload at admission time.
 func buildPSMDBPITRSpec(storages []corev1alpha1.InstanceBackupStorage) (psmdbv1.PITRSpec, error) {
 	storage, err := pitrStorage(storages)
 	if err != nil {

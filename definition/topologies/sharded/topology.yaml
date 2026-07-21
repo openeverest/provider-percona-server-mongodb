@@ -2,9 +2,9 @@
 # This file defines both the structural topology and its UI rendering.
 
 # Topology configuration: which components are used and their defaults.
-# configSchema references a Go type in definition/types/ for custom config fields.
+# parametersSchema references a Go type in definition/types/ for topology parameters.
 config:
-  configSchema: ShardedTopologyConfig
+  parametersSchema: ShardedTopologyParameters
   components:
     engine:
       defaults:
@@ -190,7 +190,7 @@ ui:
       components:
         monitoring:
           uiType: select
-          path: spec.components.monitoring.customSpec.monitoringConfigName
+          path: spec.components.monitoring.parameters.monitoringConfigName
           fieldParams:
             label: "Monitoring endpoint"
           dataSource:

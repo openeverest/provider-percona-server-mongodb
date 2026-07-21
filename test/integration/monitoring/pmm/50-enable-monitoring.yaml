@@ -26,5 +26,5 @@ spec:
         requests:
           memory: 335Mi
           cpu: 335m
-      customSpec:
+      parameters:
         monitoringConfigName: mc-psmdb

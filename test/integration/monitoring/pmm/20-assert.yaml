@@ -70,7 +70,7 @@ spec:
         limits:
           memory: "128Mi"
           cpu: "500m"
-      customSpec:
+      parameters:
         monitoringConfigName: mc-psmdb
 ---
 apiVersion: monitoring.openeverest.io/v1alpha1

@@ -108,7 +108,7 @@ spec:
       replicas: 1
     monitoring:
       type: pmm
-      customSpec:
+      parameters:
         monitoringConfigName: mc-psmdb
 ---
 apiVersion: psmdb.percona.com/v1
