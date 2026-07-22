@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/go-logr/logr"
 	pbmdefs "github.com/percona/percona-backup-mongodb/pbm/defs"
 	psmdbv1 "github.com/percona/percona-server-mongodb-operator/pkg/apis/psmdb/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -40,8 +41,7 @@ const (
 )
 
 // ReconcileExternalDataSource handles the import workflow for type=External data sources.
-func ReconcileExternalDataSource(c *controller.Context) error {
-	l := log.FromContext(c.Context())
+func ReconcileExternalDataSource(c *controller.Context, bc *backupv1alpha1.BackupClass, storage *backupv1alpha1.BackupStorage) error {
 	ds := c.Instance().Spec.DataSource
 	if ds == nil || ds.Type != backupv1alpha1.DataSourceTypeExternal {
 		return nil
@@ -49,25 +49,17 @@ func ReconcileExternalDataSource(c *controller.Context) error {
 
 	ext := ds.External
 
-	// Get resolved BackupClass and BackupStorage from spec.backup
-	bc, storage, err := getImportBackupRefs(c)
-	if err != nil {
-		return err
-	}
-	l.Info("Reconciling external data source import", "backupClass", bc.Name, "storage", storage.Name)
-
-	// Route to the appropriate handler based on execution mode
 	switch bc.Spec.ExecutionMode {
 	case backupv1alpha1.BackupExecutionModeProviderManaged:
 		if bc.Spec.ProviderManaged == nil || !bc.Spec.ProviderManaged.SupportsImport {
-			return fmt.Errorf("BackupClass %q is ProviderManaged but does not support import", bc.Name)
+			return fmt.Errorf("BackupClass %q does not support import", bc.Name)
 		}
 
 		return reconcileProviderManagedImport(c, ext, storage)
 
 	case backupv1alpha1.BackupExecutionModeJob:
 		if bc.Spec.ImportJob == nil {
-			return fmt.Errorf("BackupClass %q is Job mode but does not have importJob defined", bc.Name)
+			return fmt.Errorf("BackupClass %q does not have importJob defined", bc.Name)
 		}
 
 		return reconcileJobModeImport(c, ext, bc, storage)
@@ -77,9 +69,13 @@ func ReconcileExternalDataSource(c *controller.Context) error {
 	}
 }
 
-// reconcileProviderManagedImport handles import using the PSMDB operator's restore mechanism.
-// This creates a PerconaServerMongoDBRestore CR directly, and PBM performs the actual restore.
-func reconcileProviderManagedImport(c *controller.Context, ext *backupv1alpha1.DataSourceExternal, storage *backupv1alpha1.BackupStorage) error {
+// reconcileProviderManagedImport handles import using the PSMDB operator's restore
+// mechanism. It creates a PerconaServerMongoDBRestore CR directly to perform restore.
+func reconcileProviderManagedImport(
+	c *controller.Context,
+	ext *backupv1alpha1.DataSourceExternal,
+	storage *backupv1alpha1.BackupStorage,
+) error {
 	l := log.FromContext(c.Context())
 
 	var params pbm.PerconaImportParameters
@@ -88,8 +84,7 @@ func reconcileProviderManagedImport(c *controller.Context, ext *backupv1alpha1.D
 	}
 
 	// Set owner reference on the user-provided credentials secret so it's
-	// cleaned up when the Instance is deleted. The user created this secret
-	// specifically for this import operation.
+	// cleaned up when the Instance is deleted.
 	if err := ensureImportCredentialsOwnership(c, params.CredentialsSecretRef.Name); err != nil {
 		return fmt.Errorf("failed to ensure import credentials ownership: %w", err)
 	}
@@ -104,10 +99,10 @@ func reconcileProviderManagedImport(c *controller.Context, ext *backupv1alpha1.D
 	return observeImportRestoreStatus(c, restoreName, l)
 }
 
-// getExternalImportCredentialsSecretName returns the credentials secret name
-// from the external import config. This is called from provider.go to set
-// psmdb.Spec.Secrets.Users to use the user-provided secret directly.
-func getExternalImportCredentialsSecretName(c *controller.Context) string {
+// getImportCredentialsSecretName returns the credentials secret name
+// from the external import parameters. This is used to set
+// psmdb.Spec.Secrets.Users directly.
+func getImportCredentialsSecretName(c *controller.Context) string {
 	ds := c.Instance().Spec.DataSource
 	if ds == nil || ds.External == nil || ds.External.Parameters == nil {
 		return ""
@@ -128,7 +123,6 @@ func ensureImportCredentialsOwnership(c *controller.Context, secretName string) 
 		return fmt.Errorf("failed to get credentials secret %q: %w", secretName, err)
 	}
 
-	// Set owner reference so the secret is cleaned up with the Instance
 	if ok := controllerutil.HasControllerReference(secret); !ok {
 		if err := controllerutil.SetOwnerReference(c.Instance(), secret, c.Client().Scheme()); err != nil {
 			return fmt.Errorf("failed to set owner reference: %w", err)
@@ -152,7 +146,8 @@ func ensureImportRestore(
 	s3Cfg := storage.Spec.S3
 
 	// Parse the backup path to extract prefix and destination
-	// Path format: "path/to/backup" -> prefix: "path/to", destination: "s3://bucket/path/to/backup"
+	// Path format: "path/to/backup" -> prefix: "path/to"
+	// destination: "s3://bucket/path/to/backup"
 	backupPath := strings.Trim(importCfg.Path, "/")
 	split := strings.Split(backupPath, "/")
 	prefix := strings.Join(split[:len(split)-1], "/")
@@ -169,7 +164,6 @@ func ensureImportRestore(
 	}
 
 	_, err := controllerutil.CreateOrUpdate(c.Context(), c.Client(), psmdbRestore, func() error {
-		// Labels to identify the object
 		if psmdbRestore.Labels == nil {
 			psmdbRestore.Labels = make(map[string]string)
 		}
@@ -204,10 +198,9 @@ func ensureImportRestore(
 	return err
 }
 
-// observeImportRestoreStatus checks the PerconaServerMongoDBRestore status and updates the data source status.
-func observeImportRestoreStatus(c *controller.Context, restoreName string, l interface {
-	Info(msg string, keysAndValues ...any)
-}) error {
+// observeImportRestoreStatus checks the PerconaServerMongoDBRestore status
+// and updates the data source status.
+func observeImportRestoreStatus(c *controller.Context, restoreName string, l logr.Logger) error {
 	psmdbRestore := &psmdbv1.PerconaServerMongoDBRestore{}
 	if err := c.Get(psmdbRestore, restoreName); err != nil {
 		if apierrors.IsNotFound(err) {
