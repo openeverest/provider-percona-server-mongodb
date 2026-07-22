@@ -1,12 +1,3 @@
-apiVersion: kuttl.dev/v1
-kind: TestAssert
-timeout: 30
-collectors:
-  - command: kubectl get in/dest-psmdb-cluster -n ${NAMESPACE} -o yaml
-  - command: kubectl get psmdb/dest-psmdb-cluster -n ${NAMESPACE} -o yaml
-  - command: kubectl get restore -n ${NAMESPACE} -o yaml
-  - command: kubectl get psmdb-restore -n ${NAMESPACE} -o yaml
----
 apiVersion: core.openeverest.io/v1alpha1
 kind: Instance
 metadata:

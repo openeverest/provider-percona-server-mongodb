@@ -92,31 +92,31 @@ test-unit: ## Run Go unit tests.
 
 .PHONY: test-integration
 test-integration: ## Run all integration tests against K8S cluster.
-	. ./test/vars.sh && kubectl kuttl test --config ./test/integration/kuttl.yaml
+	. ./test/vars.sh && chainsaw test --config ./test/integration/.chainsaw.yaml ./test/integration
 
 .PHONY: test-integration-core
 test-integration-core: ## Run core integration tests.
-	. ./test/vars.sh && kubectl kuttl test --config ./test/integration/kuttl-core.yaml
+	. ./test/vars.sh && chainsaw test --config ./test/integration/.chainsaw.yaml ./test/integration/core
 
 .PHONY: test-integration-core-replicaset
 test-integration-core-replicaset: ## Run core replicaset integration tests.
-	. ./test/vars.sh && kubectl kuttl test --config ./test/integration/kuttl-core.yaml --test "replicaset"
+	. ./test/vars.sh && chainsaw test --config ./test/integration/.chainsaw.yaml ./test/integration/core/replicaset
 
 .PHONY: test-integration-core-sharded
 test-integration-core-sharded: ## Run core sharded integration tests.
-	. ./test/vars.sh && kubectl kuttl test --config ./test/integration/kuttl-core.yaml --test "sharded"
+	. ./test/vars.sh && chainsaw test --config ./test/integration/.chainsaw.yaml ./test/integration/core/sharded
 
 .PHONY: test-integration-monitoring-pmm
 test-integration-monitoring-pmm: ## Run PMM integration tests.
-	. ./test/vars.sh && kubectl kuttl test --config ./test/integration/kuttl-monitoring.yaml
+	. ./test/vars.sh && chainsaw test --config ./test/integration/.chainsaw.yaml ./test/integration/monitoring/pmm
 
 .PHONY: test-integration-backup
 test-integration-backup: ## Run backup integration tests.
-	. ./test/vars.sh && kubectl kuttl test --config ./test/integration/kuttl-backup.yaml
+	. ./test/vars.sh && chainsaw test --config ./test/integration/.chainsaw.yaml ./test/integration/backup
 
 .PHONY: test-integration-backup-datasource
 test-integration-backup-datasource: ## Run backup datasource integration tests.
-	. ./test/vars.sh && kubectl kuttl test --config ./test/integration/kuttl-backup.yaml --test "datasource"
+	. ./test/vars.sh && chainsaw test --config ./test/integration/.chainsaw.yaml ./test/integration/backup/datasource
 
 .PHONY: test-e2e
 test-e2e: ## Run Playwright E2E tests against a running Everest UI (http://localhost:8080).

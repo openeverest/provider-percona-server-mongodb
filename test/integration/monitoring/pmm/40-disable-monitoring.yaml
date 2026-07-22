@@ -1,15 +1,3 @@
-apiVersion: kuttl.dev/v1
-kind: TestStep
-timeout: 10
-# ---
-# apiVersion: everest.percona.com/v1alpha1
-# kind: DatabaseCluster
-# metadata:
-#   name: psmdb-mc
-# spec:
-#   monitoring:
-#     monitoringConfigName: 
----
 apiVersion: core.openeverest.io/v1alpha1
 kind: Instance
 metadata:
