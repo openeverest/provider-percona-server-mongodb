@@ -152,8 +152,10 @@ func validateDataSource(c *controller.Context) error {
 	switch ds.Type {
 	case backupv1alpha1.DataSourceTypeBackup:
 		return validateDataSourceBackup(c, ds)
-	case backupv1alpha1.DataSourceTypeExternal:
-		return validateDataSourceExternal(c, ds)
+	case backupv1alpha1.DataSourceTypeProviderManagedImport:
+		return validateDataSourceProviderManagedImport(c, ds)
+	case backupv1alpha1.DataSourceTypeJobImport:
+		return validateDataSourceJobImport(c, ds)
 	default:
 		return fmt.Errorf("unsupported dataSource.type: %q", ds.Type)
 	}
@@ -172,20 +174,19 @@ func validateDataSourceBackup(c *controller.Context, ds *backupv1alpha1.DataSour
 	return nil
 }
 
-// validateDataSourceExternal validates dataSource when type=External.
-func validateDataSourceExternal(c *controller.Context, ds *backupv1alpha1.DataSource) error {
-	if ds.External == nil {
-		return fmt.Errorf("missing spec.dataSource.external")
+// validateDataSourceProviderManagedImport validates dataSource when type=ProviderManagedImport.
+func validateDataSourceProviderManagedImport(c *controller.Context, ds *backupv1alpha1.DataSource) error {
+	if ds.ProviderManagedImport == nil {
+		return fmt.Errorf("missing spec.dataSource.providerManagedImport")
 	}
 
-	ext := ds.External
+	imp := ds.ProviderManagedImport
 
-	if ext.Parameters == nil {
-		return fmt.Errorf("missing spec.dataSource.external.parameters")
+	if imp.Parameters == nil {
+		return fmt.Errorf("missing spec.dataSource.providerManagedImport.parameters")
 	}
 
-	// Get resolved BackupClass and BackupStorage from spec.backup
-	bc, _, err := getImportBackupRefs(c)
+	bc, _, err := c.ImportBackupRefs()
 	if err != nil {
 		return err
 	}
@@ -195,23 +196,53 @@ func validateDataSourceExternal(c *controller.Context, ds *backupv1alpha1.DataSo
 		return fmt.Errorf("BackupClass %q does not support provider %q", bc.Name, providerName)
 	}
 
-	// Validate based on execution mode
-	switch bc.Spec.ExecutionMode {
-	case backupv1alpha1.BackupExecutionModeProviderManaged:
-		if bc.Spec.ProviderManaged == nil || !bc.Spec.ProviderManaged.SupportsImport {
-			return fmt.Errorf("BackupClass %q does not support import", bc.Name)
-		}
-	case backupv1alpha1.BackupExecutionModeJob:
-		if bc.Spec.ImportJob == nil {
-			return fmt.Errorf("BackupClass %q does not have importJob defined", bc.Name)
-		}
-	default:
-		return fmt.Errorf("BackupClass %q has unsupported executionMode %q for import", bc.Name, bc.Spec.ExecutionMode)
+	if bc.Spec.ExecutionMode != backupv1alpha1.BackupExecutionModeProviderManaged {
+		return fmt.Errorf("ProviderManagedImport requires a ProviderManaged BackupClass, got %q", bc.Spec.ExecutionMode)
 	}
 
-	// Validate config against BackupClass.spec.importConfig schema
-	if err := bc.Spec.ImportParametersSchema.Validate(ext.Parameters); err != nil {
-		return fmt.Errorf("spec.dataSource.external.parameters validation failed: %w", err)
+	if bc.Spec.ProviderManaged == nil || !bc.Spec.ProviderManaged.SupportsImport {
+		return fmt.Errorf("BackupClass %q does not support import", bc.Name)
+	}
+
+	if err := bc.Spec.ImportParametersSchema.Validate(imp.Parameters); err != nil {
+		return fmt.Errorf("spec.dataSource.providerManagedImport.parameters validation failed: %w", err)
+	}
+
+	return nil
+}
+
+// validateDataSourceJobImport validates dataSource when type=JobImport.
+func validateDataSourceJobImport(c *controller.Context, ds *backupv1alpha1.DataSource) error {
+	if ds.JobImport == nil {
+		return fmt.Errorf("missing spec.dataSource.jobImport")
+	}
+
+	job := ds.JobImport
+
+	if job.Parameters == nil {
+		return fmt.Errorf("missing spec.dataSource.jobImport.parameters")
+	}
+
+	bc, _, err := c.ImportBackupRefs()
+	if err != nil {
+		return err
+	}
+
+	providerName := c.Instance().Spec.ProviderRef.Name
+	if !bc.Spec.SupportedProviders.Has(providerName) {
+		return fmt.Errorf("BackupClass %q does not support provider %q", bc.Name, providerName)
+	}
+
+	if bc.Spec.ExecutionMode != backupv1alpha1.BackupExecutionModeJob {
+		return fmt.Errorf("JobImport requires a Job-mode BackupClass, got %q", bc.Spec.ExecutionMode)
+	}
+
+	if bc.Spec.Job == nil || bc.Spec.Job.Import == nil {
+		return fmt.Errorf("BackupClass %q does not have job.import defined", bc.Name)
+	}
+
+	if err := bc.Spec.ImportParametersSchema.Validate(job.Parameters); err != nil {
+		return fmt.Errorf("spec.dataSource.jobImport.parameters validation failed: %w", err)
 	}
 
 	return nil

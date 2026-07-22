@@ -185,28 +185,28 @@ func TestValidatePSMDB(t *testing.T) {
 			expectErr: "unsupported dataSource.type",
 		},
 		{
-			name: "dataSource external missing external details",
+			name: "dataSource providerManagedImport missing details",
 			instance: &corev1alpha1.Instance{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-instance"},
 				Spec: corev1alpha1.InstanceSpec{
 					DataSource: &backupv1alpha1.DataSource{
-						Type: backupv1alpha1.DataSourceTypeExternal,
+						Type: backupv1alpha1.DataSourceTypeProviderManagedImport,
 					},
 					Components: map[string]corev1alpha1.ComponentSpec{
 						common.ComponentEngine: validEngine,
 					},
 				},
 			},
-			expectErr: "missing spec.dataSource.external",
+			expectErr: "missing spec.dataSource.providerManagedImport",
 		},
 		{
-			name: "dataSource external missing parameters",
+			name: "dataSource providerManagedImport missing parameters",
 			instance: &corev1alpha1.Instance{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-instance"},
 				Spec: corev1alpha1.InstanceSpec{
 					DataSource: &backupv1alpha1.DataSource{
-						Type: backupv1alpha1.DataSourceTypeExternal,
-						External: &backupv1alpha1.DataSourceExternal{
+						Type: backupv1alpha1.DataSourceTypeProviderManagedImport,
+						ProviderManagedImport: &backupv1alpha1.DataSourceProviderManagedImport{
 							StorageRef: commonv1alpha1.ObjectRef{Name: "my-storage"},
 						},
 					},
@@ -215,16 +215,16 @@ func TestValidatePSMDB(t *testing.T) {
 					},
 				},
 			},
-			expectErr: "missing spec.dataSource.external.parameters",
+			expectErr: "missing spec.dataSource.providerManagedImport.parameters",
 		},
 		{
-			name: "dataSource external backup not enabled",
+			name: "dataSource providerManagedImport backup not enabled",
 			instance: &corev1alpha1.Instance{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-instance"},
 				Spec: corev1alpha1.InstanceSpec{
 					DataSource: &backupv1alpha1.DataSource{
-						Type: backupv1alpha1.DataSourceTypeExternal,
-						External: &backupv1alpha1.DataSourceExternal{
+						Type: backupv1alpha1.DataSourceTypeProviderManagedImport,
+						ProviderManagedImport: &backupv1alpha1.DataSourceProviderManagedImport{
 							StorageRef: commonv1alpha1.ObjectRef{Name: "my-storage"},
 							Parameters: &runtime.RawExtension{Raw: []byte(`{"path": "/backup"}`)},
 						},
@@ -234,10 +234,10 @@ func TestValidatePSMDB(t *testing.T) {
 					},
 				},
 			},
-			expectErr: "spec.backup must be enabled for external imports",
+			expectErr: "spec.backup must be enabled for ProviderManagedImport",
 		},
 		{
-			name: "dataSource external missing backup classRef",
+			name: "dataSource providerManagedImport missing backup classRef",
 			instance: &corev1alpha1.Instance{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-instance"},
 				Spec: corev1alpha1.InstanceSpec{
@@ -245,8 +245,8 @@ func TestValidatePSMDB(t *testing.T) {
 						Enabled: true,
 					},
 					DataSource: &backupv1alpha1.DataSource{
-						Type: backupv1alpha1.DataSourceTypeExternal,
-						External: &backupv1alpha1.DataSourceExternal{
+						Type: backupv1alpha1.DataSourceTypeProviderManagedImport,
+						ProviderManagedImport: &backupv1alpha1.DataSourceProviderManagedImport{
 							StorageRef: commonv1alpha1.ObjectRef{Name: "my-storage"},
 							Parameters: &runtime.RawExtension{Raw: []byte(`{"path": "/backup"}`)},
 						},
@@ -256,10 +256,10 @@ func TestValidatePSMDB(t *testing.T) {
 					},
 				},
 			},
-			expectErr: "spec.backup.classRef.name is required for external imports",
+			expectErr: "spec.backup.classRef.name is required for ProviderManagedImport",
 		},
 		{
-			name: "dataSource external storage not found in backup storages",
+			name: "dataSource providerManagedImport storage not found in backup storages",
 			instance: &corev1alpha1.Instance{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-instance"},
 				Spec: corev1alpha1.InstanceSpec{
@@ -268,8 +268,8 @@ func TestValidatePSMDB(t *testing.T) {
 						ClassRef: commonv1alpha1.ObjectRef{Name: "provider-managed-no-import"},
 					},
 					DataSource: &backupv1alpha1.DataSource{
-						Type: backupv1alpha1.DataSourceTypeExternal,
-						External: &backupv1alpha1.DataSourceExternal{
+						Type: backupv1alpha1.DataSourceTypeProviderManagedImport,
+						ProviderManagedImport: &backupv1alpha1.DataSourceProviderManagedImport{
 							StorageRef: commonv1alpha1.ObjectRef{Name: "non-existent-storage"},
 							Parameters: &runtime.RawExtension{Raw: []byte(`{"path": "/backup"}`)},
 						},
@@ -282,7 +282,7 @@ func TestValidatePSMDB(t *testing.T) {
 			expectErr: "not found in spec.backup.storages",
 		},
 		{
-			name: "dataSource external ProviderManaged without supportsImport",
+			name: "dataSource providerManagedImport without supportsImport",
 			instance: &corev1alpha1.Instance{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-instance"},
 				Spec: corev1alpha1.InstanceSpec{
@@ -295,8 +295,8 @@ func TestValidatePSMDB(t *testing.T) {
 						},
 					},
 					DataSource: &backupv1alpha1.DataSource{
-						Type: backupv1alpha1.DataSourceTypeExternal,
-						External: &backupv1alpha1.DataSourceExternal{
+						Type: backupv1alpha1.DataSourceTypeProviderManagedImport,
+						ProviderManagedImport: &backupv1alpha1.DataSourceProviderManagedImport{
 							StorageRef: commonv1alpha1.ObjectRef{Name: "my-storage"},
 							Parameters: &runtime.RawExtension{Raw: []byte(`{"path": "/backup"}`)},
 						},
@@ -309,21 +309,14 @@ func TestValidatePSMDB(t *testing.T) {
 			expectErr: `BackupClass "provider-managed-no-import" does not support import`,
 		},
 		{
-			name: "dataSource external Job mode without importJob",
+			name: "dataSource jobImport missing classRef",
 			instance: &corev1alpha1.Instance{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-instance"},
 				Spec: corev1alpha1.InstanceSpec{
 					ProviderRef: commonv1alpha1.ObjectRef{Name: "psmdb"},
-					Backup: &corev1alpha1.InstanceBackupSpec{
-						Enabled:  true,
-						ClassRef: commonv1alpha1.ObjectRef{Name: "job-mode-no-import"},
-						Storages: []corev1alpha1.InstanceBackupStorage{
-							{StorageRef: commonv1alpha1.ObjectRef{Name: "my-storage"}},
-						},
-					},
 					DataSource: &backupv1alpha1.DataSource{
-						Type: backupv1alpha1.DataSourceTypeExternal,
-						External: &backupv1alpha1.DataSourceExternal{
+						Type: backupv1alpha1.DataSourceTypeJobImport,
+						JobImport: &backupv1alpha1.DataSourceJobImport{
 							StorageRef: commonv1alpha1.ObjectRef{Name: "my-storage"},
 							Parameters: &runtime.RawExtension{Raw: []byte(`{"path": "/backup"}`)},
 						},
@@ -333,7 +326,28 @@ func TestValidatePSMDB(t *testing.T) {
 					},
 				},
 			},
-			expectErr: `BackupClass "job-mode-no-import" does not have importJob defined`,
+			expectErr: "spec.dataSource.jobImport.classRef.name is required",
+		},
+		{
+			name: "dataSource jobImport without job.import defined",
+			instance: &corev1alpha1.Instance{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-instance"},
+				Spec: corev1alpha1.InstanceSpec{
+					ProviderRef: commonv1alpha1.ObjectRef{Name: "psmdb"},
+					DataSource: &backupv1alpha1.DataSource{
+						Type: backupv1alpha1.DataSourceTypeJobImport,
+						JobImport: &backupv1alpha1.DataSourceJobImport{
+							ClassRef:   commonv1alpha1.ObjectRef{Name: "job-mode-no-import"},
+							StorageRef: commonv1alpha1.ObjectRef{Name: "my-storage"},
+							Parameters: &runtime.RawExtension{Raw: []byte(`{"path": "/backup"}`)},
+						},
+					},
+					Components: map[string]corev1alpha1.ComponentSpec{
+						common.ComponentEngine: validEngine,
+					},
+				},
+			},
+			expectErr: `BackupClass "job-mode-no-import" does not have job.import defined`,
 		},
 		{
 			name: "missing engine component",
@@ -740,7 +754,7 @@ func TestValidatePSMDB(t *testing.T) {
 					SupportedProviders: backupv1alpha1.ProviderNameList{"psmdb"},
 					ExecutionMode:      backupv1alpha1.BackupExecutionModeJob,
 					Job: &backupv1alpha1.JobModeSpec{
-						Backup: backupv1alpha1.JobExecution{
+						Backup: &backupv1alpha1.JobExecution{
 							JobSpec: &backupv1alpha1.BackupJobSpec{
 								Image: "test-image",
 							},

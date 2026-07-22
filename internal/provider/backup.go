@@ -16,9 +16,12 @@ package provider
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/AlekSi/pointer"
+	pbmdefs "github.com/percona/percona-backup-mongodb/pbm/defs"
 	psmdbv1 "github.com/percona/percona-server-mongodb-operator/pkg/apis/psmdb/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -35,6 +38,7 @@ import (
 	"github.com/openeverest/openeverest/v2/provider-runtime/controller"
 
 	"github.com/openeverest/provider-percona-server-mongodb/internal/common"
+	pbm "github.com/openeverest/provider-percona-server-mongodb/definition/backupclasses/percona-backup-mongodb"
 )
 
 const (
@@ -403,22 +407,37 @@ func (p *PSMDBProvider) SyncBackup(c *controller.Context, backup *backupv1alpha1
 	return exec, nil
 }
 
-// SyncRestore creates or updates a PerconaServerMongoDBRestore that points at
-// the operator backup produced by the source Backup CR.
+// SyncRestore creates or updates a PerconaServerMongoDBRestore based on the
+// Restore's DataSource type:
 //
-// Two cases are handled:
-//
-//   - Same-cluster restore (source Backup.spec.instanceRef.name == this
-//     Instance): the operator backup lives on the same PSMDB cluster, so we
-//     set .spec.backupName to its name.
-//   - Cross-cluster restore (e.g. seeding a new Instance from another
-//     Instance's Backup via .spec.dataSource): the source operator backup
-//     belongs to a different PSMDB CR. The PSMDB operator cannot resolve it
-//     by name on this cluster, so we copy its .status into
-//     .spec.backupSource and set .spec.storageName to the target Instance's
-//     matching storage entry so credentials are taken from the target
-//     cluster's registered storages.
+//   - ProviderManagedImport: imports from an external PBM backup via backupSource
+//   - JobImport: not yet implemented
+//   - Backup: restores from an OpenEverest Backup CR. Same-cluster restores
+//     set .spec.backupName; cross-cluster restores copy the source operator
+//     backup's .status into .spec.backupSource and set .spec.storageName to
+//     select credentials from this cluster's registered storages.
 func (p *PSMDBProvider) SyncRestore(c *controller.Context, restore *backupv1alpha1.Restore) (controller.RestoreExecutionStatus, error) {
+	// Dispatch based on DataSource type
+	switch restore.Spec.DataSource.Type {
+	case backupv1alpha1.DataSourceTypeProviderManagedImport:
+		return p.syncProviderManagedImportRestore(c, restore)
+	case backupv1alpha1.DataSourceTypeJobImport:
+		return controller.RestoreExecutionStatus{
+			State:   backupv1alpha1.RestoreStateFailed,
+			Message: "JobImport is not yet implemented",
+		}, nil
+	case backupv1alpha1.DataSourceTypeBackup:
+		return p.syncBackupRestore(c, restore)
+	default:
+		return controller.RestoreExecutionStatus{
+			State:   backupv1alpha1.RestoreStateFailed,
+			Message: fmt.Sprintf("unsupported DataSource type %q", restore.Spec.DataSource.Type),
+		}, nil
+	}
+}
+
+// syncBackupRestore handles restore from a Backup CR (type=Backup).
+func (p *PSMDBProvider) syncBackupRestore(c *controller.Context, restore *backupv1alpha1.Restore) (controller.RestoreExecutionStatus, error) {
 	sourceBackup, exec, err := resolveSourceBackup(c, restore)
 	if err != nil {
 		return controller.RestoreExecutionStatus{}, err
@@ -501,6 +520,125 @@ func (p *PSMDBProvider) SyncRestore(c *controller.Context, restore *backupv1alph
 			if restore.Spec.DataSource.Backup.PITR.Date != nil {
 				psmdbRestore.Spec.PITR.Date = &psmdbv1.PITRestoreDate{Time: *restore.Spec.DataSource.Backup.PITR.Date}
 			}
+		}
+		return controllerutil.SetControllerReference(restore, psmdbRestore, c.Client().Scheme())
+	}); err != nil {
+		return controller.RestoreExecutionStatus{}, fmt.Errorf("create or update PSMDB restore: %w", err)
+	}
+
+	out := controller.RestoreExecutionStatus{
+		OperatorRestoreRef: &commonv1alpha1.TypedObjectRef{
+			Group: psmdbv1.SchemeGroupVersion.Group,
+			Kind:  "PerconaServerMongoDBRestore",
+			Name:  psmdbRestore.Name,
+		},
+	}
+	switch psmdbRestore.Status.State {
+	case psmdbv1.RestoreStateReady:
+		out.State = backupv1alpha1.RestoreStateSucceeded
+		now := metav1.Now()
+		out.CompletedAt = &now
+	case psmdbv1.RestoreStateError:
+		out.State = backupv1alpha1.RestoreStateFailed
+		out.Message = psmdbRestore.Status.Error
+	case psmdbv1.RestoreStateRequested, psmdbv1.RestoreStateRunning, psmdbv1.RestoreStateWaiting:
+		out.State = backupv1alpha1.RestoreStateRunning
+	default:
+		out.State = backupv1alpha1.RestoreStatePending
+	}
+	return out, nil
+}
+
+// syncProviderManagedImportRestore handles restore from ProviderManagedImport.
+// It creates a PerconaServerMongoDBRestore with .spec.backupSource pointing
+// at the external S3 location.
+func (p *PSMDBProvider) syncProviderManagedImportRestore(c *controller.Context, restore *backupv1alpha1.Restore) (controller.RestoreExecutionStatus, error) {
+	imp := restore.Spec.DataSource.ProviderManagedImport
+	if imp == nil {
+		return controller.RestoreExecutionStatus{
+			State:   backupv1alpha1.RestoreStateFailed,
+			Message: "restore.spec.dataSource.providerManagedImport is not set",
+		}, nil
+	}
+
+	// Resolve BackupClass and BackupStorage
+	_, storage, err := c.ImportBackupRefs()
+	if err != nil {
+		return controller.RestoreExecutionStatus{
+			State:   backupv1alpha1.RestoreStateFailed,
+			Message: fmt.Sprintf("failed to resolve import backup refs: %s", err.Error()),
+		}, nil
+	}
+
+	return p.syncProviderManagedImport(c, restore, imp, storage)
+}
+
+// syncProviderManagedImport creates a PerconaServerMongoDBRestore
+// for importing data from an external PBM backup.
+func (p *PSMDBProvider) syncProviderManagedImport(
+	c *controller.Context,
+	restore *backupv1alpha1.Restore,
+	imp *backupv1alpha1.DataSourceProviderManagedImport,
+	storage *backupv1alpha1.BackupStorage,
+) (controller.RestoreExecutionStatus, error) {
+	// Parse the import parameters
+	var params pbm.PerconaImportParameters
+	if err := json.Unmarshal(imp.Parameters.Raw, &params); err != nil {
+		return controller.RestoreExecutionStatus{
+			State:   backupv1alpha1.RestoreStateFailed,
+			Message: fmt.Sprintf("failed to parse import parameters: %s", err.Error()),
+		}, nil
+	}
+
+	s3Cfg := storage.Spec.S3
+	if s3Cfg == nil {
+		return controller.RestoreExecutionStatus{
+			State:   backupv1alpha1.RestoreStateFailed,
+			Message: "storage does not have S3 configuration",
+		}, nil
+	}
+
+	// Parse the backup path to extract prefix and destination
+	// Path format: "path/to/backup" -> prefix: "path/to"
+	// destination: "s3://bucket/path/to/backup"
+	backupPath := strings.Trim(params.Path, "/")
+	split := strings.Split(backupPath, "/")
+	prefix := strings.Join(split[:len(split)-1], "/")
+	destination := fmt.Sprintf("s3://%s/%s", s3Cfg.Bucket, backupPath)
+
+	forcePathStyle := s3Cfg.ForcePathStyle != nil && *s3Cfg.ForcePathStyle
+	verifyTLS := s3Cfg.VerifyTLS == nil || *s3Cfg.VerifyTLS
+
+	psmdbRestore := &psmdbv1.PerconaServerMongoDBRestore{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      restore.Name,
+			Namespace: restore.Namespace,
+		},
+	}
+
+	if _, err := controllerutil.CreateOrUpdate(c.Context(), c.Client(), psmdbRestore, func() error {
+		if psmdbRestore.Labels == nil {
+			psmdbRestore.Labels = make(map[string]string)
+		}
+		psmdbRestore.Labels["app.kubernetes.io/managed-by"] = "openeverest"
+		psmdbRestore.Labels["app.kubernetes.io/instance"] = c.Name()
+		psmdbRestore.Labels["app.kubernetes.io/component"] = "import"
+
+		psmdbRestore.Spec = psmdbv1.PerconaServerMongoDBRestoreSpec{
+			ClusterName: c.Name(),
+			BackupSource: &psmdbv1.PerconaServerMongoDBBackupStatus{
+				Type:        pbmdefs.LogicalBackup,
+				Destination: destination,
+				S3: &psmdbv1.BackupStorageS3Spec{
+					Bucket:                s3Cfg.Bucket,
+					Region:                s3Cfg.Region,
+					EndpointURL:           s3Cfg.EndpointURL,
+					CredentialsSecret:     s3Cfg.CredentialsSecretRef.Name,
+					Prefix:                prefix,
+					InsecureSkipTLSVerify: !verifyTLS,
+					ForcePathStyle:        &forcePathStyle,
+				},
+			},
 		}
 		return controllerutil.SetControllerReference(restore, psmdbRestore, c.Client().Scheme())
 	}); err != nil {

@@ -15,6 +15,7 @@
 package provider
 
 import (
+	"encoding/json"
 	"fmt"
 
 	psmdbv1 "github.com/percona/percona-server-mongodb-operator/pkg/apis/psmdb/v1"
@@ -34,6 +35,7 @@ import (
 	monitoringv1alpha1 "github.com/openeverest/openeverest/v2/api/monitoring/v1alpha1"
 	"github.com/openeverest/openeverest/v2/provider-runtime/controller"
 
+	pbm "github.com/openeverest/provider-percona-server-mongodb/definition/backupclasses/percona-backup-mongodb"
 	"github.com/openeverest/provider-percona-server-mongodb/internal/common"
 )
 
@@ -186,6 +188,29 @@ func SyncPSMDB(c *controller.Context) error {
 	usersSecretName := "everest-secrets-" + c.Name()
 	ds := c.Instance().Spec.DataSource
 
+	// When seeding from a DataSource (Backup or Import), the target cluster's
+	// users secret must contain the same credentials as the source cluster.
+	// PBM backups embed credential hashes; mismatched secrets render the
+	// restored data inaccessible. Copy BEFORE applying the PSMDB CR so the
+	// operator never initializes the secret with random passwords.
+	if ds != nil {
+		switch ds.Type {
+		case backupv1alpha1.DataSourceTypeBackup:
+			if err := ensureDataSourceCredentials(c, usersSecretName); err != nil {
+				return err
+			}
+		case backupv1alpha1.DataSourceTypeProviderManagedImport, backupv1alpha1.DataSourceTypeJobImport:
+			if err := ensureImportCredentials(c, usersSecretName); err != nil {
+				return err
+			}
+		}
+	}
+
+	l.Info("Configuring PSMDB secrets",
+		"usersSecretName", usersSecretName,
+		"hasDataSource", ds != nil,
+	)
+
 	pmmSpec, err := configureMonitoring(c, usersSecretName)
 	if err != nil {
 		return err
@@ -198,24 +223,6 @@ func SyncPSMDB(c *controller.Context) error {
 		Users:         usersSecretName,
 		EncryptionKey: c.Name() + "-mongodb-encryption-key",
 		SSLInternal:   c.Name() + "-ssl-internal",
-	}
-
-	// When seeding from a DataSource (Backup or External), the target cluster's
-	// users secret must contain the same credentials as the source cluster.
-	// PBM backups embed credential hashes; mismatched secrets render the
-	// restored data inaccessible. Copy BEFORE applying the PSMDB CR so the
-	// operator never initializes the secret with random passwords.
-	if ds != nil {
-		switch ds.Type {
-		case backupv1alpha1.DataSourceTypeBackup:
-			if err := ensureDataSourceCredentials(c, usersSecretName); err != nil {
-				return err
-			}
-		case backupv1alpha1.DataSourceTypeExternal:
-			if err := ensureExternalImportCredentials(c, usersSecretName); err != nil {
-				return err
-			}
-		}
 	}
 
 	if err := c.Apply(psmdb); err != nil {
@@ -252,16 +259,15 @@ func SyncPSMDB(c *controller.Context) error {
 				return fmt.Errorf("reconcile data source: %w", err)
 			}
 
-		case backupv1alpha1.DataSourceTypeExternal:
+		case backupv1alpha1.DataSourceTypeProviderManagedImport:
 			// Get resolved BackupClass and BackupStorage from spec.backup
-			bc, storage, err := getImportBackupRefs(c)
+			bc, storage, err := c.ImportBackupRefs()
 			if err != nil {
 				return err
 			}
 
 			// For ProviderManaged classes, wait for Ready + BackupVersion before restore.
-			if bc.Spec.ExecutionMode == backupv1alpha1.BackupExecutionModeProviderManaged &&
-				(current.Status.State != psmdbv1.AppStateReady || current.Status.BackupVersion == "") {
+			if current.Status.State != psmdbv1.AppStateReady || current.Status.BackupVersion == "" {
 				c.SetDataSourceStatus(controller.DataSourceStatus{
 					Done:    false,
 					State:   controller.DataSourceStateWaiting,
@@ -271,15 +277,23 @@ func SyncPSMDB(c *controller.Context) error {
 				return nil
 			}
 
-			l.Info("Reconciling external data source",
-				"executionMode", bc.Spec.ExecutionMode,
+			l.Info("Reconciling provider-managed import data source",
 				"backupClass", bc.Name,
 				"storage", storage.Name,
 			)
 
-			if err := ReconcileExternalDataSource(c, bc, storage); err != nil {
-				return fmt.Errorf("reconcile external data source: %w", err)
+			if _, err := c.ReconcileImportDataSource(); err != nil {
+				return fmt.Errorf("reconcile import data source: %w", err)
 			}
+
+		case backupv1alpha1.DataSourceTypeJobImport:
+			// Job mode import - not yet implemented
+			c.SetDataSourceStatus(controller.DataSourceStatus{
+				Done:    true,
+				State:   controller.DataSourceStateFailed,
+				Reason:  corev1alpha1.ReasonDataSourceFailed,
+				Message: "JobImport is not yet implemented",
+			})
 		}
 	}
 
@@ -436,6 +450,7 @@ func createSecretCopy(c *controller.Context, targetSecretName string, sourceSecr
 	}
 	if err := c.Client().Create(c.Context(), newSecret); err != nil {
 		if apierrors.IsAlreadyExists(err) {
+			// Race: another reconcile beat us to it.
 			return nil
 		}
 		return fmt.Errorf("create target credentials secret %q: %w", targetSecretName, err)
@@ -443,21 +458,25 @@ func createSecretCopy(c *controller.Context, targetSecretName string, sourceSecr
 	return nil
 }
 
-// ensureExternalImportCredentials copies the user-provided import credentials
+// ensureImportCredentials copies the user-provided import credentials
 // secret to the target Instance's users secret. This is called before
 // applying the PSMDB CR to ensure the operator initializes its internal
 // users secret with the correct password hashes (matching the backup).
-// This is idempotent: if the target secret already exists it is not overwritten.
-func ensureExternalImportCredentials(c *controller.Context, targetSecretName string) error {
-	// If the target secret already exists, we're done. Either a previous
-	// reconcile created it or the user pre-provisioned it manually.
-	targetSecret := &corev1.Secret{}
-	if err := c.Get(targetSecret, targetSecretName); err == nil {
-		return nil
-	}
+// Unlike ensureDataSourceCredentials, this ALWAYS overwrites the target secret
+// because the import credentials MUST match the backup source.
+func ensureImportCredentials(c *controller.Context, targetSecretName string) error {
+	l := log.FromContext(c.Context())
 
 	// Get the source credentials secret name from the import config.
 	sourceSecretName := getImportCredentialsSecretName(c)
+	if sourceSecretName == "" {
+		return fmt.Errorf("failed to get import credentails secret")
+	}
+
+	l.Info("Copying import credentials",
+		"source", sourceSecretName,
+		"target", targetSecretName,
+	)
 
 	sourceSecret := &corev1.Secret{}
 	if err := c.Get(sourceSecret, sourceSecretName); err != nil {
@@ -476,8 +495,47 @@ func ensureExternalImportCredentials(c *controller.Context, targetSecretName str
 		return fmt.Errorf("get import credentials secret %q: %w", sourceSecretName, err)
 	}
 
+	// Log the keys present in the source secret (not values for security)
+	keys := make([]string, 0, len(sourceSecret.Data))
+	for k := range sourceSecret.Data {
+		keys = append(keys, k)
+	}
+	l.Info("Source secret keys", "keys", keys)
+
 	// Create the target secret with the same data.
 	return createSecretCopy(c, targetSecretName, sourceSecret)
+}
+
+// getImportCredentialsSecretName returns the credentials secret name
+// from the import parameters. This is used to set
+// psmdb.Spec.Secrets.Users directly.
+func getImportCredentialsSecretName(c *controller.Context) string {
+	ds := c.Instance().Spec.DataSource
+	if ds == nil {
+		return ""
+	}
+
+	var params []byte
+	switch ds.Type {
+	case backupv1alpha1.DataSourceTypeProviderManagedImport:
+		if ds.ProviderManagedImport == nil || ds.ProviderManagedImport.Parameters == nil {
+			return ""
+		}
+		params = ds.ProviderManagedImport.Parameters.Raw
+	case backupv1alpha1.DataSourceTypeJobImport:
+		if ds.JobImport == nil || ds.JobImport.Parameters == nil {
+			return ""
+		}
+		params = ds.JobImport.Parameters.Raw
+	default:
+		return ""
+	}
+
+	var importCfg pbm.PerconaImportParameters
+	if err := json.Unmarshal(params, &importCfg); err != nil {
+		return ""
+	}
+	return importCfg.CredentialsSecretRef.Name
 }
 
 // CleanupPSMDB handles deletion of the PSMDB cluster.

@@ -5,7 +5,8 @@ metadata:
   namespace: my-special-place
 spec:
   # Provider identifier
-  provider: percona-server-mongodb
+  providerRef:
+    name: percona-server-mongodb
 
   # Version bundle for the new instance
   version: 8.0.12
@@ -16,21 +17,19 @@ spec:
     classRef:
       name: percona-backup-mongodb
     storages:
-      - name: import-storage
-        storageRef:
+      - storageRef:
           name: bs-msp-1
 
   # Data source configuration for importing from external S3 storage
   dataSource:
-    type: External
-    external:
-      # This storage provides the BackupStorage configuration for the import.
+    type: ProviderManagedImport
+    providerManagedImport:
       storageRef:
-        name: import-storage
+        name: bs-msp-1
       # Parameters validated against BackupClass.spec.importConfig schema
       parameters:
         # Path to PBM backup in the S3 bucket (relative to bucket root)
-        path: "2026-07-17T06:29:55Z"
+        path: "2026-07-22T12:22:02Z"
         # Secret containing MongoDB credentials from the source database.
         # PBM backups embed credential hashes, so these must match the source.
         credentialsSecretRef:
