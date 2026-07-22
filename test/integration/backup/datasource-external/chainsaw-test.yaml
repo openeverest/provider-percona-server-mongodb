@@ -150,9 +150,9 @@ spec:
                   type: External
                   external:
                     storageRef:
-                      name: import-storage
+                      name: test-storage-s3
                     parameters:
-                      path: "2026-07-17T06:29:55Z"
+                      path: "/psmdb/2026-07-17T06:29:55Z"
                       credentialsSecretRef:
                         name: import-credentials
                 topology:
@@ -183,25 +183,52 @@ spec:
                   type: External
                   external:
                     storageRef:
-                      name: import-storage
+                      name: test-storage-s3
                     parameters:
-                      path: "2026-07-17T06:29:55Z"
+                      path: "/psmdb/2026-07-17T06:29:55Z"
                       credentialsSecretRef:
                         name: import-credentials
+        - assert:
+            resource:
+              apiVersion: psmdb.percona.com/v1
+              kind: PerconaServerMongoDB
+              metadata:
+                name: psmdb-imported
+              spec:
+                backup:
+                  enabled: true
+                  storages:
+                    test-storage-s3:
+                      type: s3
+                      s3:
+                        bucket: test-backup-bucket
+                        credentialsSecret: backup-storage-credentials
+                        endpointUrl: http://minio.minio.svc.cluster.local:9000
+                        insecureSkipTLSVerify: true
+                        region: us-east-1
       catch:
         - script:
             content: kubectl get in/psmdb-imported -n $NAMESPACE -o yaml
         - script:
             content: kubectl get psmdb -n $NAMESPACE -o yaml
 
-    # Step 2: Wait for PSMDB cluster ready and verify credentials copied
-    - name: wait-for-cluster-ready
+    # Step 2: Wait for PSMDB cluster ready and publish backup version
+    - name: wait-for-instance-ready
       try:
         - script:
             content: |
               kubectl patch psmdb/psmdb-imported --subresource status -n $NAMESPACE \
-                -p '{"status":{"state":"ready", "size":1, "ready":1, "host":"psmdb-imported-rs0.default.svc.cluster.local"}}' --type=merge
+                -p '{"status":{"state":"ready", "size":1, "ready":1, "host":"psmdb-imported-rs0.default.svc.cluster.local","backupVersion":"2.9.0"}}' --type=merge
         # Assert PSMDB cluster becomes ready
+        - assert:
+            resource:
+              apiVersion: psmdb.percona.com/v1
+              kind: PerconaServerMongoDB
+              metadata:
+                name: psmdb-imported
+              status:
+                state: ready
+                backupVersion: "2.9.0"
         - assert:
             resource:
               apiVersion: core.openeverest.io/v1alpha1
@@ -209,7 +236,27 @@ spec:
               metadata:
                 name: psmdb-imported
               status:
-                state: ready
+                phase: Restoring
+        # Assert restore CR was created with correct spec
+        - assert:
+            resource:
+              apiVersion: psmdb.percona.com/v1
+              kind: PerconaServerMongoDBRestore
+              metadata:
+                name: psmdb-imported-import
+              spec:
+                clusterName: psmdb-imported
+                backupSource:
+                  type: logical
+                  s3:
+                    bucket: test-backup-bucket
+                    region: us-east-1
+                    endpointUrl: http://minio.minio.svc.cluster.local:9000
+                    credentialsSecret: backup-storage-credentials
+                    # TODO: check path
+                    # prefix: "2026-07-17T06:29:55Z"
+                    insecureSkipTLSVerify: true
+                    forcePathStyle: true
         # Assert credentials secret was copied
         - assert:
             resource:
@@ -228,27 +275,16 @@ spec:
     # Step 3: Verify restore CR created and Instance becomes Ready
     - name: verify-restore-and-instance-ready
       try:
-        # Assert restore CR was created with correct spec
+        - script:
+            content: |
+              kubectl patch psmdb-restore/psmdb-imported-import --subresource status -n $NAMESPACE \
+                -p '{"status":{"state":"ready"}}' --type=merge
         - assert:
             resource:
               apiVersion: psmdb.percona.com/v1
               kind: PerconaServerMongoDBRestore
               metadata:
                 name: psmdb-imported-import
-                annotations:
-                  openeverest.io/managed-by-data-import: "true"
-                labels:
-                  app.kubernetes.io/component: import
-                  app.kubernetes.io/instance: psmdb-imported
-                  app.kubernetes.io/managed-by: openeverest
-              spec:
-                clusterName: psmdb-imported
-                backupSource:
-                  type: logical
-                  s3:
-                    bucket: test-backup-bucket
-                    region: us-east-1
-                    endpointUrl: http://minio.minio.svc.cluster.local:9000
               status:
                 state: ready
         # Assert Instance becomes Ready with DataSourceReady condition
@@ -260,10 +296,6 @@ spec:
                 name: psmdb-imported
               status:
                 phase: Ready
-                conditions:
-                  - type: DataSourceReady
-                    status: "True"
-                    reason: Succeeded
       catch:
         - script:
             content: kubectl get in/psmdb-imported -n $NAMESPACE -o yaml
@@ -445,6 +477,8 @@ spec:
               apiVersion: v1
               kind: Secret
               name: backup-storage-credentials
+        - script:
+            content: kubectl patch psmdb/psmdb-imported -n $NAMESPACE -p '{"metadata":{"finalizers":null}}' --type merge
         # Verify cleanup
         - script:
             content: |

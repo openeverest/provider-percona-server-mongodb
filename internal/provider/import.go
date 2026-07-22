@@ -37,13 +37,6 @@ import (
 const (
 	// ImportRestoreSuffix is appended to the Instance name to form the import restore CR name.
 	ImportRestoreSuffix = "-import"
-	// ImportCredentialsSecretSuffix is appended to the Instance name to form the S3 credentials secret name.
-	ImportCredentialsSecretSuffix = "-import-s3-creds"
-
-	// ManagedByDataImportAnnotation marks a PerconaServerMongoDBRestore as created by the import workflow.
-	// This prevents the Everest operator from creating a DatabaseBackupRestore (DBR) for this restore.
-	ManagedByDataImportAnnotation      = "openeverest.io/managed-by-data-import"
-	ManagedByDataImportAnnotationValue = "true"
 )
 
 // ReconcileExternalDataSource handles the import workflow for type=External data sources.
@@ -162,10 +155,7 @@ func ensureImportRestore(
 	// Path format: "path/to/backup" -> prefix: "path/to", destination: "s3://bucket/path/to/backup"
 	backupPath := strings.Trim(importCfg.Path, "/")
 	split := strings.Split(backupPath, "/")
-	prefix := ""
-	if len(split) > 1 {
-		prefix = strings.Join(split[:len(split)-1], "/")
-	}
+	prefix := strings.Join(split[:len(split)-1], "/")
 	destination := fmt.Sprintf("s3://%s/%s", s3Cfg.Bucket, backupPath)
 
 	forcePathStyle := s3Cfg.ForcePathStyle != nil && *s3Cfg.ForcePathStyle
@@ -179,12 +169,6 @@ func ensureImportRestore(
 	}
 
 	_, err := controllerutil.CreateOrUpdate(c.Context(), c.Client(), psmdbRestore, func() error {
-		// Mark as managed by data import so other controllers don't create DBR for it
-		if psmdbRestore.Annotations == nil {
-			psmdbRestore.Annotations = make(map[string]string)
-		}
-		psmdbRestore.Annotations[ManagedByDataImportAnnotation] = ManagedByDataImportAnnotationValue
-
 		// Labels to identify the object
 		if psmdbRestore.Labels == nil {
 			psmdbRestore.Labels = make(map[string]string)
@@ -193,9 +177,9 @@ func ensureImportRestore(
 		psmdbRestore.Labels["app.kubernetes.io/instance"] = c.Name()
 		psmdbRestore.Labels["app.kubernetes.io/component"] = "import"
 
-		// Set owner reference for cleanup
-		if err := controllerutil.SetOwnerReference(c.Instance(), psmdbRestore, c.Client().Scheme()); err != nil {
-			return fmt.Errorf("failed to set owner reference: %w", err)
+		// Set controller reference so WatchOwned triggers reconciliation on status changes
+		if err := controllerutil.SetControllerReference(c.Instance(), psmdbRestore, c.Client().Scheme()); err != nil {
+			return fmt.Errorf("failed to set controller reference: %w", err)
 		}
 
 		psmdbRestore.Spec = psmdbv1.PerconaServerMongoDBRestoreSpec{
