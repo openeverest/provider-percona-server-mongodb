@@ -210,7 +210,7 @@ func validateDataSourceExternal(c *controller.Context, ds *backupv1alpha1.DataSo
 	}
 
 	// Validate config against BackupClass.spec.importConfig schema
-	if err := bc.Spec.ImportParameterSchema.Validate(ext.Parameters); err != nil {
+	if err := bc.Spec.ImportParametersSchema.Validate(ext.Parameters); err != nil {
 		return fmt.Errorf("spec.dataSource.external.parameters validation failed: %w", err)
 	}
 

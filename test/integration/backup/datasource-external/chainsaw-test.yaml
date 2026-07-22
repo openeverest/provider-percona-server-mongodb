@@ -1,0 +1,457 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/kyverno/chainsaw/main/.schemas/json/test-chainsaw-v1alpha1.json
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: datasource-external
+spec:
+  description: |
+    Test external data source import for PSMDB.
+    This test verifies:
+    1. Creating an Instance with external dataSource imports data from S3
+    2. Proper credential copying from import secret to everest-secrets
+    3. Restore CR creation and completion
+    4. Instance transitions to Ready with DataSourceReady condition
+    5. Failure case when storage reference is invalid
+  steps:
+    - name: deployment
+      try:
+      - assert:
+          resource:
+            apiVersion: apps/v1
+            kind: Deployment
+            metadata:
+              name: provider-percona-server-mongodb-operator
+              namespace: provider-system
+            spec:
+              replicas: 0
+      catch:
+      - script:
+          content: kubectl get provider-percona-server-mongodb-operator -n provider-system -o yaml
+    - name: install-prerequisites
+      try:
+        - apply:
+            resource:
+              apiVersion: v1
+              kind: Secret
+              metadata:
+                name: backup-storage-credentials
+              type: Opaque
+              data:
+                AWS_ACCESS_KEY_ID: dGVzdC1hY2Nlc3Mta2V5
+                AWS_SECRET_ACCESS_KEY: dGVzdC1zZWNyZXQta2V5
+        - apply:
+            resource:
+              apiVersion: backup.openeverest.io/v1alpha1
+              kind: BackupStorage
+              metadata:
+                name: test-storage-s3
+              spec:
+                type: s3
+                s3:
+                  bucket: test-backup-bucket
+                  region: us-east-1
+                  endpointURL: http://minio.minio.svc.cluster.local:9000
+                  forcePathStyle: true
+                  credentialsSecretRef:
+                    name: backup-storage-credentials
+                  verifyTLS: false
+        - apply:
+            resource:
+              apiVersion: backup.openeverest.io/v1alpha1
+              kind: BackupClass
+              metadata:
+                name: percona-backup-mongodb
+              spec:
+                displayName: Percona Backup for MongoDB
+                executionMode: ProviderManaged
+                supportedProviders:
+                  - percona-server-mongodb
+                providerManaged:
+                  supportsPITR: true
+                  supportsImport: true
+                  limits:
+                    maxPITREnabledStorages: 1
+                importParametersSchema:
+                  openAPIV3Schema:
+                    type: object
+                    required:
+                      - path
+                      - credentialsSecretRef
+                    properties:
+                      path:
+                        type: string
+                        description: Path to PBM backup in the S3 bucket
+                      credentialsSecretRef:
+                        type: object
+                        required:
+                          - name
+                        properties:
+                          name:
+                            type: string
+                            description: Name of the secret containing MongoDB credentials
+        - assert:
+            resource:
+              apiVersion: backup.openeverest.io/v1alpha1
+              kind: BackupStorage
+              metadata:
+                name: test-storage-s3
+        - assert:
+            resource:
+              apiVersion: backup.openeverest.io/v1alpha1
+              kind: BackupClass
+              metadata:
+                name: percona-backup-mongodb
+      catch:
+        - script:
+            content: kubectl get backupstorage -n $NAMESPACE -o yaml
+        - script:
+            content: kubectl get backupclass -o yaml
+
+    # Step 1: Create Instance with external dataSource
+    - name: create-instance-with-external-datasource
+      try:
+        # Create import credentials secret
+        - apply:
+            resource:
+              apiVersion: v1
+              kind: Secret
+              metadata:
+                name: import-credentials
+              type: Opaque
+              stringData:
+                MONGODB_USER_ADMIN_USER: userAdmin
+                MONGODB_USER_ADMIN_PASSWORD: test-password
+                MONGODB_BACKUP_USER: backup
+                MONGODB_BACKUP_PASSWORD: test-password
+                MONGODB_CLUSTER_ADMIN_USER: clusterAdmin
+                MONGODB_CLUSTER_ADMIN_PASSWORD: test-password
+                MONGODB_CLUSTER_MONITOR_USER: clusterMonitor
+                MONGODB_CLUSTER_MONITOR_PASSWORD: test-password
+                MONGODB_DATABASE_ADMIN_USER: databaseAdmin
+                MONGODB_DATABASE_ADMIN_PASSWORD: test-password
+        # Create Instance with external data source
+        - apply:
+            resource:
+              apiVersion: core.openeverest.io/v1alpha1
+              kind: Instance
+              metadata:
+                name: psmdb-imported
+              spec:
+                providerRef:
+                  name: percona-server-mongodb
+                backup:
+                  enabled: true
+                  classRef:
+                    name: percona-backup-mongodb
+                  storages:
+                    - storageRef:
+                        name: test-storage-s3
+                dataSource:
+                  type: External
+                  external:
+                    storageRef:
+                      name: import-storage
+                    parameters:
+                      path: "2026-07-17T06:29:55Z"
+                      credentialsSecretRef:
+                        name: import-credentials
+                topology:
+                  type: replicaset
+                components:
+                  engine:
+                    type: mongod
+                    replicas: 3
+                    storage:
+                      size: 25Gi
+                      storageClass: standard
+                    resources:
+                      limits:
+                        cpu: "1"
+                        memory: 4G
+                      requests:
+                        cpu: 500m
+                        memory: 2G
+        # Assert Instance is created with correct spec
+        - assert:
+            resource:
+              apiVersion: core.openeverest.io/v1alpha1
+              kind: Instance
+              metadata:
+                name: psmdb-imported
+              spec:
+                dataSource:
+                  type: External
+                  external:
+                    storageRef:
+                      name: import-storage
+                    parameters:
+                      path: "2026-07-17T06:29:55Z"
+                      credentialsSecretRef:
+                        name: import-credentials
+      catch:
+        - script:
+            content: kubectl get in/psmdb-imported -n $NAMESPACE -o yaml
+        - script:
+            content: kubectl get psmdb -n $NAMESPACE -o yaml
+
+    # Step 2: Wait for PSMDB cluster ready and verify credentials copied
+    - name: wait-for-cluster-ready
+      try:
+        - script:
+            content: |
+              kubectl patch psmdb/psmdb-imported --subresource status -n $NAMESPACE \
+                -p '{"status":{"state":"ready", "size":1, "ready":1, "host":"psmdb-imported-rs0.default.svc.cluster.local"}}' --type=merge
+        # Assert PSMDB cluster becomes ready
+        - assert:
+            resource:
+              apiVersion: core.openeverest.io/v1alpha1
+              kind: Instance
+              metadata:
+                name: psmdb-imported
+              status:
+                state: ready
+        # Assert credentials secret was copied
+        - assert:
+            resource:
+              apiVersion: v1
+              kind: Secret
+              metadata:
+                name: everest-secrets-psmdb-imported
+      catch:
+        - script:
+            content: kubectl get in/psmdb-imported -n $NAMESPACE -o yaml
+        - script:
+            content: kubectl get psmdb/psmdb-imported -n $NAMESPACE -o yaml
+        - script:
+            content: kubectl get secrets -n $NAMESPACE -o name
+
+    # Step 3: Verify restore CR created and Instance becomes Ready
+    - name: verify-restore-and-instance-ready
+      try:
+        # Assert restore CR was created with correct spec
+        - assert:
+            resource:
+              apiVersion: psmdb.percona.com/v1
+              kind: PerconaServerMongoDBRestore
+              metadata:
+                name: psmdb-imported-import
+                annotations:
+                  openeverest.io/managed-by-data-import: "true"
+                labels:
+                  app.kubernetes.io/component: import
+                  app.kubernetes.io/instance: psmdb-imported
+                  app.kubernetes.io/managed-by: openeverest
+              spec:
+                clusterName: psmdb-imported
+                backupSource:
+                  type: logical
+                  s3:
+                    bucket: test-backup-bucket
+                    region: us-east-1
+                    endpointUrl: http://minio.minio.svc.cluster.local:9000
+              status:
+                state: ready
+        # Assert Instance becomes Ready with DataSourceReady condition
+        - assert:
+            resource:
+              apiVersion: core.openeverest.io/v1alpha1
+              kind: Instance
+              metadata:
+                name: psmdb-imported
+              status:
+                phase: Ready
+                conditions:
+                  - type: DataSourceReady
+                    status: "True"
+                    reason: Succeeded
+      catch:
+        - script:
+            content: kubectl get in/psmdb-imported -n $NAMESPACE -o yaml
+        - script:
+            content: kubectl get psmdb-restore -n $NAMESPACE -o yaml
+
+    # Step 4: Delete successful import Instance
+    - name: delete-successful-instance
+      try:
+        - delete:
+            ref:
+              apiVersion: core.openeverest.io/v1alpha1
+              kind: Instance
+              name: psmdb-imported
+        - script:
+            content: |
+              while kubectl get in psmdb-imported -n $NAMESPACE 2>/dev/null; do
+                sleep 5
+              done
+              echo "Instance deleted"
+      catch:
+        - script:
+            content: kubectl get in -n $NAMESPACE -o yaml
+        - script:
+            content: kubectl get psmdb -n $NAMESPACE -o yaml
+
+    # Step 5: Test failure case - invalid storage reference
+    - name: create-failing-instance-invalid-storage
+      try:
+        # Create credentials for failing instance
+        - apply:
+            resource:
+              apiVersion: v1
+              kind: Secret
+              metadata:
+                name: psmdb-import-failure-credentials
+              type: Opaque
+              stringData:
+                MONGODB_USER_ADMIN_USER: userAdmin
+                MONGODB_USER_ADMIN_PASSWORD: test-password
+                MONGODB_BACKUP_USER: backup
+                MONGODB_BACKUP_PASSWORD: test-password
+                MONGODB_CLUSTER_ADMIN_USER: clusterAdmin
+                MONGODB_CLUSTER_ADMIN_PASSWORD: test-password
+                MONGODB_CLUSTER_MONITOR_USER: clusterMonitor
+                MONGODB_CLUSTER_MONITOR_PASSWORD: test-password
+                MONGODB_DATABASE_ADMIN_USER: databaseAdmin
+                MONGODB_DATABASE_ADMIN_PASSWORD: test-password
+        # Create Instance with invalid storage reference
+        - apply:
+            resource:
+              apiVersion: core.openeverest.io/v1alpha1
+              kind: Instance
+              metadata:
+                name: psmdb-import-failure
+              spec:
+                providerRef:
+                  name: percona-server-mongodb
+                backup:
+                  enabled: true
+                  classRef:
+                    name: percona-backup-mongodb
+                  storages:
+                    - storageRef:
+                        name: test-storage-s3
+                dataSource:
+                  type: External
+                  external:
+                    storageRef:
+                      # References a storage that doesn't exist in spec.backup.storages
+                      name: non-existent-storage
+                    parameters:
+                      path: "2026-07-17T06:29:55Z"
+                      credentialsSecretRef:
+                        name: psmdb-import-failure-credentials
+                topology:
+                  type: replicaset
+                components:
+                  engine:
+                    type: mongod
+                    replicas: 3
+                    storage:
+                      size: 25Gi
+                      storageClass: standard
+                    resources:
+                      limits:
+                        cpu: "1"
+                        memory: 4G
+                      requests:
+                        cpu: 500m
+                        memory: 2G
+        # Assert Instance is created
+        - assert:
+            resource:
+              apiVersion: core.openeverest.io/v1alpha1
+              kind: Instance
+              metadata:
+                name: psmdb-import-failure
+              spec:
+                dataSource:
+                  type: External
+                  external:
+                    storageRef:
+                      name: non-existent-storage
+      catch:
+        - script:
+            content: kubectl get in/psmdb-import-failure -n $NAMESPACE -o yaml
+
+    # Step 6: Verify failing instance does not create PSMDB (validation failure)
+    - name: verify-failing-instance-no-psmdb
+      try:
+        # Wait a bit for reconciliation
+        - sleep:
+            duration: 10s
+        # Assert PSMDB CR is NOT created due to validation failure
+        - script:
+            content: |
+              if kubectl get psmdb psmdb-import-failure -n $NAMESPACE 2>/dev/null; then
+                echo "ERROR: PSMDB should not be created for invalid storage reference"
+                exit 1
+              fi
+              echo "PSMDB not created as expected (validation failure)"
+        # Assert Instance exists but validation prevents PSMDB creation
+        - assert:
+            resource:
+              apiVersion: core.openeverest.io/v1alpha1
+              kind: Instance
+              metadata:
+                name: psmdb-import-failure
+      catch:
+        - script:
+            content: kubectl get in/psmdb-import-failure -n $NAMESPACE -o yaml
+        - script:
+            content: kubectl get psmdb -n $NAMESPACE -o yaml
+
+    # Step 7: Delete failing Instance
+    - name: delete-failing-instance
+      try:
+        - delete:
+            ref:
+              apiVersion: core.openeverest.io/v1alpha1
+              kind: Instance
+              name: psmdb-import-failure
+        - script:
+            content: |
+              while kubectl get in psmdb-import-failure -n $NAMESPACE 2>/dev/null; do
+                sleep 5
+              done
+              echo "Failing instance deleted"
+      catch:
+        - script:
+            content: kubectl get in -n $NAMESPACE -o yaml
+
+    # Step 8: Cleanup all resources
+    - name: cleanup
+      try:
+        - delete:
+            ref:
+              apiVersion: v1
+              kind: Secret
+              name: psmdb-import-failure-credentials
+        - delete:
+            ref:
+              apiVersion: v1
+              kind: Secret
+              name: import-credentials
+        - delete:
+            ref:
+              apiVersion: backup.openeverest.io/v1alpha1
+              kind: BackupStorage
+              name: test-storage-s3
+        - delete:
+            ref:
+              apiVersion: backup.openeverest.io/v1alpha1
+              kind: BackupClass
+              name: percona-backup-mongodb
+        - delete:
+            ref:
+              apiVersion: v1
+              kind: Secret
+              name: backup-storage-credentials
+        # Verify cleanup
+        - script:
+            content: |
+              kubectl get backupstorage test-storage-s3 -n $NAMESPACE 2>&1 | grep -q "not found" || exit 1
+              kubectl get secret backup-storage-credentials -n $NAMESPACE 2>&1 | grep -q "not found" || exit 1
+              kubectl get secret import-credentials -n $NAMESPACE 2>&1 | grep -q "not found" || exit 1
+              echo "Cleanup complete"
+      catch:
+        - script:
+            content: kubectl get all -n $NAMESPACE -o yaml

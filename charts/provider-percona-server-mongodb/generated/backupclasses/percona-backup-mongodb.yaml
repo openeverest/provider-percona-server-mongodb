@@ -13,9 +13,27 @@ spec:
   displayName: Percona Backup for MongoDB
   executionMode: ProviderManaged
   importParametersSchema:
-    openAPIV3Schema: PerconaImportParameters
+    openAPIV3Schema:
+      properties:
+        credentialsSecretRef:
+          properties:
+            name:
+              type: string
+          type: object
+        path:
+          type: string
+      type: object
   parametersSchema:
-    openAPIV3Schema: PerconaBackupParameters
+    openAPIV3Schema:
+      properties:
+        compressionLevel:
+          format: int32
+          type: integer
+        compressionType:
+          type: string
+        type:
+          type: string
+      type: object
   providerManaged:
     limits:
       maxPITREnabledStorages: 1
@@ -23,6 +41,7 @@ spec:
     supportsImport: true
     supportsPITR: true
   restoreParametersSchema:
-    openAPIV3Schema: PerconaRestoreParameters
+    openAPIV3Schema:
+      type: object
   supportedProviders:
     - percona-server-mongodb

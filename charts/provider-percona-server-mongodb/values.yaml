@@ -162,7 +162,7 @@ presets:
         version: 8.0.12-4
         topology:
           type: sharded
-          config:
+          parameters:
             numShards: 2
         components:
           engine:

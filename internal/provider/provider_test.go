@@ -749,9 +749,22 @@ func TestValidatePSMDB(t *testing.T) {
 				},
 			}
 
+			// Create BackupStorage for external dataSource tests
+			myStorage := &backupv1alpha1.BackupStorage{
+				ObjectMeta: metav1.ObjectMeta{Name: "my-storage"},
+				Spec: backupv1alpha1.BackupStorageSpec{
+					Type: backupv1alpha1.BackupStorageTypeS3,
+					S3: &backupv1alpha1.BackupStorageS3Spec{
+						Bucket:      "test-bucket",
+						Region:      "us-east-1",
+						EndpointURL: "http://minio:9000",
+					},
+				},
+			}
+
 			fakeClient := fake.NewClientBuilder().
 				WithScheme(scheme).
-				WithObjects(tt.instance, providerManagedNoImportBC, jobModeNoImportBC).
+				WithObjects(tt.instance, providerManagedNoImportBC, jobModeNoImportBC, myStorage).
 				Build()
 			ctx := controller.NewContext(context.Background(), fakeClient, tt.instance, "psmdb")
 			err := ValidatePSMDB(ctx)

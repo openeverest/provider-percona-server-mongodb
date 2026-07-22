@@ -55,7 +55,7 @@ type PerconaRestoreParameters struct{}
 // restored data inaccessible because MongoDB will reject authentication
 // attempts with the wrong password hashes.
 //
-// Users must provide a CredentialsSecretName containing the MongoDB credentials
+// Users must provide a CredentialsSecretRef containing the MongoDB credentials
 // from the source database. The provider copies these credentials to the target
 // Instance's users secret BEFORE initiating the restore.
 type PerconaImportParameters struct {

@@ -33,12 +33,36 @@ spec:
     backupAgent:
       type: backup
     configServer:
+      parametersSchema:
+        openAPIV3Schema:
+          properties:
+            configuration:
+              type: string
+          type: object
       type: mongod
     engine:
+      parametersSchema:
+        openAPIV3Schema:
+          properties:
+            configuration:
+              type: string
+          type: object
       type: mongod
     monitoring:
+      parametersSchema:
+        openAPIV3Schema:
+          properties:
+            monitoringConfigName:
+              type: string
+          type: object
       type: pmm
     proxy:
+      parametersSchema:
+        openAPIV3Schema:
+          properties:
+            configuration:
+              type: string
+          type: object
       type: mongod
   topologies:
     replicaSet:
@@ -57,6 +81,13 @@ spec:
         monitoring:
           optional: true
         proxy: {}
+      parametersSchema:
+        openAPIV3Schema:
+          properties:
+            numShards:
+              format: int32
+              type: integer
+          type: object
   uiSchema:
     replicaSet:
       sections:

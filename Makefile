@@ -118,6 +118,10 @@ test-integration-backup: ## Run backup integration tests.
 test-integration-backup-datasource: ## Run backup datasource integration tests.
 	. ./test/vars.sh && kubectl kuttl test --config ./test/integration/kuttl-backup.yaml --test "datasource"
 
+.PHONY: test-integration-backup-datasource-external
+test-integration-backup-datasource-external: ## Run external datasource import integration tests.
+	. ./test/vars.sh && chainsaw test --config ./test/integration/.chainsaw.yaml ./test/integration/backup/datasource-external
+
 .PHONY: test-e2e
 test-e2e: ## Run Playwright E2E tests against a running Everest UI (http://localhost:8080).
 	cd test/e2e && npm ci && npx playwright test
