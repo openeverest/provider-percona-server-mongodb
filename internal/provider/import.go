@@ -324,5 +324,5 @@ func reconcileJobModeImport(
 	_ *backupv1alpha1.BackupClass,
 	_ *backupv1alpha1.BackupStorage,
 ) error {
-	return fmt.Errorf("Job-mode import is not yet implemented")
+	return fmt.Errorf("job mode import is not yet implemented")
 }
