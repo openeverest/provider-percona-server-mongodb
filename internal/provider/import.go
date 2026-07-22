@@ -89,7 +89,7 @@ func ReconcileExternalDataSource(c *controller.Context) error {
 func reconcileProviderManagedImport(c *controller.Context, ext *backupv1alpha1.DataSourceExternal, storage *backupv1alpha1.BackupStorage) error {
 	l := log.FromContext(c.Context())
 
-	var params pbm.PerconaImportConfig
+	var params pbm.PerconaImportParameters
 	if err := json.Unmarshal(ext.Parameters.Raw, &params); err != nil {
 		return fmt.Errorf("failed to parse import config: %w", err)
 	}
@@ -120,7 +120,7 @@ func getExternalImportCredentialsSecretName(c *controller.Context) string {
 		return ""
 	}
 
-	var importCfg pbm.PerconaImportConfig
+	var importCfg pbm.PerconaImportParameters
 	if err := json.Unmarshal(ds.External.Parameters.Raw, &importCfg); err != nil {
 		return ""
 	}
@@ -154,7 +154,7 @@ func ensureImportRestore(
 	c *controller.Context,
 	restoreName string,
 	storage *backupv1alpha1.BackupStorage,
-	importCfg pbm.PerconaImportConfig,
+	importCfg pbm.PerconaImportParameters,
 ) error {
 	s3Cfg := storage.Spec.S3
 
@@ -207,7 +207,7 @@ func ensureImportRestore(
 					Bucket:                s3Cfg.Bucket,
 					Region:                s3Cfg.Region,
 					EndpointURL:           s3Cfg.EndpointURL,
-					CredentialsSecret:     s3Cfg.CredentialsSecretName,
+					CredentialsSecret:     s3Cfg.CredentialsSecretRef.Name,
 					Prefix:                prefix,
 					InsecureSkipTLSVerify: !verifyTLS,
 					ForcePathStyle:        &forcePathStyle,
@@ -297,7 +297,7 @@ func getImportBackupRefs(c *controller.Context) (*backupv1alpha1.BackupClass, *b
 	// Find the storage entry matching the requested name
 	var storageRefName string
 	for _, s := range backupCfg.Storages {
-		if s.Name == requestedStorage {
+		if s.StorageRef.Name == requestedStorage {
 			storageRefName = s.StorageRef.Name
 			break
 		}

@@ -5,17 +5,6 @@ kind: BackupClass
 metadata:
   name: percona-backup-mongodb
 spec:
-  config:
-    openAPIV3Schema:
-      properties:
-        compressionLevel:
-          format: int32
-          type: integer
-        compressionType:
-          type: string
-        type:
-          type: string
-      type: object
   description: |
     BackupClass for the Percona Server MongoDB provider. Backups, restores,
     and external data imports are managed natively by Percona Backup for
@@ -23,37 +12,17 @@ spec:
     any side-car Job for this class.
   displayName: Percona Backup for MongoDB
   executionMode: ProviderManaged
-  importConfig:
-    openAPIV3Schema:
-      properties:
-        credentialsSecretRef:
-          properties:
-            apiVersion:
-              type: string
-            fieldPath:
-              type: string
-            kind:
-              type: string
-            name:
-              type: string
-            namespace:
-              type: string
-            resourceVersion:
-              type: string
-            uid:
-              type: string
-          type: object
-        path:
-          type: string
-      type: object
+  importParametersSchema:
+    openAPIV3Schema: PerconaImportParameters
+  parametersSchema:
+    openAPIV3Schema: PerconaBackupParameters
   providerManaged:
     limits:
       maxPITREnabledStorages: 1
       maxStorages: 1
     supportsImport: true
     supportsPITR: true
-  restoreConfig:
-    openAPIV3Schema:
-      type: object
+  restoreParametersSchema:
+    openAPIV3Schema: PerconaRestoreParameters
   supportedProviders:
     - percona-server-mongodb

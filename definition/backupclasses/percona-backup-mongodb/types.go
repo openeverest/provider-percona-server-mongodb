@@ -20,12 +20,14 @@
 // +k8s:openapi-gen=true
 package perconabackupmongodb
 
-import corev1 "k8s.io/api/core/v1"
+import (
+	commonv1alpha1 "github.com/openeverest/openeverest/v2/api/common/v1alpha1"
+)
 
-// PerconaBackupConfig describes the configuration accepted by Backup CRs that
-// target this class (spec.config). Mirrors the fields surfaced by ui.yaml's
-// `backup` section.
-type PerconaBackupConfig struct {
+// PerconaBackupParameters describes the parameters accepted by Backup CRs
+// that target this class (spec.parameters). Mirrors the fields surfaced by
+// ui.yaml's `backup` section.
+type PerconaBackupParameters struct {
 	// Type selects between logical and physical PBM backups.
 	// +kubebuilder:validation:Enum=logical;physical
 	Type string `json:"type,omitempty"`
@@ -38,23 +40,11 @@ type PerconaBackupConfig struct {
 	CompressionLevel *int32 `json:"compressionLevel,omitempty"`
 }
 
-// PerconaRestoreConfig describes the configuration accepted by Restore CRs
-// that target this class (spec.config). PSMDB does not currently expose
+// PerconaRestoreParameters describes the parameters accepted by Restore CRs
+// that target this class (spec.parameters). PSMDB does not currently expose
 // restore-time options through OpenEverest; the struct is intentionally
 // empty and ships an empty schema until requirements crystallize.
-type PerconaRestoreConfig struct{}
-
-// PerconaPITRConfig describes the per-storage PITR custom config exposed to
-// Instance.spec.backup.storages[].pitr.config. Mirrors the fields surfaced
-// by ui.yaml's `pitr` section.
-type PerconaPITRConfig struct {
-	// OplogSpanMin is the interval (minutes) between PBM oplog chunk boundaries.
-	// +kubebuilder:validation:Minimum=1
-	OplogSpanMin *int32 `json:"oplogSpanMin,omitempty"`
-	// CompressionType selects the PBM oplog compression algorithm.
-	// +kubebuilder:validation:Enum=none;snappy;zstd
-	CompressionType string `json:"compressionType,omitempty"`
-}
+type PerconaRestoreParameters struct{}
 
 // PerconaImportConfig describes the configuration accepted when an Instance
 // is created with spec.dataSource.type=External referencing this BackupClass.
@@ -68,7 +58,7 @@ type PerconaPITRConfig struct {
 // Users must provide a CredentialsSecretName containing the MongoDB credentials
 // from the source database. The provider copies these credentials to the target
 // Instance's users secret BEFORE initiating the restore.
-type PerconaImportConfig struct {
+type PerconaImportParameters struct {
 	// Path is the S3 path (prefix) where the PBM/mongodump backup data resides.
 	// This is relative to the bucket root configured in the referenced BackupStorage.
 	// Example: "backups/2026-07-15/my-cluster" for a backup at
@@ -94,5 +84,5 @@ type PerconaImportConfig struct {
 	//   - MONGODB_USER_ADMIN_USER / MONGODB_USER_ADMIN_PASSWORD
 	//
 	// +kubebuilder:validation:Required
-	CredentialsSecretRef corev1.ObjectReference `json:"credentialsSecretRef"`
+	CredentialsSecretRef commonv1alpha1.ObjectRef `json:"credentialsSecretRef"`
 }

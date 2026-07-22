@@ -52,7 +52,8 @@ metadata:
 spec:
   type: pmm
   pmm:
-    credentialsSecretName: mc-psmdb-secret
+    credentialsSecretRef:
+      name: mc-psmdb-secret
     verifyTLS: false
     url: http://localhost-mc-psmdb
 # status:
@@ -102,7 +103,7 @@ spec:
           # cpu: "1"
           cpu: 1
           memory: 1G
-      customSpec:
+      parameters:
         monitoringConfigName: mc-psmdb
 ---
 apiVersion: psmdb.percona.com/v1

@@ -44,7 +44,7 @@ const (
 
 	// credentialsSecretPath is the field index path for looking up MonitoringConfigs
 	// by their referenced credentials Secret name.
-	credentialsSecretPath = ".spec.pmm.credentialsSecretName"
+	credentialsSecretPath = ".spec.pmm.credentialsSecretRef.name"
 )
 
 // resolveMonitoringConfig looks up the MonitoringConfig referenced by the
@@ -56,18 +56,18 @@ func resolveMonitoringConfig(c *controller.Context) (*monitoringv1alpha1.Monitor
 		return nil, nil
 	}
 
-	var customSpec components.PMMCustomSpec
-	if err := c.DecodeComponentCustomSpec(monitoring, &customSpec); err != nil {
-		return nil, fmt.Errorf("decode monitoring custom spec: %w", err)
+	var params components.PMMParameters
+	if err := c.DecodeComponentParameters(monitoring, &params); err != nil {
+		return nil, fmt.Errorf("decode monitoring parameters: %w", err)
 	}
 
-	if customSpec.MonitoringConfigName == nil || *customSpec.MonitoringConfigName == "" {
+	if params.MonitoringConfigName == nil || *params.MonitoringConfigName == "" {
 		return nil, fmt.Errorf("monitoringConfigName is required when monitoring component is set")
 	}
 
 	mc := &monitoringv1alpha1.MonitoringConfig{}
-	if err := c.Get(mc, *customSpec.MonitoringConfigName); err != nil {
-		return nil, fmt.Errorf("get MonitoringConfig %q: %w", *customSpec.MonitoringConfigName, err)
+	if err := c.Get(mc, *params.MonitoringConfigName); err != nil {
+		return nil, fmt.Errorf("get MonitoringConfig %q: %w", *params.MonitoringConfigName, err)
 	}
 
 	return mc, nil
@@ -108,7 +108,7 @@ func configureMonitoring(
 
 	// Copy the PMM API key from the MonitoringConfig credentials secret
 	// to the PSMDB users secret so the PMM sidecar can authenticate.
-	if err := copySecretData(c, mc.Spec.PMM.CredentialsSecretName, usersSecretName, "apiKey", "PMM_SERVER_TOKEN"); err != nil {
+	if err := copySecretData(c, mc.Spec.PMM.CredentialsSecretRef.Name, usersSecretName, "apiKey", "PMM_SERVER_TOKEN"); err != nil {
 		return nil, fmt.Errorf("copy PMM API key to users secret: %w", err)
 	}
 
@@ -290,20 +290,20 @@ func extractMonitoringConfigName(obj client.Object) []string {
 		return nil
 	}
 
-	if monitoring.CustomSpec == nil || monitoring.CustomSpec.Raw == nil {
+	if monitoring.Parameters == nil || monitoring.Parameters.Raw == nil {
 		return nil
 	}
 
-	var customSpec components.PMMCustomSpec
-	if err := json.Unmarshal(monitoring.CustomSpec.Raw, &customSpec); err != nil {
+	var params components.PMMParameters
+	if err := json.Unmarshal(monitoring.Parameters.Raw, &params); err != nil {
 		return nil
 	}
 
-	if customSpec.MonitoringConfigName == nil || *customSpec.MonitoringConfigName == "" {
+	if params.MonitoringConfigName == nil || *params.MonitoringConfigName == "" {
 		return nil
 	}
 
-	return []string{*customSpec.MonitoringConfigName}
+	return []string{*params.MonitoringConfigName}
 }
 
 // extractMonitoringConfigSecretName extracts the credentials secret name
@@ -315,11 +315,11 @@ func extractMonitoringConfigSecretName(obj client.Object) []string {
 		return nil
 	}
 
-	if mc.Spec.PMM == nil || mc.Spec.PMM.CredentialsSecretName == "" {
+	if mc.Spec.PMM == nil || mc.Spec.PMM.CredentialsSecretRef.Name == "" {
 		return nil
 	}
 
-	return []string{mc.Spec.PMM.CredentialsSecretName}
+	return []string{mc.Spec.PMM.CredentialsSecretRef.Name}
 }
 
 // monitoringConfigPredicate returns a predicate that filters events

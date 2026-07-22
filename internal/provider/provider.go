@@ -375,7 +375,7 @@ func buildConnectionDetails(c *controller.Context, psmdb *psmdbv1.PerconaServerM
 
 // ensureDataSourceCredentials copies the users secret from the source Instance
 // to the target Instance when seeding from .spec.dataSource. The source
-// Instance is identified via the referenced Backup CR's .spec.instanceName.
+// Instance is identified via the referenced Backup CR's .spec.instanceRef.name.
 // This is idempotent: if the target secret already exists it is not
 // overwritten, ensuring reconcile loops don't corrupt credentials.
 func ensureDataSourceCredentials(c *controller.Context, targetSecretName string) error {
@@ -389,18 +389,18 @@ func ensureDataSourceCredentials(c *controller.Context, targetSecretName string)
 	// Resolve the source Instance name from the referenced Backup CR.
 	ds := c.Instance().Spec.DataSource
 	srcBackup := &backupv1alpha1.Backup{}
-	if err := c.Get(srcBackup, ds.Backup.BackupName); err != nil {
+	if err := c.Get(srcBackup, ds.Backup.BackupRef.Name); err != nil {
 		if apierrors.IsNotFound(err) {
 			// Source Backup not found; ReconcileDataSource will surface this
 			// as a condition later. Let Sync continue — the gate on
 			// PSMDB Ready + BackupVersion will hold the restore.
 			return nil
 		}
-		return fmt.Errorf("get source Backup %q for credential copy: %w", ds.Backup.BackupName, err)
+		return fmt.Errorf("get source Backup %q for credential copy: %w", ds.Backup.BackupRef.Name, err)
 	}
 
 	// The source Instance's users secret follows the same naming convention.
-	sourceSecretName := "everest-secrets-" + srcBackup.Spec.InstanceName
+	sourceSecretName := "everest-secrets-" + srcBackup.Spec.InstanceRef.Name
 	sourceSecret := &corev1.Secret{}
 	if err := c.Get(sourceSecret, sourceSecretName); err != nil {
 		if apierrors.IsNotFound(err) {

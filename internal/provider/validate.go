@@ -165,8 +165,8 @@ func validateDataSourceBackup(c *controller.Context, ds *backupv1alpha1.DataSour
 		return fmt.Errorf("missing spec.dataSource.backup")
 	}
 
-	if ds.Backup.BackupName == "" {
-		return fmt.Errorf("missing spec.dataSource.backup.backupName")
+	if ds.Backup.BackupRef.Name == "" {
+		return fmt.Errorf("missing spec.dataSource.backup.backupRef.name")
 	}
 
 	return nil
@@ -190,7 +190,7 @@ func validateDataSourceExternal(c *controller.Context, ds *backupv1alpha1.DataSo
 		return err
 	}
 
-	providerName := c.Instance().Spec.Provider
+	providerName := c.Instance().Spec.ProviderRef.Name
 	if !bc.Spec.SupportedProviders.Has(providerName) {
 		return fmt.Errorf("BackupClass %q does not support provider %q", bc.Name, providerName)
 	}
@@ -210,7 +210,7 @@ func validateDataSourceExternal(c *controller.Context, ds *backupv1alpha1.DataSo
 	}
 
 	// Validate config against BackupClass.spec.importConfig schema
-	if err := bc.Spec.ImportConfig.Validate(ext.Parameters); err != nil {
+	if err := bc.Spec.ImportParameterSchema.Validate(ext.Parameters); err != nil {
 		return fmt.Errorf("spec.dataSource.external.parameters validation failed: %w", err)
 	}
 
@@ -221,11 +221,11 @@ func validateDataSourceExternal(c *controller.Context, ds *backupv1alpha1.DataSo
 func validateShardedTopology(c *controller.Context) error {
 	spec := c.Instance().Spec
 
-	// Validate sharded topology config.
-	var shardedConfig sharded.ShardedTopologyConfig
-	if c.TryDecodeTopologyConfig(&shardedConfig) {
-		if shardedConfig.NumShards < 1 {
-			return fmt.Errorf("spec.topology.config.numShards must be >= 1, got %d", shardedConfig.NumShards)
+	// Validate sharded topology parameters.
+	var shardedParams sharded.ShardedTopologyParameters
+	if c.TryDecodeTopologyParameters(&shardedParams) {
+		if shardedParams.NumShards < 1 {
+			return fmt.Errorf("spec.topology.parameters.numShards must be >= 1, got %d", shardedParams.NumShards)
 		}
 	}
 

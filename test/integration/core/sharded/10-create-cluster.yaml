@@ -7,10 +7,11 @@ kind: Instance
 metadata:
   name: test-psmdb-cluster
 spec:
-  provider: percona-server-mongodb
+  providerRef:
+    name: percona-server-mongodb
   topology:
     type: sharded
-    config:
+    parameters:
       numShards: 2
   components:
     engine:

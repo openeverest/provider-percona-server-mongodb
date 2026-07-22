@@ -12,15 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package replicaset contains custom spec types for the replica set topology.
+// Package replicaset contains parameters types for the replica set topology.
 //
-// Add fields to ReplicaSetTopologyConfig and reference it via configSchema in
-// topology.yaml when this topology needs custom configuration.
+// Add fields to ReplicaSetTopologyParameters and reference it via
+// parametersSchema in topology.yaml when this topology needs structured
+// parameters.
 //
 // +k8s:openapi-gen=true
 package replicaset
 
-// ReplicaSetTopologyConfig defines configuration for replica set topology.
-// Currently empty — add fields here when the replica set topology needs
-// custom configuration beyond what the base Instance spec provides.
-type ReplicaSetTopologyConfig struct{}
+// ReplicaSetTopologyParameters defines structured parameters for the replica
+// set topology. Currently empty — add fields here when the replica set
+// topology needs parameters beyond what the base Instance spec provides.
+type ReplicaSetTopologyParameters struct{}
