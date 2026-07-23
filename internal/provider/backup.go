@@ -562,11 +562,11 @@ func (p *PSMDBProvider) syncProviderManagedImportRestore(c *controller.Context, 
 	}
 
 	// Resolve BackupClass and BackupStorage
-	_, storage, err := c.ImportBackupRefs()
+	storage, err := c.DataSourceStorage()
 	if err != nil {
 		return controller.RestoreExecutionStatus{
 			State:   backupv1alpha1.RestoreStateFailed,
-			Message: fmt.Sprintf("failed to resolve import backup refs: %s", err.Error()),
+			Message: fmt.Sprintf("failed to resolve dataSource storage: %s", err.Error()),
 		}, nil
 	}
 

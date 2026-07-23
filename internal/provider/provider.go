@@ -105,11 +105,6 @@ func ValidatePSMDB(c *controller.Context) error {
 		return fmt.Errorf("metadata validation failed: %w", err)
 	}
 
-	if err := validateDataSource(c); err != nil {
-		l.Error(err, "DataSource validation failed", "cluster", c.Name())
-		return fmt.Errorf("dataSource validation failed: %w", err)
-	}
-
 	if err := validateComponents(c); err != nil {
 		l.Error(err, "Components validation failed", "cluster", c.Name())
 		return fmt.Errorf("components validation failed: %w", err)
@@ -206,11 +201,6 @@ func SyncPSMDB(c *controller.Context) error {
 		}
 	}
 
-	l.Info("Configuring PSMDB secrets",
-		"usersSecretName", usersSecretName,
-		"hasDataSource", ds != nil,
-	)
-
 	pmmSpec, err := configureMonitoring(c, usersSecretName)
 	if err != nil {
 		return err
@@ -229,7 +219,8 @@ func SyncPSMDB(c *controller.Context) error {
 		return err
 	}
 
-	// Initial seeding from .spec.dataSource: gated on the engine being Ready
+	// For ProviderManagedImport and Backup DataSources, initial seeding from
+	// .spec.dataSource is gated on the engine being Ready
 	// AND PSMDB having published a BackupVersion. Issuing the Restore before
 	// the operator has selected a backup-agent image causes the restore to
 	// hang in a Waiting state. While the gate is not satisfied the helper is
@@ -255,17 +246,8 @@ func SyncPSMDB(c *controller.Context) error {
 				})
 				return nil
 			}
-			if _, err := c.ReconcileDataSource(); err != nil {
-				return fmt.Errorf("reconcile data source: %w", err)
-			}
 
 		case backupv1alpha1.DataSourceTypeProviderManagedImport:
-			// Get resolved BackupClass and BackupStorage from spec.backup
-			bc, storage, err := c.ImportBackupRefs()
-			if err != nil {
-				return err
-			}
-
 			// For ProviderManaged classes, wait for Ready + BackupVersion before restore.
 			if current.Status.State != psmdbv1.AppStateReady || current.Status.BackupVersion == "" {
 				c.SetDataSourceStatus(controller.DataSourceStatus{
@@ -277,15 +259,6 @@ func SyncPSMDB(c *controller.Context) error {
 				return nil
 			}
 
-			l.Info("Reconciling provider-managed import data source",
-				"backupClass", bc.Name,
-				"storage", storage.Name,
-			)
-
-			if _, err := c.ReconcileImportDataSource(); err != nil {
-				return fmt.Errorf("reconcile import data source: %w", err)
-			}
-
 		case backupv1alpha1.DataSourceTypeJobImport:
 			// Job mode import - not yet implemented
 			c.SetDataSourceStatus(controller.DataSourceStatus{
@@ -294,6 +267,11 @@ func SyncPSMDB(c *controller.Context) error {
 				Reason:  corev1alpha1.ReasonDataSourceFailed,
 				Message: "JobImport is not yet implemented",
 			})
+			return nil
+		}
+
+		if _, err := c.ReconcileDataSource(); err != nil {
+			return fmt.Errorf("reconcile data source: %w", err)
 		}
 	}
 
@@ -465,18 +443,11 @@ func createSecretCopy(c *controller.Context, targetSecretName string, sourceSecr
 // Unlike ensureDataSourceCredentials, this ALWAYS overwrites the target secret
 // because the import credentials MUST match the backup source.
 func ensureImportCredentials(c *controller.Context, targetSecretName string) error {
-	l := log.FromContext(c.Context())
-
 	// Get the source credentials secret name from the import config.
 	sourceSecretName := getImportCredentialsSecretName(c)
 	if sourceSecretName == "" {
 		return fmt.Errorf("failed to get import credentails secret")
 	}
-
-	l.Info("Copying import credentials",
-		"source", sourceSecretName,
-		"target", targetSecretName,
-	)
 
 	sourceSecret := &corev1.Secret{}
 	if err := c.Get(sourceSecret, sourceSecretName); err != nil {
@@ -495,12 +466,10 @@ func ensureImportCredentials(c *controller.Context, targetSecretName string) err
 		return fmt.Errorf("get import credentials secret %q: %w", sourceSecretName, err)
 	}
 
-	// Log the keys present in the source secret (not values for security)
-	keys := make([]string, 0, len(sourceSecret.Data))
-	for k := range sourceSecret.Data {
-		keys = append(keys, k)
+	// Set owner reference on the source secret so it's cleaned up with the Instance.
+	if err := c.Apply(sourceSecret); err != nil {
+		return fmt.Errorf("set owner reference on import credentials secret %q: %w", sourceSecretName, err)
 	}
-	l.Info("Source secret keys", "keys", keys)
 
 	// Create the target secret with the same data.
 	return createSecretCopy(c, targetSecretName, sourceSecret)

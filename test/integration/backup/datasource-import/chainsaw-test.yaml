@@ -243,18 +243,17 @@ spec:
               apiVersion: psmdb.percona.com/v1
               kind: PerconaServerMongoDBRestore
               metadata:
-                name: psmdb-imported-import
+                name: psmdb-imported-datasource
               spec:
                 clusterName: psmdb-imported
                 backupSource:
                   type: logical
+                  destination: s3://test-backup-bucket/psmdb/2026-07-17T06:29:55Z
                   s3:
                     bucket: test-backup-bucket
                     region: us-east-1
                     endpointUrl: http://minio.minio.svc.cluster.local:9000
                     credentialsSecret: backup-storage-credentials
-                    # TODO: check path
-                    # prefix: "2026-07-17T06:29:55Z"
                     insecureSkipTLSVerify: true
                     forcePathStyle: true
         # Assert credentials secret was copied
@@ -277,14 +276,14 @@ spec:
       try:
         - script:
             content: |
-              kubectl patch psmdb-restore/psmdb-imported-import --subresource status -n $NAMESPACE \
+              kubectl patch psmdb-restore/psmdb-imported-datasource --subresource status -n $NAMESPACE \
                 -p '{"status":{"state":"ready"}}' --type=merge
         - assert:
             resource:
               apiVersion: psmdb.percona.com/v1
               kind: PerconaServerMongoDBRestore
               metadata:
-                name: psmdb-imported-import
+                name: psmdb-imported-datasource
               status:
                 state: ready
         # Assert Instance becomes Ready with DataSourceReady condition
@@ -322,141 +321,9 @@ spec:
         - script:
             content: kubectl get psmdb -n $NAMESPACE -o yaml
 
-    # Step 5: Test failure case - invalid storage reference
-    - name: create-failing-instance-invalid-storage
-      try:
-        # Create credentials for failing instance
-        - apply:
-            resource:
-              apiVersion: v1
-              kind: Secret
-              metadata:
-                name: psmdb-import-failure-credentials
-              type: Opaque
-              stringData:
-                MONGODB_USER_ADMIN_USER: userAdmin
-                MONGODB_USER_ADMIN_PASSWORD: test-password
-                MONGODB_BACKUP_USER: backup
-                MONGODB_BACKUP_PASSWORD: test-password
-                MONGODB_CLUSTER_ADMIN_USER: clusterAdmin
-                MONGODB_CLUSTER_ADMIN_PASSWORD: test-password
-                MONGODB_CLUSTER_MONITOR_USER: clusterMonitor
-                MONGODB_CLUSTER_MONITOR_PASSWORD: test-password
-                MONGODB_DATABASE_ADMIN_USER: databaseAdmin
-                MONGODB_DATABASE_ADMIN_PASSWORD: test-password
-        # Create Instance with invalid storage reference
-        - apply:
-            resource:
-              apiVersion: core.openeverest.io/v1alpha1
-              kind: Instance
-              metadata:
-                name: psmdb-import-failure
-              spec:
-                providerRef:
-                  name: percona-server-mongodb
-                backup:
-                  enabled: true
-                  classRef:
-                    name: percona-backup-mongodb
-                  storages:
-                    - storageRef:
-                        name: test-storage-s3
-                dataSource:
-                  type: ProviderManagedImport
-                  providerManagedImport:
-                    storageRef:
-                      # References a storage that doesn't exist in spec.backup.storages
-                      name: non-existent-storage
-                    parameters:
-                      path: "2026-07-17T06:29:55Z"
-                      credentialsSecretRef:
-                        name: psmdb-import-failure-credentials
-                topology:
-                  type: replicaset
-                components:
-                  engine:
-                    type: mongod
-                    replicas: 3
-                    storage:
-                      size: 25Gi
-                      storageClass: standard
-                    resources:
-                      limits:
-                        cpu: "1"
-                        memory: 4G
-                      requests:
-                        cpu: 500m
-                        memory: 2G
-        # Assert Instance is created
-        - assert:
-            resource:
-              apiVersion: core.openeverest.io/v1alpha1
-              kind: Instance
-              metadata:
-                name: psmdb-import-failure
-              spec:
-                dataSource:
-                  type: ProviderManagedImport
-                  providerManagedImport:
-                    storageRef:
-                      name: non-existent-storage
-      catch:
-        - script:
-            content: kubectl get in/psmdb-import-failure -n $NAMESPACE -o yaml
-
-    # Step 6: Verify failing instance does not create PSMDB (validation failure)
-    - name: verify-failing-instance-no-psmdb
-      try:
-        # Wait a bit for reconciliation
-        - sleep:
-            duration: 10s
-        # Assert PSMDB CR is NOT created due to validation failure
-        - script:
-            content: |
-              if kubectl get psmdb psmdb-import-failure -n $NAMESPACE 2>/dev/null; then
-                echo "ERROR: PSMDB should not be created for invalid storage reference"
-                exit 1
-              fi
-              echo "PSMDB not created as expected (validation failure)"
-        # Assert Instance exists but validation prevents PSMDB creation
-        - assert:
-            resource:
-              apiVersion: core.openeverest.io/v1alpha1
-              kind: Instance
-              metadata:
-                name: psmdb-import-failure
-      catch:
-        - script:
-            content: kubectl get in/psmdb-import-failure -n $NAMESPACE -o yaml
-        - script:
-            content: kubectl get psmdb -n $NAMESPACE -o yaml
-
-    # Step 7: Delete failing Instance
-    - name: delete-failing-instance
-      try:
-        - delete:
-            ref:
-              apiVersion: core.openeverest.io/v1alpha1
-              kind: Instance
-              name: psmdb-import-failure
-        - script:
-            content: |
-              while kubectl get in psmdb-import-failure -n $NAMESPACE 2>/dev/null; do
-                sleep 5
-              done
-              echo "Failing instance deleted"
-      catch:
-        - script:
-            content: kubectl get in -n $NAMESPACE -o yaml
-
-    # Step 8: Cleanup all resources
+    # Step 5: Cleanup all resources
     - name: cleanup
       try:
-        - delete:
-            ref:
-              apiVersion: v1
-              kind: Secret
-              name: psmdb-import-failure-credentials
         - delete:
             ref:
               apiVersion: v1

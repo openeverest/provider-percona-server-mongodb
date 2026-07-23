@@ -21,7 +21,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 
-	backupv1alpha1 "github.com/openeverest/openeverest/v2/api/backup/v1alpha1"
 	"github.com/openeverest/openeverest/v2/provider-runtime/controller"
 
 	"github.com/openeverest/provider-percona-server-mongodb/definition/topologies/sharded"
@@ -141,112 +140,7 @@ func validateEngine(c *controller.Context) error {
 	return nil
 }
 
-// validateDataSource validates the dataSource spec.
-func validateDataSource(c *controller.Context) error {
-	ds := c.Instance().Spec.DataSource
 
-	if ds == nil {
-		return nil
-	}
-
-	switch ds.Type {
-	case backupv1alpha1.DataSourceTypeBackup:
-		return validateDataSourceBackup(c, ds)
-	case backupv1alpha1.DataSourceTypeProviderManagedImport:
-		return validateDataSourceProviderManagedImport(c, ds)
-	case backupv1alpha1.DataSourceTypeJobImport:
-		return validateDataSourceJobImport(c, ds)
-	default:
-		return fmt.Errorf("unsupported dataSource.type: %q", ds.Type)
-	}
-}
-
-// validateDataSourceBackup validates dataSource when type=Backup.
-func validateDataSourceBackup(c *controller.Context, ds *backupv1alpha1.DataSource) error {
-	if ds.Backup == nil {
-		return fmt.Errorf("missing spec.dataSource.backup")
-	}
-
-	if ds.Backup.BackupRef.Name == "" {
-		return fmt.Errorf("missing spec.dataSource.backup.backupRef.name")
-	}
-
-	return nil
-}
-
-// validateDataSourceProviderManagedImport validates dataSource when type=ProviderManagedImport.
-func validateDataSourceProviderManagedImport(c *controller.Context, ds *backupv1alpha1.DataSource) error {
-	if ds.ProviderManagedImport == nil {
-		return fmt.Errorf("missing spec.dataSource.providerManagedImport")
-	}
-
-	imp := ds.ProviderManagedImport
-
-	if imp.Parameters == nil {
-		return fmt.Errorf("missing spec.dataSource.providerManagedImport.parameters")
-	}
-
-	bc, _, err := c.ImportBackupRefs()
-	if err != nil {
-		return err
-	}
-
-	providerName := c.Instance().Spec.ProviderRef.Name
-	if !bc.Spec.SupportedProviders.Has(providerName) {
-		return fmt.Errorf("BackupClass %q does not support provider %q", bc.Name, providerName)
-	}
-
-	if bc.Spec.ExecutionMode != backupv1alpha1.BackupExecutionModeProviderManaged {
-		return fmt.Errorf("ProviderManagedImport requires a ProviderManaged BackupClass, got %q", bc.Spec.ExecutionMode)
-	}
-
-	if bc.Spec.ProviderManaged == nil || !bc.Spec.ProviderManaged.SupportsImport {
-		return fmt.Errorf("BackupClass %q does not support import", bc.Name)
-	}
-
-	if err := bc.Spec.ImportParametersSchema.Validate(imp.Parameters); err != nil {
-		return fmt.Errorf("spec.dataSource.providerManagedImport.parameters validation failed: %w", err)
-	}
-
-	return nil
-}
-
-// validateDataSourceJobImport validates dataSource when type=JobImport.
-func validateDataSourceJobImport(c *controller.Context, ds *backupv1alpha1.DataSource) error {
-	if ds.JobImport == nil {
-		return fmt.Errorf("missing spec.dataSource.jobImport")
-	}
-
-	job := ds.JobImport
-
-	if job.Parameters == nil {
-		return fmt.Errorf("missing spec.dataSource.jobImport.parameters")
-	}
-
-	bc, _, err := c.ImportBackupRefs()
-	if err != nil {
-		return err
-	}
-
-	providerName := c.Instance().Spec.ProviderRef.Name
-	if !bc.Spec.SupportedProviders.Has(providerName) {
-		return fmt.Errorf("BackupClass %q does not support provider %q", bc.Name, providerName)
-	}
-
-	if bc.Spec.ExecutionMode != backupv1alpha1.BackupExecutionModeJob {
-		return fmt.Errorf("JobImport requires a Job-mode BackupClass, got %q", bc.Spec.ExecutionMode)
-	}
-
-	if bc.Spec.Job == nil || bc.Spec.Job.Import == nil {
-		return fmt.Errorf("BackupClass %q does not have job.import defined", bc.Name)
-	}
-
-	if err := bc.Spec.ImportParametersSchema.Validate(job.Parameters); err != nil {
-		return fmt.Errorf("spec.dataSource.jobImport.parameters validation failed: %w", err)
-	}
-
-	return nil
-}
 
 // validateShardedTopology validates sharded cluster topology and its components.
 func validateShardedTopology(c *controller.Context) error {
