@@ -118,6 +118,18 @@ test-integration-backup: ## Run backup integration tests.
 test-integration-backup-datasource: ## Run backup datasource integration tests.
 	. ./test/vars.sh && chainsaw test --config ./test/integration/.chainsaw.yaml ./test/integration/backup/datasource
 
+.PHONY: test-integration-backup-datasource-import
+test-integration-backup-datasource-import: ## Run backup datasource import integration tests.
+	. ./test/vars.sh && chainsaw test --config ./test/integration/.chainsaw.yaml ./test/integration/backup/datasource-import
+
+.PHONY: test-e2e-cluster
+test-e2e-cluster: ## Run E2E cluster tests (requires PSMDB operator).
+	. ./test/vars.sh && chainsaw test --config ./test/e2e-cluster/.chainsaw.yaml ./test/e2e-cluster
+
+.PHONY: test-e2e-cluster-backup-import
+test-e2e-cluster-backup-import: ## Run backup import E2E cluster tests.
+	. ./test/vars.sh && chainsaw test --config ./test/e2e-cluster/.chainsaw.yaml ./test/e2e-cluster/backup/import
+
 .PHONY: test-e2e
 test-e2e: ## Run Playwright E2E tests against a running Everest UI (http://localhost:8080).
 	cd test/e2e && npm ci && npx playwright test
@@ -155,6 +167,20 @@ deploy-provider-ci: ## Deploy the provider via Helm for CI (IMG must already be 
 		--set image.pullPolicy=Never \
 		--set operator.replicaCount=0 \
 		--wait --timeout 2m
+
+.PHONY: deploy-provider-e2e
+deploy-provider-e2e: ## Deploy the provider with PSMDB operator for E2E tests.
+	helm repo add percona https://percona.github.io/percona-helm-charts/
+	helm dependency build $(CHART_DIR)
+	helm upgrade --install provider-percona-server-mongodb $(CHART_DIR) \
+		--create-namespace \
+		--namespace provider-system \
+		--set image.repository=$(_IMG_REPO) \
+		--set image.tag=$(_IMG_TAG) \
+		--set image.pullPolicy=Never \
+		--set operator.replicaCount=1 \
+		--wait --timeout 5m
+	kubectl wait --for condition=available --timeout=120s deploy/percona-server-mongodb-operator -n provider-system
 
 ##@ Helm
 

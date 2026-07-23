@@ -1,0 +1,89 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: minio
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: minio-data
+  namespace: minio
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  labels:
+    app: minio
+  name: minio
+  namespace: minio
+spec:
+  containers:
+    - name: minio
+      image: quay.io/minio/minio:latest
+      command:
+        - /bin/bash
+        - -c
+      args:
+        - minio server /data --console-address :9090
+      volumeMounts:
+        - mountPath: /data
+          name: minio-data-vol
+        - mountPath: /shared
+          name: shared
+          readOnly: true
+    # helper container to let us copy files to the minio data directory.
+    # We cannot directly `kubectl cp` to the minio container because it does
+    # not have the `tar` command line utility installed.
+    - name: cp-helper
+      image: busybox
+      command:
+        - /bin/sh
+        - -c
+      args:
+        - sleep infinity
+      volumeMounts:
+        - mountPath: /data
+          name: minio-data-vol
+        - mountPath: /shared
+          name: shared
+  initContainers:
+    - name: init-minio
+      image: busybox
+      env:
+        - name: BUCKET_DIRS
+          value: "everest-operator"
+      command:
+        - /bin/sh
+        - -c
+      args:
+        - |
+          IFS=',' ; for i in $BUCKET_DIRS; do mkdir -p /data/$i || true ; done
+      volumeMounts:
+        - mountPath: /data
+          name: minio-data-vol
+  volumes:
+    - name: minio-data-vol
+      persistentVolumeClaim:
+        claimName: minio-data
+    - name: shared
+      emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: minio
+  namespace: minio
+spec:
+  type: ClusterIP
+  selector:
+    app: minio
+  ports:
+    - protocol: TCP
+      port: 9000
+      targetPort: 9000

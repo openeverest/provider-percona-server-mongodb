@@ -1,0 +1,404 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/kyverno/chainsaw/main/.schemas/json/test-chainsaw-v1alpha1.json
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: data-importer-psmdb
+spec:
+  description: |
+    E2E test for ProviderManagedImport data source with PSMDB.
+    This test:
+    1. Deploys Minio with pre-loaded PBM backup data
+    2. Creates an Instance with ProviderManagedImport dataSource
+    3. Verifies the Restore CR is created and data is imported
+    4. Validates imported data via MongoDB client
+  steps:
+    # Step 0: Verify provider deployment
+    - name: verify-provider-deployment
+      try:
+        - assert:
+            resource:
+              apiVersion: apps/v1
+              kind: Deployment
+              metadata:
+                name: provider-percona-server-mongodb-operator
+                namespace: provider-system
+              spec:
+                replicas: 1
+        - assert:
+            resource:
+              apiVersion: apps/v1
+              kind: Deployment
+              metadata:
+                name: provider-percona-server-mongodb
+                namespace: provider-system
+              spec:
+                replicas: 1
+      catch:
+        - script:
+            content: kubectl get deploy -n provider-system -o yaml
+
+    # Step 1: Deploy Minio and upload test data
+    - name: deploy-minio
+      try:
+        - script:
+            content: |
+              kubectl apply -f ${OPERATOR_ROOT_PATH}/test/testdata/minio/deploy.yaml
+        - script:
+            content: |
+              kubectl wait pod/minio --for=condition=Ready -n minio --timeout=120s
+        - script:
+            content: |
+              # Upload PSMDB backup data to Minio
+              cat ${OPERATOR_ROOT_PATH}/test/testdata/backups/psmdb.tar | kubectl exec -i minio -n minio -c cp-helper -- tar xf - -C /shared
+              kubectl exec --quiet minio -n minio -c minio -- mc alias set s3 http://minio.minio.svc:9000 minioadmin minioadmin --insecure
+              kubectl exec --quiet minio -n minio -c minio -- mc cp --recursive /shared/psmdb s3/everest-operator --insecure
+      catch:
+        - script:
+            content: kubectl get pods -n minio -o yaml
+        - script:
+            content: kubectl logs -n minio minio -c minio --tail=50
+
+    # Step 2: Create prerequisites (BackupStorage, BackupClass)
+    - name: create-prerequisites
+      try:
+        - apply:
+            resource:
+              apiVersion: v1
+              kind: Secret
+              metadata:
+                name: minio-credentials
+              type: Opaque
+              data:
+                AWS_ACCESS_KEY_ID: bWluaW9hZG1pbg==     # minioadmin
+                AWS_SECRET_ACCESS_KEY: bWluaW9hZG1pbg== # minioadmin
+        - apply:
+            resource:
+              apiVersion: backup.openeverest.io/v1alpha1
+              kind: BackupStorage
+              metadata:
+                name: minio-storage
+              spec:
+                type: s3
+                s3:
+                  bucket: everest-operator
+                  region: us-east-1
+                  endpointURL: http://minio.minio.svc:9000
+                  forcePathStyle: true
+                  credentialsSecretRef:
+                    name: minio-credentials
+                  verifyTLS: false
+        - apply:
+            resource:
+              apiVersion: backup.openeverest.io/v1alpha1
+              kind: BackupClass
+              metadata:
+                name: percona-backup-mongodb
+              spec:
+                displayName: Percona Backup for MongoDB
+                executionMode: ProviderManaged
+                supportedProviders:
+                  - percona-server-mongodb
+                providerManaged:
+                  supportsPITR: true
+                  supportsImport: true
+                  limits:
+                    maxPITREnabledStorages: 1
+                importParametersSchema:
+                  openAPIV3Schema:
+                    type: object
+                    required:
+                      - path
+                      - credentialsSecretRef
+                    properties:
+                      path:
+                        type: string
+                        description: Path to PBM backup in the S3 bucket
+                      credentialsSecretRef:
+                        type: object
+                        required:
+                          - name
+                        properties:
+                          name:
+                            type: string
+                            description: Name of the secret containing MongoDB credentials
+        - assert:
+            resource:
+              apiVersion: backup.openeverest.io/v1alpha1
+              kind: BackupStorage
+              metadata:
+                name: minio-storage
+        - assert:
+            resource:
+              apiVersion: backup.openeverest.io/v1alpha1
+              kind: BackupClass
+              metadata:
+                name: percona-backup-mongodb
+      catch:
+        - script:
+            content: kubectl get backupstorage -n $NAMESPACE -o yaml
+        - script:
+            content: kubectl get backupclass -o yaml
+
+    # Step 3: Create Instance with ProviderManagedImport
+    - name: create-instance-with-import
+      try:
+        # Create import credentials secret (MongoDB user credentials from the backup)
+        - apply:
+            resource:
+              apiVersion: v1
+              kind: Secret
+              metadata:
+                name: psmdb-import-credentials
+              type: Opaque
+              data:
+                # These credentials must match the backup source
+                MONGODB_BACKUP_PASSWORD: azgydGlnR0xONlNyS3pVODI=
+                MONGODB_BACKUP_USER: YmFja3Vw
+                MONGODB_CLUSTER_ADMIN_PASSWORD: QnkwVjU3RlprZnhJVE5LdTZhRQ==
+                MONGODB_CLUSTER_ADMIN_USER: Y2x1c3RlckFkbWlu
+                MONGODB_CLUSTER_MONITOR_PASSWORD: VzBYNlYydWZjQjRXQ21GWQ==
+                MONGODB_CLUSTER_MONITOR_USER: Y2x1c3Rlck1vbml0b3I=
+                MONGODB_DATABASE_ADMIN_PASSWORD: bUhZeVFNQ3RraGpNdUVlYw==
+                MONGODB_DATABASE_ADMIN_USER: ZGF0YWJhc2VBZG1pbg==
+                MONGODB_USER_ADMIN_PASSWORD: RlNGYmlKV2tSbU1NYzhTc3dF
+                MONGODB_USER_ADMIN_USER: dXNlckFkbWlu
+        # Create the Instance with ProviderManagedImport data source
+        - apply:
+            resource:
+              apiVersion: core.openeverest.io/v1alpha1
+              kind: Instance
+              metadata:
+                name: psmdb-import-test
+              spec:
+                providerRef:
+                  name: percona-server-mongodb
+                backup:
+                  enabled: true
+                  classRef:
+                    name: percona-backup-mongodb
+                  storages:
+                    - storageRef:
+                        name: minio-storage
+                dataSource:
+                  type: ProviderManagedImport
+                  providerManagedImport:
+                    storageRef:
+                      name: minio-storage
+                    parameters:
+                      # Path to the PBM backup in Minio (from testdata/backups/psmdb.tar)
+                      path: "/psmdb/2025-11-03T09:34:50Z"
+                      credentialsSecretRef:
+                        name: psmdb-import-credentials
+                topology:
+                  type: replicaset
+                components:
+                  engine:
+                    type: mongod
+                    replicas: 1
+                    storage:
+                      size: 1Gi
+                    resources:
+                      limits:
+                        cpu: 600m
+                        memory: 512Mi
+                      requests:
+                        cpu: 600m
+                        memory: 512Mi
+        # Assert Instance is created with correct spec
+        - assert:
+            resource:
+              apiVersion: core.openeverest.io/v1alpha1
+              kind: Instance
+              metadata:
+                name: psmdb-import-test
+              spec:
+                dataSource:
+                  type: ProviderManagedImport
+                  providerManagedImport:
+                    storageRef:
+                      name: minio-storage
+      catch:
+        - script:
+            content: kubectl get in/psmdb-import-test -n $NAMESPACE -o yaml
+        - script:
+            content: kubectl get secrets -n $NAMESPACE -o name
+
+    # Step 4: Wait for PSMDB cluster to be ready
+    - name: wait-for-psmdb-ready
+      try:
+        - assert:
+            timeout: 180s
+            resource:
+              apiVersion: psmdb.percona.com/v1
+              kind: PerconaServerMongoDB
+              metadata:
+                name: psmdb-import-test
+              spec:
+                backup:
+                  enabled: true
+                  storages:
+                    minio-storage:
+                      type: s3
+                      s3:
+                        bucket: everest-operator
+                        credentialsSecret: minio-credentials
+                        endpointUrl: http://minio.minio.svc:9000
+                        insecureSkipTLSVerify: true
+                        region: us-east-1
+              status:
+                state: ready
+        # Assert credentials secret was copied
+        - assert:
+            resource:
+              apiVersion: v1
+              kind: Secret
+              metadata:
+                name: everest-secrets-psmdb-import-test
+      catch:
+        - script:
+            content: kubectl get in/psmdb-import-test -n $NAMESPACE -o yaml
+        - script:
+            content: kubectl get psmdb/psmdb-import-test -n $NAMESPACE -o yaml
+        - script:
+            content: kubectl get secrets -n $NAMESPACE -o name
+        - script:
+            content: kubectl get pods -n $NAMESPACE -o wide
+
+    # Step 5: Verify Instance enters Restoring state and Restore CR is created
+    - name: verify-restore-created
+      try:
+        - assert:
+            resource:
+              apiVersion: core.openeverest.io/v1alpha1
+              kind: Instance
+              metadata:
+                name: psmdb-import-test
+              status:
+                phase: Restoring
+        - assert:
+            resource:
+              apiVersion: backup.openeverest.io/v1alpha1
+              kind: Restore
+              metadata:
+                name: psmdb-import-test-datasource
+              spec:
+                instanceRef:
+                  name: psmdb-import-test
+                dataSource:
+                  type: ProviderManagedImport
+        - assert:
+            resource:
+              apiVersion: psmdb.percona.com/v1
+              kind: PerconaServerMongoDBRestore
+              metadata:
+                name: psmdb-import-test-datasource
+              spec:
+                clusterName: psmdb-import-test
+                backupSource:
+                  type: logical
+                  s3:
+                    bucket: everest-operator
+                    region: us-east-1
+                    endpointUrl: http://minio.minio.svc:9000
+                    credentialsSecret: minio-credentials
+                    insecureSkipTLSVerify: true
+                    forcePathStyle: true
+      catch:
+        - script:
+            content: kubectl get in/psmdb-import-test -n $NAMESPACE -o yaml
+        - script:
+            content: kubectl get restore -n $NAMESPACE -o yaml
+        - script:
+            content: kubectl get psmdb-restore -n $NAMESPACE -o yaml
+
+    # Step 6: Wait for Restore to complete and Instance to become Ready
+    - name: wait-for-restore-complete
+      try:
+        - assert:
+            resource:
+              apiVersion: psmdb.percona.com/v1
+              kind: PerconaServerMongoDBRestore
+              metadata:
+                name: psmdb-import-test-datasource
+              status:
+                state: ready
+        - assert:
+            resource:
+              apiVersion: backup.openeverest.io/v1alpha1
+              kind: Restore
+              metadata:
+                name: psmdb-import-test-datasource
+              status:
+                state: Succeeded
+        - assert:
+            resource:
+              apiVersion: core.openeverest.io/v1alpha1
+              kind: Instance
+              metadata:
+                name: psmdb-import-test
+              status:
+                phase: Ready
+      catch:
+        - script:
+            content: kubectl get in/psmdb-import-test -n $NAMESPACE -o yaml
+        - script:
+            content: kubectl get restore -n $NAMESPACE -o yaml
+        - script:
+            content: kubectl get psmdb-restore -n $NAMESPACE -o yaml
+
+    # Step 7: Create MongoDB client pod for data verification
+    - name: create-mongodb-client
+      try:
+        - script:
+            timeout: 60s
+            content: |
+              IMAGE="$(kubectl get -n ${NAMESPACE} psmdb/psmdb-import-test -o jsonpath='{.spec.image}')"
+              kubectl run -n "${NAMESPACE}" psmdb-client --env="NO_COLOR=1" --image=${IMAGE} --restart=Never --command -- sleep infinity
+              kubectl wait --for=condition=Ready pod/psmdb-client --timeout=60s -n ${NAMESPACE}
+      catch:
+        - script:
+            content: kubectl get pod/psmdb-client -n $NAMESPACE -o yaml
+        - script:
+            content: kubectl logs pod/psmdb-client -n $NAMESPACE --tail=50
+
+    # Step 8: Verify imported data
+    - name: verify-imported-data
+      try:
+        - script:
+            content: |
+              PSMDBPASSWORD="$(kubectl get -n ${NAMESPACE} secret/everest-secrets-psmdb-import-test -o jsonpath='{.data.MONGODB_DATABASE_ADMIN_PASSWORD}' | base64 --decode)"
+              PSMDBUSER="databaseAdmin"
+              # Get host from PSMDB status
+              PSMDBHOST="$(kubectl get -n ${NAMESPACE} psmdb/psmdb-import-test -o jsonpath='{.status.host}')"
+              CONN_URI="mongodb://${PSMDBUSER}:${PSMDBPASSWORD}@${PSMDBHOST}"
+              
+              # The test backup contains numbers 1-10 in the test collection
+              expected=$(printf '1\n2\n3\n4\n5\n6\n7\n8\n9\n10')
+              actual=$(kubectl exec psmdb-client -n ${NAMESPACE} -- mongosh "$CONN_URI" --quiet --eval "db.test.find({}, { _id: 0, num: 1 }).sort({ num: 1 }).forEach(doc => print(doc.num));")
+              
+              echo "Expected:"
+              echo "$expected"
+              echo "Actual:"
+              echo "$actual"
+              
+              test "$actual" = "$expected"
+      catch:
+        - script:
+            content: kubectl get in/psmdb-import-test -n $NAMESPACE -o yaml
+        - script:
+            content: kubectl exec psmdb-client -n $NAMESPACE -- mongosh --help || true
+
+    # Step 9: Cleanup resources not managed by chainsaw's automatic cleanup
+    - name: cleanup
+      try:
+        # Delete minio namespace (created via script, not apply)
+        - script:
+            content: |
+              kubectl delete -f ${OPERATOR_ROOT_PATH}/test/testdata/minio/deploy.yaml --wait=false || true
+        # Delete psmdb-client pod (created via script, not apply)
+        - script:
+            content: |
+              kubectl delete pod/psmdb-client -n $NAMESPACE --wait=false || true
+      catch:
+        - script:
+            content: echo "Cleanup completed"
