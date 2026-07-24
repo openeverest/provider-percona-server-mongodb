@@ -1,0 +1,56 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: import-credentials
+type: Opaque
+stringData:
+  MONGODB_USER_ADMIN_USER: userAdmin
+  MONGODB_USER_ADMIN_PASSWORD: test-password
+  MONGODB_BACKUP_USER: backup
+  MONGODB_BACKUP_PASSWORD: test-password
+  MONGODB_CLUSTER_ADMIN_USER: clusterAdmin
+  MONGODB_CLUSTER_ADMIN_PASSWORD: test-password
+  MONGODB_CLUSTER_MONITOR_USER: clusterMonitor
+  MONGODB_CLUSTER_MONITOR_PASSWORD: test-password
+  MONGODB_DATABASE_ADMIN_USER: databaseAdmin
+  MONGODB_DATABASE_ADMIN_PASSWORD: test-password
+---
+apiVersion: core.openeverest.io/v1alpha1
+kind: Instance
+metadata:
+  name: psmdb-imported
+spec:
+  providerRef:
+    name: percona-server-mongodb
+  backup:
+    enabled: true
+    classRef:
+      name: percona-backup-mongodb
+    storages:
+      - storageRef:
+          name: test-storage-s3
+  dataSource:
+    type: Import
+    import:
+      storageRef:
+        name: test-storage-s3
+      parameters:
+        path: "/psmdb/2026-07-17T06:29:55Z"
+        credentialsSecretRef:
+          name: import-credentials
+  topology:
+    type: replicaset
+  components:
+    engine:
+      type: mongod
+      replicas: 3
+      storage:
+        size: 25Gi
+        storageClass: standard
+      resources:
+        limits:
+          cpu: "1"
+          memory: 4G
+        requests:
+          cpu: 500m
+          memory: 2G

@@ -414,9 +414,14 @@ func (p *PSMDBProvider) SyncBackup(c *controller.Context, backup *backupv1alpha1
 //     Percona Backup for MongoDB using Instance's backup class, Job mode
 //     import uses restore.spec.dataSource.import.classRef (not yet implemented).
 //   - Backup: restores from an OpenEverest Backup CR. Same-cluster restores
-//     set .spec.backupName; cross-cluster restores copy the source operator
-//     backup's .status into .spec.backupSource and set .spec.storageName to
-//     select credentials from this cluster's registered storages.
+//     set .spec.backupName.
+//     Cross-cluster restore (e.g. seeding a new Instance from another
+//     Instance's Backup via .spec.dataSource): the source operator backup
+//     belongs to a different PSMDB CR. The PSMDB operator cannot resolve it
+//     by name on this cluster, so we copy its .status into
+//     .spec.backupSource and set .spec.storageName to the target Instance's
+//     matching storage entry so credentials are taken from the target
+//     cluster's registered storages.
 func (p *PSMDBProvider) SyncRestore(c *controller.Context, restore *backupv1alpha1.Restore) (controller.RestoreExecutionStatus, error) {
 	// Dispatch based on DataSource type
 	switch restore.Spec.DataSource.Type {

@@ -19,7 +19,6 @@ import (
 	"fmt"
 
 	psmdbv1 "github.com/percona/percona-server-mongodb-operator/pkg/apis/psmdb/v1"
-	bactchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -201,6 +200,8 @@ func SyncPSMDB(c *controller.Context) error {
 		}
 	}
 
+	// Configure monitoring after ensuring data source user credentials,
+	// as it adds PMM credentials to the user secret.
 	pmmSpec, err := configureMonitoring(c, usersSecretName)
 	if err != nil {
 		return err
@@ -548,7 +549,6 @@ func NewPSMDBProviderInterface() *PSMDBProvider {
 		SchemeFuncs: []func(*runtime.Scheme) error{
 			psmdbv1.SchemeBuilder.AddToScheme,
 			monitoringv1alpha1.SchemeBuilder.AddToScheme,
-			bactchv1.AddToScheme,
 		},
 		WatchConfigs: []controller.WatchConfig{
 			// Watch owned PSMDB resources - only trigger on spec changes

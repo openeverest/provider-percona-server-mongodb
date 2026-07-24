@@ -27,80 +27,12 @@ spec:
       catch:
       - script:
           content: kubectl get provider-percona-server-mongodb-operator -n provider-system -o yaml
-    - name: install-prerequisites
+    - name: install
       try:
-        - apply:
-            resource:
-              apiVersion: v1
-              kind: Secret
-              metadata:
-                name: backup-storage-credentials
-              type: Opaque
-              data:
-                AWS_ACCESS_KEY_ID: dGVzdC1hY2Nlc3Mta2V5
-                AWS_SECRET_ACCESS_KEY: dGVzdC1zZWNyZXQta2V5
-        - apply:
-            resource:
-              apiVersion: backup.openeverest.io/v1alpha1
-              kind: BackupStorage
-              metadata:
-                name: test-storage-s3
-              spec:
-                type: s3
-                s3:
-                  bucket: test-backup-bucket
-                  region: us-east-1
-                  endpointURL: http://minio.minio.svc.cluster.local:9000
-                  forcePathStyle: true
-                  credentialsSecretRef:
-                    name: backup-storage-credentials
-                  verifyTLS: false
-        - apply:
-            resource:
-              apiVersion: backup.openeverest.io/v1alpha1
-              kind: BackupClass
-              metadata:
-                name: percona-backup-mongodb
-              spec:
-                displayName: Percona Backup for MongoDB
-                executionMode: ProviderManaged
-                supportedProviders:
-                  - percona-server-mongodb
-                providerManaged:
-                  supportsPITR: true
-                  supportsImport: true
-                  limits:
-                    maxPITREnabledStorages: 1
-                importParametersSchema:
-                  openAPIV3Schema:
-                    type: object
-                    required:
-                      - path
-                      - credentialsSecretRef
-                    properties:
-                      path:
-                        type: string
-                        description: Path to PBM backup in the S3 bucket
-                      credentialsSecretRef:
-                        type: object
-                        required:
-                          - name
-                        properties:
-                          name:
-                            type: string
-                            description: Name of the secret containing MongoDB credentials
+        - apply: 
+            file: 00-install.yaml
         - assert:
-            resource:
-              apiVersion: backup.openeverest.io/v1alpha1
-              kind: BackupStorage
-              metadata:
-                name: test-storage-s3
-        - assert:
-            resource:
-              apiVersion: backup.openeverest.io/v1alpha1
-              kind: BackupClass
-              metadata:
-                name: percona-backup-mongodb
+            file: 00-assert.yaml
       catch:
         - script:
             content: kubectl get backupstorage -n $NAMESPACE -o yaml
@@ -110,102 +42,10 @@ spec:
     # Step 1: Create Instance with Import dataSource
     - name: create-instance-with-import
       try:
-        # Create import credentials secret
-        - apply:
-            resource:
-              apiVersion: v1
-              kind: Secret
-              metadata:
-                name: import-credentials
-              type: Opaque
-              stringData:
-                MONGODB_USER_ADMIN_USER: userAdmin
-                MONGODB_USER_ADMIN_PASSWORD: test-password
-                MONGODB_BACKUP_USER: backup
-                MONGODB_BACKUP_PASSWORD: test-password
-                MONGODB_CLUSTER_ADMIN_USER: clusterAdmin
-                MONGODB_CLUSTER_ADMIN_PASSWORD: test-password
-                MONGODB_CLUSTER_MONITOR_USER: clusterMonitor
-                MONGODB_CLUSTER_MONITOR_PASSWORD: test-password
-                MONGODB_DATABASE_ADMIN_USER: databaseAdmin
-                MONGODB_DATABASE_ADMIN_PASSWORD: test-password
-        # Create Instance with Import data source
-        - apply:
-            resource:
-              apiVersion: core.openeverest.io/v1alpha1
-              kind: Instance
-              metadata:
-                name: psmdb-imported
-              spec:
-                providerRef:
-                  name: percona-server-mongodb
-                backup:
-                  enabled: true
-                  classRef:
-                    name: percona-backup-mongodb
-                  storages:
-                    - storageRef:
-                        name: test-storage-s3
-                dataSource:
-                  type: Import
-                  import:
-                    storageRef:
-                      name: test-storage-s3
-                    parameters:
-                      path: "/psmdb/2026-07-17T06:29:55Z"
-                      credentialsSecretRef:
-                        name: import-credentials
-                topology:
-                  type: replicaset
-                components:
-                  engine:
-                    type: mongod
-                    replicas: 3
-                    storage:
-                      size: 25Gi
-                      storageClass: standard
-                    resources:
-                      limits:
-                        cpu: "1"
-                        memory: 4G
-                      requests:
-                        cpu: 500m
-                        memory: 2G
-        # Assert Instance is created with correct spec
+        - apply: 
+            file: 10-create-instance-with-import.yaml
         - assert:
-            resource:
-              apiVersion: core.openeverest.io/v1alpha1
-              kind: Instance
-              metadata:
-                name: psmdb-imported
-              spec:
-                dataSource:
-                  type: Import
-                  import:
-                    storageRef:
-                      name: test-storage-s3
-                    parameters:
-                      path: "/psmdb/2026-07-17T06:29:55Z"
-                      credentialsSecretRef:
-                        name: import-credentials
-        - assert:
-            resource:
-              apiVersion: psmdb.percona.com/v1
-              kind: PerconaServerMongoDB
-              metadata:
-                name: psmdb-imported
-              spec:
-                backup:
-                  enabled: true
-                  storages:
-                    test-storage-s3:
-                      type: s3
-                      s3:
-                        bucket: test-backup-bucket
-                        credentialsSecret: backup-storage-credentials
-                        endpointUrl: http://minio.minio.svc.cluster.local:9000
-                        insecureSkipTLSVerify: true
-                        region: us-east-1
+            file: 10-assert.yaml
       catch:
         - script:
             content: kubectl get in/psmdb-imported -n $NAMESPACE -o yaml
@@ -213,56 +53,14 @@ spec:
             content: kubectl get psmdb -n $NAMESPACE -o yaml
 
     # Step 2: Wait for PSMDB cluster ready and publish backup version
-    - name: wait-for-instance-ready
+    - name: instance-ready
       try:
         - script:
             content: |
               kubectl patch psmdb/psmdb-imported --subresource status -n $NAMESPACE \
                 -p '{"status":{"state":"ready", "size":1, "ready":1, "host":"psmdb-imported-rs0.default.svc.cluster.local","backupVersion":"2.9.0"}}' --type=merge
-        # Assert PSMDB cluster becomes ready
         - assert:
-            resource:
-              apiVersion: psmdb.percona.com/v1
-              kind: PerconaServerMongoDB
-              metadata:
-                name: psmdb-imported
-              status:
-                state: ready
-                backupVersion: "2.9.0"
-        - assert:
-            resource:
-              apiVersion: core.openeverest.io/v1alpha1
-              kind: Instance
-              metadata:
-                name: psmdb-imported
-              status:
-                phase: Restoring
-        # Assert restore CR was created with correct spec
-        - assert:
-            resource:
-              apiVersion: psmdb.percona.com/v1
-              kind: PerconaServerMongoDBRestore
-              metadata:
-                name: psmdb-imported-datasource
-              spec:
-                clusterName: psmdb-imported
-                backupSource:
-                  type: logical
-                  destination: s3://test-backup-bucket/psmdb/2026-07-17T06:29:55Z
-                  s3:
-                    bucket: test-backup-bucket
-                    region: us-east-1
-                    endpointUrl: http://minio.minio.svc.cluster.local:9000
-                    credentialsSecret: backup-storage-credentials
-                    insecureSkipTLSVerify: true
-                    forcePathStyle: true
-        # Assert credentials secret was copied
-        - assert:
-            resource:
-              apiVersion: v1
-              kind: Secret
-              metadata:
-                name: everest-secrets-psmdb-imported
+            file: 11-assert.yaml
       catch:
         - script:
             content: kubectl get in/psmdb-imported -n $NAMESPACE -o yaml
@@ -279,22 +77,7 @@ spec:
               kubectl patch psmdb-restore/psmdb-imported-datasource --subresource status -n $NAMESPACE \
                 -p '{"status":{"state":"ready"}}' --type=merge
         - assert:
-            resource:
-              apiVersion: psmdb.percona.com/v1
-              kind: PerconaServerMongoDBRestore
-              metadata:
-                name: psmdb-imported-datasource
-              status:
-                state: ready
-        # Assert Instance becomes Ready with DataSourceReady condition
-        - assert:
-            resource:
-              apiVersion: core.openeverest.io/v1alpha1
-              kind: Instance
-              metadata:
-                name: psmdb-imported
-              status:
-                phase: Ready
+            file: 20-assert.yaml
       catch:
         - script:
             content: kubectl get in/psmdb-imported -n $NAMESPACE -o yaml
