@@ -2,12 +2,12 @@
 apiVersion: chainsaw.kyverno.io/v1alpha1
 kind: Test
 metadata:
-  name: datasource-provider-managed-import
+  name: datasource-import
 spec:
   description: |
-    Test ProviderManagedImport data source for PSMDB.
+    Test Import data source for PSMDB.
     This test verifies:
-    1. Creating an Instance with ProviderManagedImport dataSource imports data from S3
+    1. Creating an Instance with Import dataSource imports data from S3
     2. Proper credential copying from import secret to everest-secrets
     3. Restore CR creation and completion
     4. Instance transitions to Ready with DataSourceReady condition
@@ -107,8 +107,8 @@ spec:
         - script:
             content: kubectl get backupclass -o yaml
 
-    # Step 1: Create Instance with ProviderManagedImport dataSource
-    - name: create-instance-with-provider-managed-import
+    # Step 1: Create Instance with Import dataSource
+    - name: create-instance-with-import
       try:
         # Create import credentials secret
         - apply:
@@ -129,7 +129,7 @@ spec:
                 MONGODB_CLUSTER_MONITOR_PASSWORD: test-password
                 MONGODB_DATABASE_ADMIN_USER: databaseAdmin
                 MONGODB_DATABASE_ADMIN_PASSWORD: test-password
-        # Create Instance with ProviderManagedImport data source
+        # Create Instance with Import data source
         - apply:
             resource:
               apiVersion: core.openeverest.io/v1alpha1
@@ -147,8 +147,8 @@ spec:
                     - storageRef:
                         name: test-storage-s3
                 dataSource:
-                  type: ProviderManagedImport
-                  providerManagedImport:
+                  type: Import
+                  import:
                     storageRef:
                       name: test-storage-s3
                     parameters:
@@ -180,8 +180,8 @@ spec:
                 name: psmdb-imported
               spec:
                 dataSource:
-                  type: ProviderManagedImport
-                  providerManagedImport:
+                  type: Import
+                  import:
                     storageRef:
                       name: test-storage-s3
                     parameters:

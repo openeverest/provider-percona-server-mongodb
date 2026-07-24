@@ -194,7 +194,7 @@ func SyncPSMDB(c *controller.Context) error {
 			if err := ensureDataSourceCredentials(c, usersSecretName); err != nil {
 				return err
 			}
-		case backupv1alpha1.DataSourceTypeProviderManagedImport, backupv1alpha1.DataSourceTypeJobImport:
+		case backupv1alpha1.DataSourceTypeImport:
 			if err := ensureImportCredentials(c, usersSecretName); err != nil {
 				return err
 			}
@@ -219,7 +219,7 @@ func SyncPSMDB(c *controller.Context) error {
 		return err
 	}
 
-	// For ProviderManagedImport and Backup DataSources, initial seeding from
+	// For Backup and Provider Managed Import DataSources, initial seeding from
 	// .spec.dataSource is gated on the engine being Ready
 	// AND PSMDB having published a BackupVersion. Issuing the Restore before
 	// the operator has selected a backup-agent image causes the restore to
@@ -247,8 +247,19 @@ func SyncPSMDB(c *controller.Context) error {
 				return nil
 			}
 
-		case backupv1alpha1.DataSourceTypeProviderManagedImport:
-			// For ProviderManaged classes, wait for Ready + BackupVersion before restore.
+		case backupv1alpha1.DataSourceTypeImport:
+			// For Import, check if using Job mode (classRef set) or ProviderManaged mode.
+			if ds.Import != nil && ds.Import.ClassRef != nil && ds.Import.ClassRef.Name != "" {
+				// Job mode import - not yet implemented
+				c.SetDataSourceStatus(controller.DataSourceStatus{
+					Done:    true,
+					State:   controller.DataSourceStateFailed,
+					Reason:  corev1alpha1.ReasonDataSourceFailed,
+					Message: "Job mode import is not yet implemented",
+				})
+				return nil
+			}
+			// ProviderManaged mode: wait for Ready + BackupVersion before restore.
 			if current.Status.State != psmdbv1.AppStateReady || current.Status.BackupVersion == "" {
 				c.SetDataSourceStatus(controller.DataSourceStatus{
 					Done:    false,
@@ -258,16 +269,6 @@ func SyncPSMDB(c *controller.Context) error {
 				})
 				return nil
 			}
-
-		case backupv1alpha1.DataSourceTypeJobImport:
-			// Job mode import - not yet implemented
-			c.SetDataSourceStatus(controller.DataSourceStatus{
-				Done:    true,
-				State:   controller.DataSourceStateFailed,
-				Reason:  corev1alpha1.ReasonDataSourceFailed,
-				Message: "JobImport is not yet implemented",
-			})
-			return nil
 		}
 
 		if _, err := c.ReconcileDataSource(); err != nil {
@@ -486,16 +487,11 @@ func getImportCredentialsSecretName(c *controller.Context) string {
 
 	var params []byte
 	switch ds.Type {
-	case backupv1alpha1.DataSourceTypeProviderManagedImport:
-		if ds.ProviderManagedImport == nil || ds.ProviderManagedImport.Parameters == nil {
+	case backupv1alpha1.DataSourceTypeImport:
+		if ds.Import == nil || ds.Import.Parameters == nil {
 			return ""
 		}
-		params = ds.ProviderManagedImport.Parameters.Raw
-	case backupv1alpha1.DataSourceTypeJobImport:
-		if ds.JobImport == nil || ds.JobImport.Parameters == nil {
-			return ""
-		}
-		params = ds.JobImport.Parameters.Raw
+		params = ds.Import.Parameters.Raw
 	default:
 		return ""
 	}

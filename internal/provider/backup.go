@@ -37,8 +37,8 @@ import (
 	corev1alpha1 "github.com/openeverest/openeverest/v2/api/core/v1alpha1"
 	"github.com/openeverest/openeverest/v2/provider-runtime/controller"
 
-	"github.com/openeverest/provider-percona-server-mongodb/internal/common"
 	pbm "github.com/openeverest/provider-percona-server-mongodb/definition/backupclasses/percona-backup-mongodb"
+	"github.com/openeverest/provider-percona-server-mongodb/internal/common"
 )
 
 const (
@@ -410,8 +410,9 @@ func (p *PSMDBProvider) SyncBackup(c *controller.Context, backup *backupv1alpha1
 // SyncRestore creates or updates a PerconaServerMongoDBRestore based on the
 // Restore's DataSource type:
 //
-//   - ProviderManagedImport: imports from an external PBM backup via backupSource
-//   - JobImport: not yet implemented
+//   - Import: imports from an external storage. Provider Managed mode imports
+//     Percona Backup for MongoDB using Instance's backup class, Job mode
+//     import uses restore.spec.dataSource.import.classRef (not yet implemented).
 //   - Backup: restores from an OpenEverest Backup CR. Same-cluster restores
 //     set .spec.backupName; cross-cluster restores copy the source operator
 //     backup's .status into .spec.backupSource and set .spec.storageName to
@@ -419,13 +420,8 @@ func (p *PSMDBProvider) SyncBackup(c *controller.Context, backup *backupv1alpha1
 func (p *PSMDBProvider) SyncRestore(c *controller.Context, restore *backupv1alpha1.Restore) (controller.RestoreExecutionStatus, error) {
 	// Dispatch based on DataSource type
 	switch restore.Spec.DataSource.Type {
-	case backupv1alpha1.DataSourceTypeProviderManagedImport:
-		return p.syncProviderManagedImportRestore(c, restore)
-	case backupv1alpha1.DataSourceTypeJobImport:
-		return controller.RestoreExecutionStatus{
-			State:   backupv1alpha1.RestoreStateFailed,
-			Message: "JobImport is not yet implemented",
-		}, nil
+	case backupv1alpha1.DataSourceTypeImport:
+		return p.syncImportRestore(c, restore)
 	case backupv1alpha1.DataSourceTypeBackup:
 		return p.syncBackupRestore(c, restore)
 	default:
@@ -549,19 +545,36 @@ func (p *PSMDBProvider) syncBackupRestore(c *controller.Context, restore *backup
 	return out, nil
 }
 
-// syncProviderManagedImportRestore handles restore from ProviderManagedImport.
+// syncImportRestore handles restore from Import data source.
 // It creates a PerconaServerMongoDBRestore with .spec.backupSource pointing
-// at the external S3 location.
-func (p *PSMDBProvider) syncProviderManagedImportRestore(c *controller.Context, restore *backupv1alpha1.Restore) (controller.RestoreExecutionStatus, error) {
-	imp := restore.Spec.DataSource.ProviderManagedImport
+// at the external S3 location. Job mode is not yet implemented.
+func (p *PSMDBProvider) syncImportRestore(c *controller.Context, restore *backupv1alpha1.Restore) (controller.RestoreExecutionStatus, error) {
+	imp := restore.Spec.DataSource.Import
 	if imp == nil {
 		return controller.RestoreExecutionStatus{
 			State:   backupv1alpha1.RestoreStateFailed,
-			Message: "restore.spec.dataSource.providerManagedImport is not set",
+			Message: "restore.spec.dataSource.import is not set",
 		}, nil
 	}
 
-	// Resolve BackupClass and BackupStorage
+	// Use DataSourceBackupClass to resolve the backup class and check execution mode
+	bc, err := c.DataSourceBackupClass()
+	if err != nil {
+		return controller.RestoreExecutionStatus{
+			State:   backupv1alpha1.RestoreStateFailed,
+			Message: fmt.Sprintf("failed to resolve BackupClass: %s", err.Error()),
+		}, nil
+	}
+
+	// Job mode import is not yet implemented
+	if bc.Spec.ExecutionMode == backupv1alpha1.BackupExecutionModeJob {
+		return controller.RestoreExecutionStatus{
+			State:   backupv1alpha1.RestoreStateFailed,
+			Message: "Job mode import is not yet implemented",
+		}, nil
+	}
+
+	// Resolve BackupStorage
 	storage, err := c.DataSourceStorage()
 	if err != nil {
 		return controller.RestoreExecutionStatus{
@@ -570,15 +583,15 @@ func (p *PSMDBProvider) syncProviderManagedImportRestore(c *controller.Context, 
 		}, nil
 	}
 
-	return p.syncProviderManagedImport(c, restore, imp, storage)
+	return p.syncImport(c, restore, imp, storage)
 }
 
-// syncProviderManagedImport creates a PerconaServerMongoDBRestore
+// syncImport creates a PerconaServerMongoDBRestore
 // for importing data from an external PBM backup.
-func (p *PSMDBProvider) syncProviderManagedImport(
+func (p *PSMDBProvider) syncImport(
 	c *controller.Context,
 	restore *backupv1alpha1.Restore,
-	imp *backupv1alpha1.DataSourceProviderManagedImport,
+	imp *backupv1alpha1.DataSourceImport,
 	storage *backupv1alpha1.BackupStorage,
 ) (controller.RestoreExecutionStatus, error) {
 	// Parse the import parameters
