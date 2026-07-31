@@ -79,10 +79,6 @@ jobs:
         working-directory: _openeverest
         run: make deploy-test-controller
 
-      - name: Wait for OpenEverest deployment to be ready
-        working-directory: _openeverest
-        run: make wait-test-controller
-
       - name: Run ${{ inputs.make_target }}
         run: make ${{ inputs.make_target }}
         env:

@@ -179,5 +179,5 @@ jobs:
     uses: ./.github/workflows/e2e-cluster-test.yaml
     with:
       make_target: test-e2e-cluster-backup-import
-      suite: backup-import
+      suite: import
     secrets: inherit

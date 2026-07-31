@@ -180,7 +180,7 @@ deploy-provider-e2e: ## Deploy the provider with PSMDB operator for E2E tests.
 		--set image.pullPolicy=Never \
 		--set operator.replicaCount=1 \
 		--wait --timeout 5m
-	kubectl wait --for condition=available --timeout=120s deploy/percona-server-mongodb-operator -n provider-system
+	kubectl wait --for condition=available --timeout=120s deploy/provider-percona-server-mongodb-operator -n provider-system
 
 ##@ Helm
 
