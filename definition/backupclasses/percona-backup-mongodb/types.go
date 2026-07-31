@@ -47,17 +47,7 @@ type PerconaBackupParameters struct {
 type PerconaRestoreParameters struct{}
 
 // PerconaImportConfig describes the configuration accepted when an Instance
-// is created with spec.dataSource.type=External referencing this BackupClass.
-//
-// PBM/mongodump backups embed credential hashes. When restoring,
-// the target cluster's users secret MUST contain the same credentials as the
-// source cluster that created the backup. Mismatched credentials render the
-// restored data inaccessible because MongoDB will reject authentication
-// attempts with the wrong password hashes.
-//
-// Users must provide a CredentialsSecretRef containing the MongoDB credentials
-// from the source database. The provider copies these credentials to the target
-// Instance's users secret BEFORE initiating the restore.
+// is created with spec.dataSource.type=Import referencing this BackupClass.
 type PerconaImportParameters struct {
 	// Path is the S3 path (prefix) where the PBM/mongodump backup data resides.
 	// This is relative to the bucket root configured in the referenced BackupStorage.
@@ -84,5 +74,5 @@ type PerconaImportParameters struct {
 	//   - MONGODB_USER_ADMIN_USER / MONGODB_USER_ADMIN_PASSWORD
 	//
 	// +kubebuilder:validation:Required
-	CredentialsSecretRef commonv1alpha1.ObjectRef `json:"credentialsSecretRef"`
+	CredentialsSecretRef commonv1alpha1.SecretRef `json:"credentialsSecretRef"`
 }

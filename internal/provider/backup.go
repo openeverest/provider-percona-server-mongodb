@@ -412,7 +412,7 @@ func (p *PSMDBProvider) SyncBackup(c *controller.Context, backup *backupv1alpha1
 //
 //   - Import: imports from an external storage. Provider Managed mode imports
 //     Percona Backup for MongoDB using Instance's backup class, Job mode
-//     import uses restore.spec.dataSource.import.classRef (not yet implemented).
+//     import uses restore.spec.dataSource.import.classRef.
 //   - Backup: restores from an OpenEverest Backup CR. Same-cluster restores
 //     set .spec.backupName.
 //     Cross-cluster restore (e.g. seeding a new Instance from another

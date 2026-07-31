@@ -27,9 +27,8 @@ executionMode: ProviderManaged
 
 providerManaged:
   supportsPITR: true
-  # This class supports importing from external S3 sources (PBM/mongodump format).
-  # The provider creates a PerconaServerMongoDBRestore CR directly to restore
-  # from the external source using PBM.
+  # This class supports importing backup created by Percona Backup for
+  # MongoDB (PBM) from an external storage (i.e, S3).
   supportsImport: true
   limits:
     # PSMDB supports only a single PITR stream per cluster. The provider also
