@@ -1,0 +1,23 @@
+apiVersion: psmdb.percona.com/v1
+kind: PerconaServerMongoDB
+metadata:
+  name: psmdb-import-test
+spec:
+  backup:
+    enabled: true
+    storages:
+      minio-storage:
+        type: s3
+        s3:
+          bucket: everest-operator
+          credentialsSecret: minio-credentials
+          endpointUrl: https://minio.minio.svc
+          insecureSkipTLSVerify: true
+          region: us-east-1
+status:
+  state: ready
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: everest-secrets-psmdb-import-test
