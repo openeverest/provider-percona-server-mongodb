@@ -5,10 +5,10 @@ metadata:
   name: data-importer-psmdb
 spec:
   description: |
-    E2E test for ProviderManagedImport data source with PSMDB.
+    E2E test for Import data source with PSMDB.
     This test:
     1. Deploys Minio with pre-loaded PBM backup data
-    2. Creates an Instance with ProviderManagedImport dataSource
+    2. Creates an Instance with Import dataSource
     3. Verifies the Restore CR is created and data is imported
     4. Validates imported data via MongoDB client
   steps:
@@ -139,7 +139,7 @@ spec:
         - script:
             content: kubectl get backupclass -o yaml
 
-    # Step 3: Create Instance with ProviderManagedImport
+    # Step 3: Create Instance with Import
     - name: create-instance-with-import
       try:
         # Create import credentials secret (MongoDB user credentials from the backup)
@@ -162,7 +162,7 @@ spec:
                 MONGODB_DATABASE_ADMIN_USER: ZGF0YWJhc2VBZG1pbg==
                 MONGODB_USER_ADMIN_PASSWORD: RlNGYmlKV2tSbU1NYzhTc3dF
                 MONGODB_USER_ADMIN_USER: dXNlckFkbWlu
-        # Create the Instance with ProviderManagedImport data source
+        # Create the Instance with Import data source
         - apply:
             resource:
               apiVersion: core.openeverest.io/v1alpha1
@@ -180,8 +180,8 @@ spec:
                     - storageRef:
                         name: minio-storage
                 dataSource:
-                  type: ProviderManagedImport
-                  providerManagedImport:
+                  type: Import
+                  import:
                     storageRef:
                       name: minio-storage
                     parameters:
@@ -213,8 +213,8 @@ spec:
                 name: psmdb-import-test
               spec:
                 dataSource:
-                  type: ProviderManagedImport
-                  providerManagedImport:
+                  type: Import
+                  import:
                     storageRef:
                       name: minio-storage
       catch:
@@ -285,7 +285,7 @@ spec:
                 instanceRef:
                   name: psmdb-import-test
                 dataSource:
-                  type: ProviderManagedImport
+                  type: Import
         - assert:
             resource:
               apiVersion: psmdb.percona.com/v1
