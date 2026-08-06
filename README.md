@@ -53,12 +53,15 @@ manages pods directly — all lifecycle work is delegated to the operator.
 
 ## Capabilities
 
+What you can do to a running instance through the `Instance` API. Upgrading the
+provider itself is covered under [Installation](#installation).
+
 | Capability | Status | Notes |
 |---|---|---|
 | Provisioning | ✅ | |
 | Horizontal scaling | ✅ | `spec.components.<name>.replicas` |
 | Vertical scaling (CPU / memory) | ✅ | `spec.components.<name>.resources` |
-| Version upgrades | ✅ | change `spec.version`; see [Versions](#versions) |
+| Version upgrades | ✅ | of the deployed MongoDB version — change `spec.version`; see [Versions](#versions) |
 | Custom configuration | ✅ | `mongod` / `mongos` config via the component's `configuration` parameter |
 | Monitoring | ✅ | PMM, via the optional `monitoring` component |
 | TLS | ✅ | operator-managed certificates; unsafe TLS is never enabled |
