@@ -1,5 +1,13 @@
 # Percona Server for MongoDB Provider
 
+> [!WARNING]
+> **Pre-alpha.** OpenEverest v2 and this provider are under active development. CRD schemas,
+> chart values and defaults change frequently, including in breaking ways, and there is no
+> supported upgrade path between versions yet. Not for production use.
+
+<!-- Remove the pre-alpha banner and the status badge at v2 GA. -->
+
+[![Status](https://img.shields.io/badge/status-pre--alpha-orange)](https://github.com/openeverest/openeverest)
 [![CI](https://github.com/openeverest/provider-percona-server-mongodb/actions/workflows/ci.yaml/badge.svg?branch=main)](https://github.com/openeverest/provider-percona-server-mongodb/actions/workflows/ci.yaml)
 [![Release](https://img.shields.io/github/v/release/openeverest/provider-percona-server-mongodb)](https://github.com/openeverest/provider-percona-server-mongodb/releases)
 [![Go Reference](https://pkg.go.dev/badge/github.com/openeverest/provider-percona-server-mongodb.svg)](https://pkg.go.dev/github.com/openeverest/provider-percona-server-mongodb)
