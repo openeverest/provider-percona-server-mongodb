@@ -27,6 +27,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
+	backupv1alpha1 "github.com/openeverest/openeverest/v2/api/backup/v1alpha1"
 	commonv1alpha1 "github.com/openeverest/openeverest/v2/api/common/v1alpha1"
 	corev1alpha1 "github.com/openeverest/openeverest/v2/api/core/v1alpha1"
 	"github.com/openeverest/openeverest/v2/provider-runtime/controller"
@@ -244,4 +245,64 @@ func TestBackupStorageStatuses(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestSyncBackupMapsOperatorTimestamps(t *testing.T) {
+	started := metav1.NewTime(time.Date(2026, 7, 1, 10, 0, 0, 0, time.UTC))
+	completed := metav1.NewTime(time.Date(2026, 7, 1, 10, 5, 0, 0, time.UTC))
+
+	instance := &corev1alpha1.Instance{
+		ObjectMeta: metav1.ObjectMeta{Name: "db", Namespace: "ns"},
+		Spec: corev1alpha1.InstanceSpec{
+			ProviderRef: commonv1alpha1.ObjectRef{Name: "percona-server-mongodb"},
+		},
+	}
+	psmdb := &psmdbv1.PerconaServerMongoDB{
+		ObjectMeta: metav1.ObjectMeta{Name: "db", Namespace: "ns"},
+		Spec: psmdbv1.PerconaServerMongoDBSpec{
+			Backup: psmdbv1.BackupSpec{
+				Storages: map[string]psmdbv1.BackupStorageSpec{
+					"s3-main": {Type: psmdbv1.BackupStorageS3},
+				},
+			},
+		},
+	}
+	backup := &backupv1alpha1.Backup{
+		ObjectMeta: metav1.ObjectMeta{Name: "b1", Namespace: "ns"},
+		Spec: backupv1alpha1.BackupSpec{
+			InstanceRef: commonv1alpha1.ObjectRef{Name: "db"},
+			StorageRef:  commonv1alpha1.ObjectRef{Name: "s3-main"},
+		},
+	}
+	opBackup := &psmdbv1.PerconaServerMongoDBBackup{
+		ObjectMeta: metav1.ObjectMeta{Name: "b1", Namespace: "ns"},
+		Spec: psmdbv1.PerconaServerMongoDBBackupSpec{
+			ClusterName: "db",
+			StorageName: "s3-main",
+		},
+		Status: psmdbv1.PerconaServerMongoDBBackupStatus{
+			State:       psmdbv1.BackupStateReady,
+			StartAt:     &started,
+			CompletedAt: &completed,
+		},
+	}
+
+	scheme := runtime.NewScheme()
+	require.NoError(t, corev1alpha1.AddToScheme(scheme))
+	require.NoError(t, backupv1alpha1.AddToScheme(scheme))
+	require.NoError(t, psmdbv1.SchemeBuilder.AddToScheme(scheme))
+	c := controller.NewContext(
+		context.Background(),
+		fake.NewClientBuilder().WithScheme(scheme).WithObjects(instance, psmdb, backup, opBackup).Build(),
+		instance,
+		"percona-server-mongodb",
+	)
+
+	exec, err := (&PSMDBProvider{}).SyncBackup(c, backup)
+	require.NoError(t, err)
+	assert.Equal(t, backupv1alpha1.BackupStateSucceeded, exec.State)
+	require.NotNil(t, exec.StartedAt)
+	require.NotNil(t, exec.CompletedAt)
+	assert.True(t, started.Equal(exec.StartedAt))
+	assert.True(t, completed.Equal(exec.CompletedAt))
 }
