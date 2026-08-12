@@ -327,8 +327,7 @@ func buildConnectionDetails(c *controller.Context, psmdb *psmdbv1.PerconaServerM
 }
 
 // ensureDataSourceCredentials copies the users secret from the source Instance
-// to the target Instance when seeding from .spec.dataSource. The source
-// Instance is identified via the referenced Backup CR's .spec.instanceRef.name.
+// to the target Instance when seeding from .spec.dataSource.
 // This is idempotent: if the target secret already exists it is not
 // overwritten, ensuring reconcile loops don't corrupt credentials.
 func ensureDataSourceCredentials(c *controller.Context, targetSecretName string) error {
@@ -339,21 +338,19 @@ func ensureDataSourceCredentials(c *controller.Context, targetSecretName string)
 		return nil
 	}
 
-	// Resolve the source Instance name from the referenced Backup CR.
-	ds := c.Instance().Spec.DataSource
-	srcBackup := &backupv1alpha1.Backup{}
-	if err := c.Get(srcBackup, ds.Backup.BackupRef.Name); err != nil {
-		if apierrors.IsNotFound(err) {
-			// Source Backup not found; ReconcileDataSource will surface this
-			// as a condition later. Let Sync continue — the gate on
-			// PSMDB Ready + BackupVersion will hold the restore.
-			return nil
-		}
-		return fmt.Errorf("get source Backup %q for credential copy: %w", ds.Backup.BackupRef.Name, err)
+	sourceInstanceName, err := dataSourceInstanceName(c)
+	if err != nil {
+		return err
+	}
+	if sourceInstanceName == "" {
+		// The source cannot be resolved yet (or at all); ReconcileDataSource
+		// surfaces that as a condition. Let Sync continue — the gate on
+		// PSMDB Ready + BackupVersion holds the restore.
+		return nil
 	}
 
 	// The source Instance's users secret follows the same naming convention.
-	sourceSecretName := "everest-secrets-" + srcBackup.Spec.InstanceRef.Name
+	sourceSecretName := "everest-secrets-" + sourceInstanceName
 	sourceSecret := &corev1.Secret{}
 	if err := c.Get(sourceSecret, sourceSecretName); err != nil {
 		if apierrors.IsNotFound(err) {
@@ -391,6 +388,36 @@ func ensureDataSourceCredentials(c *controller.Context, targetSecretName string)
 		return fmt.Errorf("create target credentials secret %q: %w", targetSecretName, err)
 	}
 	return nil
+}
+
+// dataSourceInstanceName resolves the Instance whose data is being seeded from.
+// A "Backup" source names it indirectly, through the referenced Backup CR's
+// .spec.instanceRef; a "PointInTime" source names it directly (required by a
+// CEL rule on Instance, since a new Instance has no stream of its own to
+// default to). An empty name means the source is not resolvable yet.
+func dataSourceInstanceName(c *controller.Context) (string, error) {
+	ds := c.Instance().Spec.DataSource
+	switch ds.Type {
+	case backupv1alpha1.DataSourceTypeBackup:
+		if ds.Backup == nil || ds.Backup.BackupRef.Name == "" {
+			return "", nil
+		}
+		srcBackup := &backupv1alpha1.Backup{}
+		if err := c.Get(srcBackup, ds.Backup.BackupRef.Name); err != nil {
+			if apierrors.IsNotFound(err) {
+				return "", nil
+			}
+			return "", fmt.Errorf("get source Backup %q for credential copy: %w", ds.Backup.BackupRef.Name, err)
+		}
+		return srcBackup.Spec.InstanceRef.Name, nil
+	case backupv1alpha1.DataSourceTypePointInTime:
+		if ds.PointInTime == nil || ds.PointInTime.Source.InstanceRef == nil {
+			return "", nil
+		}
+		return ds.PointInTime.Source.InstanceRef.Name, nil
+	default:
+		return "", nil
+	}
 }
 
 // CleanupPSMDB handles deletion of the PSMDB cluster.

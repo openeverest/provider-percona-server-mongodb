@@ -157,11 +157,15 @@ func TestBackupStorageStatuses(t *testing.T) {
 		require.NoError(t, err)
 		return &metav1.Time{Time: ts}
 	}
-	mkOpBackup := func(name, cluster, storage string, lrt *metav1.Time) *psmdbv1.PerconaServerMongoDBBackup {
+	mkOpBackup := func(name, cluster, storage string, completed, lrt *metav1.Time) *psmdbv1.PerconaServerMongoDBBackup {
 		return &psmdbv1.PerconaServerMongoDBBackup{
 			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "ns"},
 			Spec:       psmdbv1.PerconaServerMongoDBBackupSpec{ClusterName: cluster, StorageName: storage},
-			Status:     psmdbv1.PerconaServerMongoDBBackupStatus{LatestRestorableTime: lrt},
+			Status: psmdbv1.PerconaServerMongoDBBackupStatus{
+				State:                psmdbv1.BackupStateReady,
+				CompletedAt:          completed,
+				LatestRestorableTime: lrt,
+			},
 		}
 	}
 	instance := &corev1alpha1.Instance{
@@ -185,33 +189,45 @@ func TestBackupStorageStatuses(t *testing.T) {
 		want    []corev1alpha1.InstanceBackupStorageStatus
 	}{
 		{
-			name:    "no operator backups — storages reported without restorable time",
+			name:    "no operator backups — PITR-enabled storage reports Unavailable",
 			objects: nil,
 			want: []corev1alpha1.InstanceBackupStorageStatus{
-				{Name: "s1"},
+				{Name: "s1", PITR: &corev1alpha1.InstanceBackupStoragePITRStatus{
+					State:  corev1alpha1.PITRStateUnavailable,
+					Reason: pitrReasonNoBackups,
+				}},
 				{Name: "s2"},
 			},
 		},
 		{
-			name: "latest restorable time aggregated per storage",
+			name: "window spans oldest completion to newest restorable time",
 			objects: []client.Object{
-				mkOpBackup("b1", "db", "s1", mkTime("2026-07-01T10:00:00Z")),
-				mkOpBackup("b2", "db", "s1", mkTime("2026-07-02T10:00:00Z")),
-				mkOpBackup("b3", "db", "s2", mkTime("2026-07-03T10:00:00Z")),
+				mkOpBackup("b1", "db", "s1", mkTime("2026-07-01T09:00:00Z"), mkTime("2026-07-01T10:00:00Z")),
+				mkOpBackup("b2", "db", "s1", mkTime("2026-07-02T09:00:00Z"), mkTime("2026-07-02T10:00:00Z")),
+				mkOpBackup("b3", "db", "s2", mkTime("2026-07-03T09:00:00Z"), mkTime("2026-07-03T10:00:00Z")),
 			},
 			want: []corev1alpha1.InstanceBackupStorageStatus{
-				{Name: "s1", LatestRestorableTime: mkTime("2026-07-02T10:00:00Z")},
-				{Name: "s2", LatestRestorableTime: mkTime("2026-07-03T10:00:00Z")},
+				{Name: "s1", PITR: &corev1alpha1.InstanceBackupStoragePITRStatus{
+					EarliestRestorableTime: mkTime("2026-07-01T09:00:00Z"),
+					LatestRestorableTime:   mkTime("2026-07-02T10:00:00Z"),
+					State:                  corev1alpha1.PITRStateAvailable,
+					Reason:                 pitrReasonWindowAvailable,
+				}},
+				// s2 has backups but PITR is not enabled on it: no PITR block.
+				{Name: "s2"},
 			},
 		},
 		{
-			name: "other clusters and backups without restorable time are ignored",
+			name: "other clusters ignored; no restorable time yet is Unavailable",
 			objects: []client.Object{
-				mkOpBackup("b1", "other-db", "s1", mkTime("2026-07-05T10:00:00Z")),
-				mkOpBackup("b2", "db", "s1", nil),
+				mkOpBackup("b1", "other-db", "s1", mkTime("2026-07-05T09:00:00Z"), mkTime("2026-07-05T10:00:00Z")),
+				mkOpBackup("b2", "db", "s1", mkTime("2026-07-06T09:00:00Z"), nil),
 			},
 			want: []corev1alpha1.InstanceBackupStorageStatus{
-				{Name: "s1"},
+				{Name: "s1", PITR: &corev1alpha1.InstanceBackupStoragePITRStatus{
+					State:  corev1alpha1.PITRStateUnavailable,
+					Reason: pitrReasonNoBackups,
+				}},
 				{Name: "s2"},
 			},
 		},
@@ -234,14 +250,26 @@ func TestBackupStorageStatuses(t *testing.T) {
 			require.Len(t, got, len(tc.want))
 			for i, want := range tc.want {
 				assert.Equal(t, want.Name, got[i].Name)
-				if want.LatestRestorableTime == nil {
-					assert.Nil(t, got[i].LatestRestorableTime)
+				if want.PITR == nil {
+					assert.Nil(t, got[i].PITR, "storage %q: unexpected PITR block", want.Name)
 					continue
 				}
-				require.NotNil(t, got[i].LatestRestorableTime)
-				assert.True(t, want.LatestRestorableTime.Equal(got[i].LatestRestorableTime),
-					"storage %q: want %v, got %v", want.Name, want.LatestRestorableTime, got[i].LatestRestorableTime)
+				require.NotNil(t, got[i].PITR, "storage %q: missing PITR block", want.Name)
+				assert.Equal(t, want.PITR.State, got[i].PITR.State, "storage %q", want.Name)
+				assert.Equal(t, want.PITR.Reason, got[i].PITR.Reason, "storage %q", want.Name)
+				assertTimeEqual(t, want.PITR.EarliestRestorableTime, got[i].PITR.EarliestRestorableTime, "storage %q earliest", want.Name)
+				assertTimeEqual(t, want.PITR.LatestRestorableTime, got[i].PITR.LatestRestorableTime, "storage %q latest", want.Name)
 			}
 		})
 	}
+}
+
+func assertTimeEqual(t *testing.T, want, got *metav1.Time, msgAndArgs ...any) {
+	t.Helper()
+	if want == nil {
+		assert.Nil(t, got, msgAndArgs...)
+		return
+	}
+	require.NotNil(t, got, msgAndArgs...)
+	assert.True(t, want.Equal(got), msgAndArgs...)
 }
