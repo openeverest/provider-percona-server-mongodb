@@ -286,6 +286,20 @@ func StatusPSMDB(c *controller.Context) (controller.Status, error) {
 	if ds := c.GetDataSourceStatus(); ds != nil && !ds.Done {
 		return controller.Restoring(ds.Message), nil
 	}
+
+	// A restore drives the engine through intermediate and momentarily ready
+	// states, so reading the phase off the engine alone makes the Instance
+	// flap between Restoring, Provisioning and Ready while one is in flight.
+	// The Restore CR reaching a terminal state is what ends the restore, so let
+	// it own the phase for as long as it is running.
+	activeRestore, err := hasActiveRestoreForInstance(c, c.Namespace(), c.Name())
+	if err != nil {
+		return controller.Status{}, err
+	}
+	if activeRestore {
+		return controller.Restoring("Restore is running"), nil
+	}
+
 	switch psmdb.Status.State {
 	case psmdbv1.AppStateReady:
 		details, err := buildConnectionDetails(c, psmdb)
@@ -473,11 +487,14 @@ func NewPSMDBProviderInterface() *PSMDBProvider {
 			// we need to be notified when the status changes so we can
 			// update the Instance status.
 			controller.WatchOwned(&psmdbv1.PerconaServerMongoDB{}),
-			// Watch the datasource Restore CR (owned by the Instance via
-			// ReconcileDataSource). When the Restore reconciler marks it
-			// Succeeded the Instance reconciler re-evaluates and exits
-			// the Restoring phase.
-			controller.WatchOwned(&backupv1alpha1.Restore{}),
+			// Watch Restores so the Instance leaves the Restoring phase as soon
+			// as one reaches a terminal state. The engine usually reports ready
+			// before the Restore CR does, so without this the Instance would sit
+			// in Restoring until an unrelated event arrived. Standalone Restores
+			// are not owned by the Instance, so map them via spec.instanceRef.
+			controller.WatchExternal(&backupv1alpha1.Restore{},
+				handler.EnqueueRequestsFromMapFunc(enqueueRestoreInstance()),
+			),
 			// Watch operator backups so latestRestorableTime refreshes
 			// (stamped by PBM on ready backups) propagate to
 			// instance.status.backup.storages via BackupStorageStatuses.

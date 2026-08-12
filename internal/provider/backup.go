@@ -25,8 +25,10 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	backupv1alpha1 "github.com/openeverest/openeverest/v2/api/backup/v1alpha1"
 	commonv1alpha1 "github.com/openeverest/openeverest/v2/api/common/v1alpha1"
@@ -677,4 +679,50 @@ func (p *PSMDBProvider) CleanupRestore(c *controller.Context, restore *backupv1a
 		}
 	}
 	return false, nil
+}
+
+// hasActiveRestoreForInstance reports whether any Restore targeting the given
+// Instance is still in a non-terminal state.
+func hasActiveRestoreForInstance(c *controller.Context, namespace, instanceName string) (bool, error) {
+	restoreList := &backupv1alpha1.RestoreList{}
+	if err := c.Client().List(
+		c.Context(),
+		restoreList,
+		client.InNamespace(namespace),
+		client.MatchingFields{controller.IndexRestoreInstanceName: instanceName},
+	); err != nil {
+		return false, fmt.Errorf("list Restore resources for instance %q: %w", instanceName, err)
+	}
+
+	for i := range restoreList.Items {
+		r := restoreList.Items[i]
+		if !r.DeletionTimestamp.IsZero() {
+			continue
+		}
+		switch r.Status.State {
+		case backupv1alpha1.RestoreStateSucceeded, backupv1alpha1.RestoreStateFailed:
+			continue
+		default:
+			return true, nil
+		}
+	}
+
+	return false, nil
+}
+
+// enqueueRestoreInstance maps a Restore event to a reconcile request for the
+// Instance it targets, so the Instance phase tracks the restore's lifecycle.
+func enqueueRestoreInstance() func(ctx context.Context, obj client.Object) []reconcile.Request {
+	return func(_ context.Context, obj client.Object) []reconcile.Request {
+		r, ok := obj.(*backupv1alpha1.Restore)
+		if !ok || r.Spec.InstanceRef.Name == "" {
+			return nil
+		}
+		return []reconcile.Request{{
+			NamespacedName: types.NamespacedName{
+				Namespace: r.Namespace,
+				Name:      r.Spec.InstanceRef.Name,
+			},
+		}}
+	}
 }
