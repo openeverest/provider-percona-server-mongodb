@@ -12,31 +12,43 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package components contains custom spec types for provider component types.
+// Package components contains parameters types for provider component types.
 //
 // Each struct here corresponds to a component type defined in versions.yaml
 // and is converted to an OpenAPI schema during generation.
-// Add fields when a component type needs custom configuration beyond
+// Add fields when a component type needs structured parameters beyond
 // what the base Instance spec provides.
 //
 // +k8s:openapi-gen=true
 package components
 
-// MongodCustomSpec defines custom configuration for mongod components.
+// MongodParameters defines structured parameters for mongod components.
 // This struct is converted to OpenAPI schema and served via the /schema endpoint.
-// Provider users can specify these fields in the Instance's component CustomSpec.
-type MongodCustomSpec struct{}
+// Provider users can specify these fields in the Instance's component Parameters.
+type MongodParameters struct {
+	// Configuration is the mongod configuration file content (YAML).
+	// `configuration` is the conventional property name for the engine
+	// configuration file inside a component's parameters (mirrors the
+	// upstream Percona `configuration` field).
+	Configuration string `json:"configuration,omitempty"`
+}
 
-// MongosCustomSpec defines custom configuration for mongos (proxy) components.
-type MongosCustomSpec struct{}
+// MongosParameters defines structured parameters for mongos (proxy) components.
+type MongosParameters struct {
+	// Configuration is the mongos configuration file content (YAML).
+	// `configuration` is the conventional property name for the engine
+	// configuration file inside a component's parameters (mirrors the
+	// upstream Percona `configuration` field).
+	Configuration string `json:"configuration,omitempty"`
+}
 
-// PMMCustomSpec defines custom configuration for PMM monitoring.
-type PMMCustomSpec struct {
+// PMMParameters defines structured parameters for PMM monitoring.
+type PMMParameters struct {
 	// MonitoringConfigName specifies the name of the MonitoringConfig resource
 	// to use for configuring PMM monitoring.
 	// If not specified, monitoring will not be configured.
 	MonitoringConfigName *string `json:"monitoringConfigName,omitempty"`
 }
 
-// BackupCustomSpec defines custom configuration for backup agents.
-type BackupCustomSpec struct{}
+// BackupParameters defines structured parameters for backup agents.
+type BackupParameters struct{}

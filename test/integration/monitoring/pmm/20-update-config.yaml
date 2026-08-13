@@ -1,7 +1,3 @@
-apiVersion: kuttl.dev/v1
-kind: TestStep
-timeout: 10
----
 apiVersion: monitoring.openeverest.io/v1alpha1
 kind: MonitoringConfig
 metadata:
@@ -9,5 +5,6 @@ metadata:
 spec:
   type: pmm
   pmm:
-    credentialsSecretName: mc-psmdb-secret
+    credentialsSecretRef:
+      name: mc-psmdb-secret
     url: http://localhost-mc-psmdb-updated

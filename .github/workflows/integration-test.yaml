@@ -1,5 +1,5 @@
 ---
-# Reusable workflow — run one kuttl integration test suite inside a k3d cluster.
+# Reusable workflow — run one chainsaw integration test suite inside a k3d cluster.
 # Called by ci.yaml; not triggered directly.
 name: Integration test
 
@@ -7,7 +7,7 @@ on:
   workflow_call:
     inputs:
       make_target:
-        description: 'Make target for the kuttl suite (e.g. test-integration-core)'
+        description: 'Make target for the chainsaw suite (e.g. test-integration-core)'
         type: string
         required: true
       suite:
@@ -30,10 +30,10 @@ jobs:
     timeout-minutes: 45
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Checkout OpenEverest (v2)
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           repository: openeverest/openeverest
           ref: ${{ env.OPENEVEREST_BRANCH }}
@@ -43,7 +43,7 @@ jobs:
         uses: ./.github/actions/setup-k8s-tools
         with:
           install-k3d: 'true'
-          install-kuttl: 'true'
+          install-chainsaw: 'true'
 
       - name: Create k3d cluster
         run: |
@@ -88,12 +88,10 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Upload kuttl artifacts on failure
+      - name: Upload chainsaw report on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: kuttl-${{ inputs.suite }}-${{ github.run_id }}
-          path: |
-            /tmp/kuttl-report*.xml
-            /tmp/kuttl-test*
+          name: chainsaw-${{ inputs.suite }}-${{ github.run_id }}
+          path: /tmp/chainsaw-report*.xml
           retention-days: 7

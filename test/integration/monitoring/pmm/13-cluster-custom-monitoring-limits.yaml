@@ -1,22 +1,3 @@
-apiVersion: kuttl.dev/v1
-kind: TestStep
-timeout: 10
-# ---
-# apiVersion: everest.percona.com/v1alpha1
-# kind: DatabaseCluster
-# metadata:
-#   name: psmdb-mc
-# spec:
-#   monitoring:
-#     monitoringConfigName: mc-psmdb
-#     resources:
-#       limits:
-#         memory: 1G
-#         cpu: 1
-#   engine:
-#     resources:
-#       memory: 32G
----
 apiVersion: core.openeverest.io/v1alpha1
 kind: Instance
 metadata:
@@ -32,5 +13,5 @@ spec:
         limits:
           memory: 1G
           cpu: 1
-      customSpec:
+      parameters:
         monitoringConfigName: mc-psmdb

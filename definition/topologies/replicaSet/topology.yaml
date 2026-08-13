@@ -2,8 +2,8 @@
 # This file defines both the structural topology and its UI rendering.
 
 # Topology configuration: which components are used and their defaults.
-# Reference a Go type from definition/types/ via configSchema if the
-# topology has custom configuration fields.
+# Reference a Go type from definition/types/ via parametersSchema if the
+# topology has parameters.
 config:
   components:
     engine:
@@ -116,7 +116,7 @@ ui:
       components:
         monitoring:
           uiType: select
-          path: spec.components.monitoring.customSpec.monitoringConfigName
+          path: spec.components.monitoring.parameters.monitoringConfigName
           fieldParams:
             label: "Monitoring endpoint"
           dataSource:
@@ -157,7 +157,7 @@ ui:
             # https://github.com/openeverest/openeverest/issues/2398
         configuration:
           uiType: text
-          path: spec.components.engine.configuration
+          path: spec.components.engine.config
           fieldParams:
             label: "Engine configuration"
             placeholder: |2

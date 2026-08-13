@@ -1,72 +1,13 @@
-apiVersion: kuttl.dev/v1
-kind: TestAssert
-timeout: 10
-# timeout: 30
-collectors:
-  - command: kubectl get in/test-psmdb-cluster -n ${NAMESPACE} -o yaml
-  - command: kubectl get psmdb/test-psmdb-cluster -n ${NAMESPACE} -o yaml
-
-#   - command: kubectl get deploy/everest-controller-manager -n everest-system -o yaml
-#   - type: pod
-#     namespace: everest-system
-#     selector: control-plane=controller-manager
-#     tail: 100
-# commands:
-# # TODO check psmdb.spec.CRVersion
-# # TODO check psmdb.spec.backup.image
-# # TODO check dbc.status.recommendedCRVersion
-#   - command: kubectl wait --for=jsonpath='{.status.crVersion}'=${PSMDB_OPERATOR_VERSION} dbc/test-psmdb-cluster -n ${NAMESPACE}
-#   - command: kubectl wait --for=jsonpath='{.spec.engine.version}'=${PSMDB_DB_ENGINE_VERSION} dbc/test-psmdb-cluster -n ${NAMESPACE}
-#   - command: kubectl wait --for=jsonpath='{.spec.image}'="percona/percona-server-mongodb:${PSMDB_DB_ENGINE_VERSION}" psmdb/test-psmdb-cluster -n ${NAMESPACE}
-resourceRefs:
-  - apiVersion: core.openeverest.io/v1alpha1
-    kind: Instance
-    name: test-psmdb-cluster
-    ref: in
-  - apiVersion: psmdb.percona.com/v1
-    kind: PerconaServerMongoDB
-    name: test-psmdb-cluster
-    ref: psmdb
-assertAll:
-  # - celExpr: "has(db.metadata.finalizers)"
-  #   message: "db doesn't have finalizers"
-
-  # - celExpr: "'everest.percona.com/upstream-cluster-cleanup' in db.metadata.finalizers"
-  #   message: "'everest.percona.com/upstream-cluster-cleanup' is absent in db.metadata.finalizers"
-
-  # - celExpr: "'foregroundDeletion' in db.metadata.finalizers"
-  #   message: "foregroundDeletion' is absent in db.metadata.finalizers"
-
-  # - celExpr: "has(psmdb.metadata.finalizers)"
-  #   message: "psmdb doesn't have finalizers"
-
-  # - celExpr: "'percona.com/delete-psmdb-pods-in-order' in psmdb.metadata.finalizers"
-  #   message: "'percona.com/delete-psmdb-pods-in-order' is absent in psmdb.metadata.finalizers"
-
-  # - celExpr: "'percona.com/delete-psmdb-pvc' in psmdb.metadata.finalizers"
-  #   message: "percona.com/delete-psmdb-pvc' is absent in psmdb.metadata.finalizers"
-
-  - celExpr: "!has(psmdb.spec.pmm.enabled)"
-    message: "psmdb.spec.pmm.enabled is not empty"
-
-  - celExpr: "!has(psmdb.spec.pmm.serverHost)"
-    message: "psmdb.spec.pmm.serverHost is not empty"
-
-  - celExpr: "!has(psmdb.spec.pmm.resources.limits)"
-    message: "psmdb.spec.pmm.resources.limits is not empty"
-
-  - celExpr: "!has(psmdb.spec.pmm.resources.requests)"
-    message: "psmdb.spec.pmm.resources.requests is not empty"
----
 apiVersion: core.openeverest.io/v1alpha1
 kind: Instance
 metadata:
   name: test-psmdb-cluster
 spec:
-  provider: percona-server-mongodb
+  providerRef:
+    name: percona-server-mongodb
   topology:
     type: sharded
-    config:
+    parameters:
       numShards: 3
   components:
     engine:
@@ -116,6 +57,11 @@ kind: PerconaServerMongoDB
 metadata:
   name: test-psmdb-cluster
 spec:
+  # The provider must not set PMM server/resources when monitoring is disabled.
+  (pmm.enabled == null): true
+  (pmm.serverHost == null): true
+  (pmm.resources.limits == null): true
+  (pmm.resources.requests == null): true
   backup:
     configuration:
       backupOptions:

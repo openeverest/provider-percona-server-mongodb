@@ -1,13 +1,10 @@
-apiVersion: kuttl.dev/v1
-kind: TestStep
-timeout: 10
----
 apiVersion: core.openeverest.io/v1alpha1
 kind: Instance
 metadata:
   name: test-psmdb-cluster
 spec:
-  provider: percona-server-mongodb
+  providerRef:
+    name: percona-server-mongodb
   components:
     engine:
       affinity:

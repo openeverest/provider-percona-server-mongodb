@@ -1,95 +1,10 @@
-apiVersion: kuttl.dev/v1
-kind: TestAssert
-timeout: 30
-collectors:
-  - command: kubectl get monitoringconfig/mc-psmdb -n ${NAMESPACE} -o yaml
-  - command: kubectl get secret/mc-psmdb-secret -n ${NAMESPACE} -o yaml
-  # - command: kubectl get vmagent/everest-monitoring -n everest-monitoring -o yaml
-
-  # - command: kubectl get db/psmdb-mc -n ${NAMESPACE} -o yaml
-  - command: kubectl get in/psmdb-mc -n ${NAMESPACE} -o yaml
-  - command: kubectl get psmdb/psmdb-mc -n ${NAMESPACE} -o yaml
-  - command: kubectl get secret/everest-secrets-psmdb-mc -n ${NAMESPACE} -o yaml
-
-  # - command: kubectl get deploy/everest-controller-manager -n everest-system -o yaml
-  # - type: pod
-  #   namespace: everest-system
-  #   selector: control-plane=controller-manager
-  #   tail: 100
-resourceRefs:
-  - apiVersion: monitoring.openeverest.io/v1alpha1
-    kind: MonitoringConfig
-    name: mc-psmdb
-    ref: mc
-  # - apiVersion: everest.percona.com/v1alpha1
-  #   kind: DatabaseCluster
-  #   name: psmdb-mc
-  #   ref: dts
-  - apiVersion: core.openeverest.io/v1alpha1
-    kind: Instance
-    name: psmdb-mc
-    ref: inst
-  - apiVersion: psmdb.percona.com/v1
-    kind: PerconaServerMongoDB
-    name: psmdb-mc
-    ref: psmdb
-  # - apiVersion: operator.victoriametrics.com/v1beta1
-  #   kind: VMAgent
-  #   name: everest-monitoring
-  #   namespace: everest-monitoring
-  #   ref: vmagent
-assertAll:
-  # - celExpr: "has(mc.metadata.finalizers)"
-  #   message: "mc doesn't have finalizers"
-
-  # - celExpr: "'everest.percona.com/vmagent' in mc.metadata.finalizers"
-  #   message: "'everest.percona.com/vmagent' is absent in mc.metadata.finalizers"
-
-  # - celExpr: "'everest.percona.com/cleanup-secrets' in mc.metadata.finalizers"
-  #   message: "'everest.percona.com/cleanup-secrets' is absent in mc.metadata.finalizers"
-
-  # - celExpr: "!has(db.spec.monitoring.monitoringConfigName)"
-  #   message: "db.spec.monitoring.monitoringConfigName is not empty"
-
-  - celExpr: "!has(inst.spec.components.monitoring)"
-    message: "inst.spec.components.monitoring should not exist"
-
-  - celExpr: "!has(psmdb.spec.pmm.enabled)"
-    message: "psmdb.spec.pmm.enabled is not empty"
-
-  - celExpr: "!has(psmdb.spec.pmm.serverHost)"
-    message: "psmdb.spec.pmm.serverHost is not empty"
-
-  - celExpr: "!has(psmdb.spec.pmm.resources.limits)"
-    message: "psmdb.spec.pmm.resources.limits is not empty"
-
-  - celExpr: "!has(psmdb.spec.pmm.resources.requests)"
-    message: "psmdb.spec.pmm.resources.requests is not empty"
-
-  # - celExpr: "has(vmagent.spec.remoteWrite)"
-  #   message: "vmagent doesn't have .spec.remoteWrite"
-
-  # - celExpr: "vmagent.spec.remoteWrite.exists(i, i.url == 'http://localhost-mc-psmdb-updated/victoriametrics/api/v1/write')"
-  #   message: "vmagent.spec.remoteWrite doesn't contain url 'http://localhost-mc-psmdb-updated/victoriametrics/api/v1/write'"
-# ---
-# apiVersion: everest.percona.com/v1alpha1
-# kind: DatabaseCluster
-# metadata:
-#   name: psmdb-mc
-# spec:
-#   monitoring:
-#     resources:
-#       requests:
-#         memory: "64Mi"
-#         cpu: "250m"
-#       limits:
-#         memory: "128Mi"
-#         cpu: "500m"
----
 apiVersion: core.openeverest.io/v1alpha1
 kind: Instance
 metadata:
   name: psmdb-mc
+spec:
+  # Monitoring must be fully removed from the Instance spec.
+  (components.monitoring == null): true
 ---
 apiVersion: monitoring.openeverest.io/v1alpha1
 kind: MonitoringConfig
@@ -98,7 +13,8 @@ metadata:
 spec:
   type: pmm
   pmm:
-    credentialsSecretName: mc-psmdb-secret
+    credentialsSecretRef:
+      name: mc-psmdb-secret
     verifyTLS: false
     url: http://localhost-mc-psmdb-updated
 # status:
@@ -123,6 +39,11 @@ kind: PerconaServerMongoDB
 metadata:
   name: psmdb-mc
 spec:
+  # PMM must be fully removed when monitoring is disabled.
+  (pmm.enabled == null): true
+  (pmm.serverHost == null): true
+  (pmm.resources.limits == null): true
+  (pmm.resources.requests == null): true
   secrets:
     users: everest-secrets-psmdb-mc
 ---

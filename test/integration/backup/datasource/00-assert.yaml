@@ -1,10 +1,3 @@
-apiVersion: kuttl.dev/v1
-kind: TestAssert
-timeout: 30
-collectors:
-  - command: kubectl get backupclass percona-backup-mongodb -o yaml
-  - command: kubectl get backupstorage test-storage-s3 -n ${NAMESPACE} -o yaml
----
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -30,7 +23,8 @@ spec:
     region: us-east-1
     endpointURL: http://fake
     forcePathStyle: true
-    credentialsSecretName: backup-storage-credentials
+    credentialsSecretRef:
+      name: backup-storage-credentials
     verifyTLS: false
 ---
 apiVersion: backup.openeverest.io/v1alpha1

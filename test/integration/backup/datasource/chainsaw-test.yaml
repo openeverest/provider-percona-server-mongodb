@@ -1,0 +1,148 @@
+---
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: backup-datasource
+spec:
+  description: |
+    Restore from a backup into a new Instance: create a source cluster with
+    backups enabled, take a backup, create a destination cluster from that
+    backup, and verify the datasource Restore is created.
+  catch:
+    - script:
+        content: kubectl -n $NAMESPACE get instance,psmdb,backup,psmdb-backup,restore,psmdb-restore,backupstorage -o yaml
+    - script:
+        content: kubectl get backupclass -o yaml
+    - podLogs:
+        namespace: provider-system
+        selector: app.kubernetes.io/name=provider-percona-server-mongodb
+        tail: 100
+  steps:
+    - name: setup-backup-infra
+      try:
+        - apply:
+            file: 00-install.yaml
+        - assert:
+            file: 00-assert.yaml
+
+    - name: create-source-cluster
+      try:
+        - apply:
+            file: 10-create-cluster.yaml
+        - assert:
+            file: 10-assert.yaml
+
+    # Create the users secret and then simulate the source cluster becoming
+    # ready. The secret must exist before the status patch triggers the
+    # reconcile, otherwise the provider reports Failed and nothing re-triggers
+    # reconciliation (the provider does not watch Secrets).
+    - name: source-cluster-ready
+      try:
+        - apply:
+            file: 11-cluster-ready.yaml
+        - script:
+            content: |
+              kubectl patch psmdb/src-psmdb-cluster --subresource status -n $NAMESPACE \
+                -p '{"status":{"state":"ready","size":3,"ready":3,"host":"src-psmdb-cluster-rs0.default.svc.cluster.local","backupVersion":"2.9.0"}}' --type=merge
+        - assert:
+            file: 11-assert.yaml
+
+    - name: create-backup
+      try:
+        - apply:
+            file: 20-create-backup.yaml
+        - assert:
+            file: 20-assert.yaml
+
+    # Simulate the PSMDB backup reaching ready state.
+    - name: backup-ready
+      try:
+        - script:
+            content: |
+              kubectl patch psmdb-backup/src-backup --subresource status -n $NAMESPACE \
+                -p '{"status":{"state":"ready","completed":"2025-01-01T01:02:03Z","storageName":"test-storage-s3","type":"logical","destination":"s3://test-storage-s3/src-psmdb-cluster/dee8317b-b24e-45f5-bd8d-bf2aff04819d/2025-01-01T01:02:03Z"}}' --type=merge
+        - assert:
+            file: 21-assert.yaml
+
+    - name: create-cluster-from-backup
+      try:
+        - apply:
+            file: 30-create-cluster-from-backup.yaml
+        - assert:
+            file: 30-assert.yaml
+        # The datasource Restore must be named <instance>-datasource, not <instance>.
+        - error:
+            file: 30-errors.yaml
+
+    # Create the users secret and then simulate the destination cluster
+    # becoming ready with backup version set.
+    - name: destination-cluster-ready
+      try:
+        - apply:
+            file: 31-dest-cluster-ready.yaml
+        - script:
+            content: |
+              kubectl patch psmdb/dest-psmdb-cluster --subresource status -n $NAMESPACE \
+                -p '{"status":{"state":"ready","size":3,"ready":3,"host":"dest-psmdb-cluster-rs0.default.svc.cluster.local","backupVersion":"2.9.0"}}' --type=merge
+        - assert:
+            file: 31-assert.yaml
+
+    - name: delete-clusters
+      try:
+        - script:
+            content: |
+              kubectl -n $NAMESPACE delete psmdb-restore,psmdb-backup,psmdb,backup,instance --all --wait=false --ignore-not-found=true
+              # Remove finalizers from PerconaServerMongoDBBackup. It has the percona.com/delete-backup
+              # finalizer that prevents deletion (the operator is scaled to 0, so finalizers won't be processed).
+              kubectl -n $NAMESPACE patch psmdb-backup src-backup --type=merge -p '{"metadata":{"finalizers":[]}}'
+              kubectl -n $NAMESPACE patch psmdb/src-psmdb-cluster -p '{"metadata":{"finalizers":null}}' --type merge
+              kubectl -n $NAMESPACE patch psmdb/dest-psmdb-cluster -p '{"metadata":{"finalizers":null}}' --type merge
+        - wait:
+            apiVersion: backup.openeverest.io/v1alpha1
+            kind: Restore
+            for:
+              deletion: {}
+        - wait:
+            apiVersion: psmdb.percona.com/v1
+            kind: PerconaServerMongoDBRestore
+            for:
+              deletion: {}
+        - wait:
+            apiVersion: psmdb.percona.com/v1
+            kind: PerconaServerMongoDBBackup
+            for:
+              deletion: {}
+        - wait:
+            apiVersion: psmdb.percona.com/v1
+            kind: PerconaServerMongoDB
+            for:
+              deletion: {}
+        - wait:
+            apiVersion: backup.openeverest.io/v1alpha1
+            kind: Backup
+            for:
+              deletion: {}
+        - wait:
+            apiVersion: core.openeverest.io/v1alpha1
+            kind: Instance
+            for:
+              deletion: {}
+
+    - name: cleanup-backup-infra
+      try:
+        - script:
+            content: |
+              kubectl -n $NAMESPACE delete backupstorage --all --ignore-not-found=true
+              kubectl delete backupclass/percona-backup-mongodb --ignore-not-found=true
+              kubectl -n $NAMESPACE delete secret/backup-storage-credentials --ignore-not-found=true
+        - wait:
+            apiVersion: backup.openeverest.io/v1alpha1
+            kind: BackupStorage
+            for:
+              deletion: {}
+        - wait:
+            apiVersion: v1
+            kind: Secret
+            name: backup-storage-credentials
+            for:
+              deletion: {}

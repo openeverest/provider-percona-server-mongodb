@@ -15,9 +15,8 @@
 package provider
 
 import (
-	"fmt"
-
 	"github.com/openeverest/openeverest/v2/provider-runtime/controller"
+	"github.com/openeverest/provider-percona-server-mongodb/definition/components"
 	"github.com/openeverest/provider-percona-server-mongodb/internal/common"
 	psmdbv1 "github.com/percona/percona-server-mongodb-operator/pkg/apis/psmdb/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -29,10 +28,11 @@ func configureMongos(c *controller.Context) (*psmdbv1.MongosSpec, error) {
 	spec := in.Spec
 	proxy := spec.Components[common.ComponentProxy]
 
-	config, err := c.ComponentConfig(proxy)
-	if err != nil {
-		return nil, fmt.Errorf("resolve proxy config: %w", err)
-	}
+	// The engine configuration file is the conventional `configuration`
+	// property inside the component's parameters.
+	var proxyParams components.MongosParameters
+	_ = c.TryDecodeComponentParameters(proxy, &proxyParams)
+	config := proxyParams.Configuration
 
 	// Set default affinity if none is provided
 	podAffinity := &psmdbv1.PodAffinity{

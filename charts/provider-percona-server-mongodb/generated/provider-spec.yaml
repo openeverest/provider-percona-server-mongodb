@@ -33,12 +33,36 @@ spec:
     backupAgent:
       type: backup
     configServer:
+      parametersSchema:
+        openAPIV3Schema:
+          properties:
+            configuration:
+              type: string
+          type: object
       type: mongod
     engine:
+      parametersSchema:
+        openAPIV3Schema:
+          properties:
+            configuration:
+              type: string
+          type: object
       type: mongod
     monitoring:
+      parametersSchema:
+        openAPIV3Schema:
+          properties:
+            monitoringConfigName:
+              type: string
+          type: object
       type: pmm
     proxy:
+      parametersSchema:
+        openAPIV3Schema:
+          properties:
+            configuration:
+              type: string
+          type: object
       type: mongod
   topologies:
     replicaSet:
@@ -57,12 +81,13 @@ spec:
         monitoring:
           optional: true
         proxy: {}
-      configSchema:
-        properties:
-          numShards:
-            format: int32
-            type: integer
-        type: object
+      parametersSchema:
+        openAPIV3Schema:
+          properties:
+            numShards:
+              format: int32
+              type: integer
+          type: object
   uiSchema:
     replicaSet:
       sections:
@@ -78,7 +103,7 @@ spec:
                   operationProfiling:
                     mode: slowOps
                     slowOpThresholdMs: 200
-              path: spec.components.engine.configuration
+              path: spec.components.engine.config
               uiType: text
             externalAccess:
               fieldParams:
@@ -139,7 +164,7 @@ spec:
                 provider: monitoringConfigs
               fieldParams:
                 label: Monitoring endpoint
-              path: spec.components.monitoring.customSpec.monitoringConfigName
+              path: spec.components.monitoring.parameters.monitoringConfigName
               uiType: select
           description: Monitor the health of your database to detect issues quickly and improve its performance.
           label: Monitoring
@@ -233,7 +258,7 @@ spec:
                   operationProfiling:
                     mode: slowOps
                     slowOpThresholdMs: 200
-              path: spec.components.engine.configuration
+              path: spec.components.engine.config
               uiType: text
             externalAccess:
               fieldParams:
@@ -294,7 +319,7 @@ spec:
                 provider: monitoringConfigs
               fieldParams:
                 label: Monitoring endpoint
-              path: spec.components.monitoring.customSpec.monitoringConfigName
+              path: spec.components.monitoring.parameters.monitoringConfigName
               uiType: select
           description: Monitor the health of your database to detect issues quickly and improve its performance.
           label: Monitoring

@@ -1,13 +1,10 @@
-apiVersion: kuttl.dev/v1
-kind: TestStep
-timeout: 10
----
 apiVersion: core.openeverest.io/v1alpha1
 kind: Instance
 metadata:
   name: psmdb-mc
 spec:
-  provider: percona-server-mongodb
+  providerRef:
+    name: percona-server-mongodb
   components:
     engine:
       type: mongod
@@ -23,7 +20,7 @@ spec:
       replicas: 1
     monitoring:
       type: pmm
-      customSpec:
+      parameters:
         monitoringConfigName: mc-psmdb
 # ---
 # apiVersion: everest.percona.com/v1alpha1

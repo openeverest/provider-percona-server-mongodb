@@ -21,11 +21,12 @@ package definition
 type TopologyType string
 
 const (
-// TopologyTypeReplicaSet represents a replica set topology.
-TopologyTypeReplicaSet TopologyType = "replicaSet"
-// TopologyTypeSharded represents a sharded cluster topology.
-TopologyTypeSharded TopologyType = "sharded"
+	// TopologyTypeReplicaSet represents a replica set topology.
+	TopologyTypeReplicaSet TopologyType = "replicaSet"
+	// TopologyTypeSharded represents a sharded cluster topology.
+	TopologyTypeSharded TopologyType = "sharded"
 )
 
-// GlobalConfig defines global configuration that applies to the entire cluster.
-type GlobalConfig struct{}
+// Parameters defines instance-wide structured parameters that apply to the
+// entire cluster (Instance.spec.parameters).
+type Parameters struct{}

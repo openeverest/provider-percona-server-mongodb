@@ -1,23 +1,16 @@
-apiVersion: kuttl.dev/v1
-kind: TestAssert
-timeout: 30
-collectors:
-  - command: kubectl get in/src-psmdb-cluster -n ${NAMESPACE} -o yaml
-  - command: kubectl get psmdb/src-psmdb-cluster -n ${NAMESPACE} -o yaml
----
 apiVersion: core.openeverest.io/v1alpha1
 kind: Instance
 metadata:
   name: src-psmdb-cluster
 spec:
-  provider: percona-server-mongodb
+  providerRef:
+    name: percona-server-mongodb
   backup:
     enabled: true
     classRef:
       name: percona-backup-mongodb
     storages:
-    - name: test-storage-s3
-      storageRef: 
+    - storageRef:
         name: test-storage-s3
   components:
     engine:

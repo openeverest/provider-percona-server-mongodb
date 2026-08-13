@@ -286,6 +286,20 @@ func StatusPSMDB(c *controller.Context) (controller.Status, error) {
 	if ds := c.GetDataSourceStatus(); ds != nil && !ds.Done {
 		return controller.Restoring(ds.Message), nil
 	}
+
+	// A restore drives the engine through intermediate and momentarily ready
+	// states, so reading the phase off the engine alone makes the Instance
+	// flap between Restoring, Provisioning and Ready while one is in flight.
+	// The Restore CR reaching a terminal state is what ends the restore, so let
+	// it own the phase for as long as it is running.
+	activeRestore, err := hasActiveRestoreForInstance(c, c.Namespace(), c.Name())
+	if err != nil {
+		return controller.Status{}, err
+	}
+	if activeRestore {
+		return controller.Restoring("Restore is running"), nil
+	}
+
 	switch psmdb.Status.State {
 	case psmdbv1.AppStateReady:
 		details, err := buildConnectionDetails(c, psmdb)
@@ -327,8 +341,7 @@ func buildConnectionDetails(c *controller.Context, psmdb *psmdbv1.PerconaServerM
 }
 
 // ensureDataSourceCredentials copies the users secret from the source Instance
-// to the target Instance when seeding from .spec.dataSource. The source
-// Instance is identified via the referenced Backup CR's .spec.instanceName.
+// to the target Instance when seeding from .spec.dataSource.
 // This is idempotent: if the target secret already exists it is not
 // overwritten, ensuring reconcile loops don't corrupt credentials.
 func ensureDataSourceCredentials(c *controller.Context, targetSecretName string) error {
@@ -339,21 +352,19 @@ func ensureDataSourceCredentials(c *controller.Context, targetSecretName string)
 		return nil
 	}
 
-	// Resolve the source Instance name from the referenced Backup CR.
-	ds := c.Instance().Spec.DataSource
-	srcBackup := &backupv1alpha1.Backup{}
-	if err := c.Get(srcBackup, ds.Backup.BackupName); err != nil {
-		if apierrors.IsNotFound(err) {
-			// Source Backup not found; ReconcileDataSource will surface this
-			// as a condition later. Let Sync continue — the gate on
-			// PSMDB Ready + BackupVersion will hold the restore.
-			return nil
-		}
-		return fmt.Errorf("get source Backup %q for credential copy: %w", ds.Backup.BackupName, err)
+	sourceInstanceName, err := dataSourceInstanceName(c)
+	if err != nil {
+		return err
+	}
+	if sourceInstanceName == "" {
+		// The source cannot be resolved yet (or at all); ReconcileDataSource
+		// surfaces that as a condition. Let Sync continue — the gate on
+		// PSMDB Ready + BackupVersion holds the restore.
+		return nil
 	}
 
 	// The source Instance's users secret follows the same naming convention.
-	sourceSecretName := "everest-secrets-" + srcBackup.Spec.InstanceName
+	sourceSecretName := "everest-secrets-" + sourceInstanceName
 	sourceSecret := &corev1.Secret{}
 	if err := c.Get(sourceSecret, sourceSecretName); err != nil {
 		if apierrors.IsNotFound(err) {
@@ -391,6 +402,36 @@ func ensureDataSourceCredentials(c *controller.Context, targetSecretName string)
 		return fmt.Errorf("create target credentials secret %q: %w", targetSecretName, err)
 	}
 	return nil
+}
+
+// dataSourceInstanceName resolves the Instance whose data is being seeded from.
+// A "Backup" source names it indirectly, through the referenced Backup CR's
+// .spec.instanceRef; a "PointInTime" source names it directly (required by a
+// CEL rule on Instance, since a new Instance has no stream of its own to
+// default to). An empty name means the source is not resolvable yet.
+func dataSourceInstanceName(c *controller.Context) (string, error) {
+	ds := c.Instance().Spec.DataSource
+	switch ds.Type {
+	case backupv1alpha1.DataSourceTypeBackup:
+		if ds.Backup == nil || ds.Backup.BackupRef.Name == "" {
+			return "", nil
+		}
+		srcBackup := &backupv1alpha1.Backup{}
+		if err := c.Get(srcBackup, ds.Backup.BackupRef.Name); err != nil {
+			if apierrors.IsNotFound(err) {
+				return "", nil
+			}
+			return "", fmt.Errorf("get source Backup %q for credential copy: %w", ds.Backup.BackupRef.Name, err)
+		}
+		return srcBackup.Spec.InstanceRef.Name, nil
+	case backupv1alpha1.DataSourceTypePointInTime:
+		if ds.PointInTime == nil || ds.PointInTime.Source.InstanceRef == nil {
+			return "", nil
+		}
+		return ds.PointInTime.Source.InstanceRef.Name, nil
+	default:
+		return "", nil
+	}
 }
 
 // CleanupPSMDB handles deletion of the PSMDB cluster.
@@ -446,11 +487,22 @@ func NewPSMDBProviderInterface() *PSMDBProvider {
 			// we need to be notified when the status changes so we can
 			// update the Instance status.
 			controller.WatchOwned(&psmdbv1.PerconaServerMongoDB{}),
-			// Watch the datasource Restore CR (owned by the Instance via
-			// ReconcileDataSource). When the Restore reconciler marks it
-			// Succeeded the Instance reconciler re-evaluates and exits
-			// the Restoring phase.
-			controller.WatchOwned(&backupv1alpha1.Restore{}),
+			// Watch Restores so the Instance leaves the Restoring phase as soon
+			// as one reaches a terminal state. The engine usually reports ready
+			// before the Restore CR does, so without this the Instance would sit
+			// in Restoring until an unrelated event arrived. Standalone Restores
+			// are not owned by the Instance, so map them via spec.instanceRef.
+			controller.WatchExternal(&backupv1alpha1.Restore{},
+				handler.EnqueueRequestsFromMapFunc(enqueueRestoreInstance()),
+			),
+			// Watch operator backups so latestRestorableTime refreshes
+			// (stamped by PBM on ready backups) propagate to
+			// instance.status.backup.storages via BackupStorageStatuses.
+			// Operator backups are not owned by the Instance, so map them
+			// to the parent via spec.clusterName.
+			controller.WatchExternal(&psmdbv1.PerconaServerMongoDBBackup{},
+				handler.EnqueueRequestsFromMapFunc(enqueueOperatorBackupInstance()),
+			),
 			controller.WatchExternal(&monitoringv1alpha1.MonitoringConfig{},
 				handler.EnqueueRequestsFromMapFunc(enqueueMonitoringConfig(p)),
 				monitoringConfigPredicate(),
@@ -533,3 +585,4 @@ var _ controller.BackupProvider = (*PSMDBProvider)(nil)
 var _ controller.BackupWatcher = (*PSMDBProvider)(nil)
 var _ controller.RestoreWatcher = (*PSMDBProvider)(nil)
 var _ controller.BackupMirror = (*PSMDBProvider)(nil)
+var _ controller.InstanceBackupStatusReporter = (*PSMDBProvider)(nil)

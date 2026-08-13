@@ -28,6 +28,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	backupv1alpha1 "github.com/openeverest/openeverest/v2/api/backup/v1alpha1"
+	commonv1alpha1 "github.com/openeverest/openeverest/v2/api/common/v1alpha1"
 	corev1alpha1 "github.com/openeverest/openeverest/v2/api/core/v1alpha1"
 	"github.com/openeverest/openeverest/v2/provider-runtime/controller"
 
@@ -128,7 +129,7 @@ func TestValidatePSMDB(t *testing.T) {
 					DataSource: &backupv1alpha1.DataSource{
 						Type: backupv1alpha1.DataSourceTypeBackup,
 						Backup: &backupv1alpha1.DataSourceBackup{
-							BackupName: "my-backup",
+							BackupRef: commonv1alpha1.ObjectRef{Name: "my-backup"},
 						},
 					},
 					Components: map[string]corev1alpha1.ComponentSpec{
@@ -166,7 +167,7 @@ func TestValidatePSMDB(t *testing.T) {
 					},
 				},
 			},
-			expectErr: "missing spec.dataSource.backup.backupName",
+			expectErr: "missing spec.dataSource.backup.backupRef.name",
 		},
 		{
 			name: "missing engine component",
