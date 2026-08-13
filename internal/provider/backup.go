@@ -17,6 +17,7 @@ package provider
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/AlekSi/pointer"
 	psmdbv1 "github.com/percona/percona-server-mongodb-operator/pkg/apis/psmdb/v1"
@@ -223,66 +224,6 @@ func (p *PSMDBProvider) OperatorBackupType() client.Object {
 	return &psmdbv1.PerconaServerMongoDBBackup{}
 }
 
-// enqueueOperatorBackupInstance maps a PerconaServerMongoDBBackup event to a
-// reconcile request for the Instance named by spec.clusterName. This keeps
-// instance.status.backup fresh as PBM refreshes latestRestorableTime on
-// operator backup CRs, which are not owned by the Instance.
-func enqueueOperatorBackupInstance() func(ctx context.Context, obj client.Object) []reconcile.Request {
-	return func(_ context.Context, obj client.Object) []reconcile.Request {
-		ub, ok := obj.(*psmdbv1.PerconaServerMongoDBBackup)
-		if !ok || ub.Spec.ClusterName == "" {
-			return nil
-		}
-		return []reconcile.Request{{
-			NamespacedName: types.NamespacedName{
-				Namespace: ub.Namespace,
-				Name:      ub.Spec.ClusterName,
-			},
-		}}
-	}
-}
-
-// BackupStorageStatuses implements controller.InstanceBackupStatusReporter.
-// It aggregates the latest restorable time reported by the PSMDB operator on
-// PerconaServerMongoDBBackup CRs (refreshed by PBM on ready backups) into one
-// entry per storage declared on the Instance. The runtime publishes the
-// result on instance.status.backup.storages after every successful Sync.
-func (p *PSMDBProvider) BackupStorageStatuses(c *controller.Context) ([]corev1alpha1.InstanceBackupStorageStatus, error) {
-	backupCfg := c.Instance().Spec.Backup
-	if backupCfg == nil || !backupCfg.Enabled {
-		return nil, nil
-	}
-
-	list := &psmdbv1.PerconaServerMongoDBBackupList{}
-	if err := c.List(list); err != nil {
-		return nil, fmt.Errorf("list PSMDB backups: %w", err)
-	}
-
-	latestPerStorage := make(map[string]*metav1.Time)
-	for i := range list.Items {
-		ub := &list.Items[i]
-		if ub.Spec.ClusterName != c.Name() || ub.Status.LatestRestorableTime == nil {
-			continue
-		}
-		storageName := ub.Spec.StorageName
-		if storageName == "" {
-			storageName = ub.Status.StorageName
-		}
-		if cur := latestPerStorage[storageName]; cur == nil || ub.Status.LatestRestorableTime.After(cur.Time) {
-			latestPerStorage[storageName] = ub.Status.LatestRestorableTime
-		}
-	}
-
-	out := make([]corev1alpha1.InstanceBackupStorageStatus, 0, len(backupCfg.Storages))
-	for _, s := range backupCfg.Storages {
-		out = append(out, corev1alpha1.InstanceBackupStorageStatus{
-			Name:                 s.StorageRef.Name,
-			LatestRestorableTime: latestPerStorage[s.StorageRef.Name],
-		})
-	}
-	return out, nil
-}
-
 // selectMainStorageName returns the name of the storage that should be
 // designated as the PBM main storage. The PITR-enabled storage is always
 // preferred because PSMDB requires PITR to write to the main storage. When no
@@ -404,7 +345,9 @@ func (p *PSMDBProvider) SyncBackup(c *controller.Context, backup *backupv1alpha1
 }
 
 // SyncRestore creates or updates a PerconaServerMongoDBRestore that points at
-// the operator backup produced by the source Backup CR.
+// the operator backup the Restore's data source resolves to: the mirror of the
+// named Backup CR for type Backup, or the base backup selected for the stream
+// for type PointInTime (PBM replays the oplog forward from it).
 //
 // Two cases are handled:
 //
@@ -419,7 +362,7 @@ func (p *PSMDBProvider) SyncBackup(c *controller.Context, backup *backupv1alpha1
 //     matching storage entry so credentials are taken from the target
 //     cluster's registered storages.
 func (p *PSMDBProvider) SyncRestore(c *controller.Context, restore *backupv1alpha1.Restore) (controller.RestoreExecutionStatus, error) {
-	sourceBackup, exec, err := resolveSourceBackup(c, restore)
+	sourceBackup, desiredPITR, exec, err := resolveRestoreSource(c, restore)
 	if err != nil {
 		return controller.RestoreExecutionStatus{}, err
 	}
@@ -491,17 +434,7 @@ func (p *PSMDBProvider) SyncRestore(c *controller.Context, restore *backupv1alph
 			psmdbRestore.Spec.BackupName = operatorBackupName
 			psmdbRestore.Spec.BackupSource = nil
 		}
-		// PITR support: the runtime restore reconciler rejects PITR requests
-		// whose BackupClass does not advertise providerManaged.supportsPITR
-		// before dispatching SyncRestore; here we only translate.
-		if restore.Spec.DataSource.Backup.PITR != nil {
-			psmdbRestore.Spec.PITR = &psmdbv1.PITRestoreSpec{
-				Type: psmdbv1.PITRestoreType(restore.Spec.DataSource.Backup.PITR.Type),
-			}
-			if restore.Spec.DataSource.Backup.PITR.Date != nil {
-				psmdbRestore.Spec.PITR.Date = &psmdbv1.PITRestoreDate{Time: *restore.Spec.DataSource.Backup.PITR.Date}
-			}
-		}
+		psmdbRestore.Spec.PITR = desiredPITR
 		return controllerutil.SetControllerReference(restore, psmdbRestore, c.Client().Scheme())
 	}); err != nil {
 		return controller.RestoreExecutionStatus{}, fmt.Errorf("create or update PSMDB restore: %w", err)
@@ -530,32 +463,157 @@ func (p *PSMDBProvider) SyncRestore(c *controller.Context, restore *backupv1alph
 	return out, nil
 }
 
-// resolveSourceBackup fetches the Backup CR referenced by the Restore's
-// DataSource. Returns (nil, exec, nil) when a terminal exec status should be
-// reported (e.g. missing data source field) and (backup, _, nil) when the
-// source Backup is in scope.
-func resolveSourceBackup(
+// resolveRestoreSource translates the Restore's data source into the operator
+// inputs: the Backup CR whose operator mirror the restore reads from, and the
+// PITR block when rolling the oplog stream forward.
+//
+// A nil Backup means the source is not usable yet (or at all) and the caller
+// should surface the returned status verbatim.
+func resolveRestoreSource(
+	c *controller.Context,
+	restore *backupv1alpha1.Restore,
+) (*backupv1alpha1.Backup, *psmdbv1.PITRestoreSpec, controller.RestoreExecutionStatus, error) {
+	switch restore.Spec.DataSource.Type {
+	case backupv1alpha1.DataSourceTypeBackup:
+		backup, exec, err := resolveBackupSource(c, restore)
+		return backup, nil, exec, err
+	case backupv1alpha1.DataSourceTypePointInTime:
+		return resolvePointInTimeSource(c, restore)
+	default:
+		return nil, nil, controller.RestoreExecutionStatus{
+			State:   backupv1alpha1.RestoreStateFailed,
+			Message: fmt.Sprintf("Unsupported dataSource type %q", restore.Spec.DataSource.Type),
+		}, nil
+	}
+}
+
+// resolveBackupSource restores the state captured by a named Backup CR. The
+// Backup mirrors an operator backup of the same name.
+func resolveBackupSource(
 	c *controller.Context,
 	restore *backupv1alpha1.Restore,
 ) (*backupv1alpha1.Backup, controller.RestoreExecutionStatus, error) {
-	if restore.Spec.DataSource.Backup == nil || restore.Spec.DataSource.Backup.BackupRef.Name == "" {
+	ref := restore.Spec.DataSource.Backup
+	if ref == nil || ref.BackupRef.Name == "" {
 		return nil, controller.RestoreExecutionStatus{
 			State:   backupv1alpha1.RestoreStateFailed,
-			Message: "restore.spec.dataSource.backup is not set",
+			Message: "Restore dataSource.backup.backupRef.name is required",
 		}, nil
 	}
-	backupName := restore.Spec.DataSource.Backup.BackupRef.Name
 	backup := &backupv1alpha1.Backup{}
-	if err := c.Get(backup, backupName); err != nil {
+	if err := c.Get(backup, ref.BackupRef.Name); err != nil {
 		if apierrors.IsNotFound(err) {
 			return nil, controller.RestoreExecutionStatus{
-				State:   backupv1alpha1.RestoreStateFailed,
-				Message: fmt.Sprintf("source Backup %q not found", backupName),
+				State:   backupv1alpha1.RestoreStatePending,
+				Message: "Waiting for source Backup",
 			}, nil
 		}
 		return nil, controller.RestoreExecutionStatus{}, fmt.Errorf("get source Backup: %w", err)
 	}
+	if backup.Status.State == backupv1alpha1.BackupStateFailed {
+		return nil, controller.RestoreExecutionStatus{
+			State:   backupv1alpha1.RestoreStateFailed,
+			Message: "Source Backup failed; cannot restore",
+		}, nil
+	}
 	return backup, controller.RestoreExecutionStatus{}, nil
+}
+
+// resolvePointInTimeSource rolls the oplog stream forward to a recovery target.
+//
+// The client names the stream (source Instance + storage) and the target, never
+// a backup: PBM needs a base backup to restore before replaying the oplog, and
+// selecting it is engine knowledge. The base is the newest Succeeded backup on
+// the stream that completed at or before the target.
+func resolvePointInTimeSource(
+	c *controller.Context,
+	restore *backupv1alpha1.Restore,
+) (*backupv1alpha1.Backup, *psmdbv1.PITRestoreSpec, controller.RestoreExecutionStatus, error) {
+	pitr := restore.Spec.DataSource.PointInTime
+	if pitr == nil {
+		return nil, nil, controller.RestoreExecutionStatus{
+			State:   backupv1alpha1.RestoreStateFailed,
+			Message: "Restore dataSource.pointInTime is required when type is \"PointInTime\"",
+		}, nil
+	}
+	// A schema rule already enforces this; repeated for paths that bypass
+	// admission.
+	if pitr.RecoveryTarget == backupv1alpha1.RecoveryTargetDate && pitr.Date == nil {
+		return nil, nil, controller.RestoreExecutionStatus{
+			State:   backupv1alpha1.RestoreStateFailed,
+			Message: "Restore dataSource.pointInTime.date is required when recoveryTarget is \"date\"",
+		}, nil
+	}
+
+	sourceInstance := restore.Spec.InstanceRef.Name
+	if pitr.Source.InstanceRef != nil {
+		sourceInstance = pitr.Source.InstanceRef.Name
+	}
+
+	base, pending := selectPITRBaseBackup(c, restore.Namespace, sourceInstance, pitr.Source.StorageRef.Name, pitr)
+	if pending != nil {
+		return nil, nil, *pending, nil
+	}
+
+	out := &psmdbv1.PITRestoreSpec{
+		Type: psmdbv1.PITRestoreType(pitr.RecoveryTarget),
+	}
+	if pitr.Date != nil {
+		// PSMDB parses the timezone-less date as node-local time, so normalise
+		// to UTC first.
+		out.Date = &psmdbv1.PITRestoreDate{Time: metav1.NewTime(pitr.Date.UTC())}
+	}
+
+	return base, out, controller.RestoreExecutionStatus{}, nil
+}
+
+// selectPITRBaseBackup returns the newest Succeeded Backup on the given stream
+// that completed at or before the recovery target. The oplog is replayed
+// forward from it, so a base completed *after* the target cannot be used.
+func selectPITRBaseBackup(
+	c *controller.Context,
+	namespace, instanceName, storageName string,
+	pitr *backupv1alpha1.DataSourcePointInTime,
+) (*backupv1alpha1.Backup, *controller.RestoreExecutionStatus) {
+	list := &backupv1alpha1.BackupList{}
+	if err := c.Client().List(c.Context(), list,
+		client.InNamespace(namespace),
+		client.MatchingFields{controller.IndexBackupInstanceName: instanceName},
+	); err != nil {
+		return nil, &controller.RestoreExecutionStatus{
+			State:   backupv1alpha1.RestoreStatePending,
+			Message: fmt.Sprintf("Listing backups for instance %q: %v", instanceName, err),
+		}
+	}
+
+	var best *backupv1alpha1.Backup
+	for i := range list.Items {
+		b := &list.Items[i]
+		if b.Spec.StorageRef.Name != storageName ||
+			b.Status.State != backupv1alpha1.BackupStateSucceeded ||
+			b.Status.CompletedAt == nil {
+			continue
+		}
+		if pitr.Date != nil && b.Status.CompletedAt.After(pitr.Date.Time) {
+			continue
+		}
+		if best == nil || b.Status.CompletedAt.After(best.Status.CompletedAt.Time) {
+			best = b
+		}
+	}
+
+	if best == nil {
+		msg := fmt.Sprintf("No Succeeded backup of instance %q on storage %q to recover from", instanceName, storageName)
+		if pitr.Date != nil {
+			msg = fmt.Sprintf("%s at or before %s", msg, pitr.Date.UTC().Format(time.RFC3339))
+		}
+		return nil, &controller.RestoreExecutionStatus{
+			State:   backupv1alpha1.RestoreStatePending,
+			Message: msg,
+		}
+	}
+
+	return best, nil
 }
 
 // CleanupBackup removes the operator PerconaServerMongoDBBackup, honoring the
@@ -621,4 +679,50 @@ func (p *PSMDBProvider) CleanupRestore(c *controller.Context, restore *backupv1a
 		}
 	}
 	return false, nil
+}
+
+// hasActiveRestoreForInstance reports whether any Restore targeting the given
+// Instance is still in a non-terminal state.
+func hasActiveRestoreForInstance(c *controller.Context, namespace, instanceName string) (bool, error) {
+	restoreList := &backupv1alpha1.RestoreList{}
+	if err := c.Client().List(
+		c.Context(),
+		restoreList,
+		client.InNamespace(namespace),
+		client.MatchingFields{controller.IndexRestoreInstanceName: instanceName},
+	); err != nil {
+		return false, fmt.Errorf("list Restore resources for instance %q: %w", instanceName, err)
+	}
+
+	for i := range restoreList.Items {
+		r := restoreList.Items[i]
+		if !r.DeletionTimestamp.IsZero() {
+			continue
+		}
+		switch r.Status.State {
+		case backupv1alpha1.RestoreStateSucceeded, backupv1alpha1.RestoreStateFailed:
+			continue
+		default:
+			return true, nil
+		}
+	}
+
+	return false, nil
+}
+
+// enqueueRestoreInstance maps a Restore event to a reconcile request for the
+// Instance it targets, so the Instance phase tracks the restore's lifecycle.
+func enqueueRestoreInstance() func(ctx context.Context, obj client.Object) []reconcile.Request {
+	return func(_ context.Context, obj client.Object) []reconcile.Request {
+		r, ok := obj.(*backupv1alpha1.Restore)
+		if !ok || r.Spec.InstanceRef.Name == "" {
+			return nil
+		}
+		return []reconcile.Request{{
+			NamespacedName: types.NamespacedName{
+				Namespace: r.Namespace,
+				Name:      r.Spec.InstanceRef.Name,
+			},
+		}}
+	}
 }
