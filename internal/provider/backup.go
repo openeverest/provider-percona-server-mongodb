@@ -369,8 +369,7 @@ func (p *PSMDBProvider) SyncBackup(c *controller.Context, backup *backupv1alpha1
 //   - Import restore (type=Import): the dump lives in external storage with no
 //     originating PSMDB CR. We build a self-contained .spec.backupSource
 //     (destination + S3 spec with its own credentials). ProviderManaged mode
-//     uses the Instance's backup class; Job mode uses
-//     restore.spec.dataSource.import.classRef (not yet implemented).
+//     uses the Instance's backup class.
 func (p *PSMDBProvider) SyncRestore(c *controller.Context, restore *backupv1alpha1.Restore) (controller.RestoreExecutionStatus, error) {
 	sourceBackup, desiredPITR, importSource, exec, err := resolveRestoreSource(c, restore)
 	if err != nil {
@@ -425,14 +424,6 @@ func (p *PSMDBProvider) SyncRestore(c *controller.Context, restore *backupv1alph
 		psmdbRestore.Spec.ClusterName = c.Name()
 		switch {
 		case importSource != nil:
-			// Import: the descriptor points at an external storage location and
-			// carries its own S3 credentials, so no StorageName is needed.
-			if psmdbRestore.Labels == nil {
-				psmdbRestore.Labels = make(map[string]string)
-			}
-			psmdbRestore.Labels["app.kubernetes.io/managed-by"] = "openeverest"
-			psmdbRestore.Labels["app.kubernetes.io/instance"] = c.Name()
-			psmdbRestore.Labels["app.kubernetes.io/component"] = "import"
 			psmdbRestore.Spec.BackupSource = importSource
 			psmdbRestore.Spec.BackupName = ""
 		case crossCluster:
@@ -603,12 +594,11 @@ func resolvePointInTimeSource(
 	return base, out, controller.RestoreExecutionStatus{}, nil
 }
 
-// resolveImportSource builds the external BackupSource descriptor for a
+// resolveImportSource builds the external BackupSource for a
 // type=Import data source. It resolves the read BackupClass (an explicit
-// classRef selects a Job-mode class, otherwise the Instance's ProviderManaged
-// class) and the external BackupStorage, then translates the import parameters
-// into the S3 descriptor PSMDB reads the dump from. Job mode is not yet
-// implemented.
+// classRef, otherwise the Instance's BackupClass) and the external
+// BackupStorage, then translates the import parameters into the S3 descriptor
+// PSMDB reads the dump from.
 func resolveImportSource(
 	c *controller.Context,
 	restore *backupv1alpha1.Restore,
@@ -617,7 +607,7 @@ func resolveImportSource(
 	if imp == nil {
 		return nil, controller.RestoreExecutionStatus{
 			State:   backupv1alpha1.RestoreStateFailed,
-			Message: "restore.spec.dataSource.import is not set",
+			Message: "Restore dataSource.import is required when type is \"Import\"",
 		}, nil
 	}
 
@@ -625,20 +615,14 @@ func resolveImportSource(
 	if className == "" {
 		return nil, controller.RestoreExecutionStatus{
 			State:   backupv1alpha1.RestoreStateFailed,
-			Message: "cannot resolve BackupClass for import",
+			Message: "BackupClass is required for \"Import\"",
 		}, nil
 	}
-	bc, err := c.BackupClass(className)
-	if err != nil {
+
+	if _, err := c.BackupClass(className); err != nil {
 		return nil, controller.RestoreExecutionStatus{
 			State:   backupv1alpha1.RestoreStateFailed,
-			Message: fmt.Sprintf("failed to resolve BackupClass %q: %s", className, err.Error()),
-		}, nil
-	}
-	if bc.Spec.ExecutionMode == backupv1alpha1.BackupExecutionModeJob {
-		return nil, controller.RestoreExecutionStatus{
-			State:   backupv1alpha1.RestoreStateFailed,
-			Message: "Job mode import is not yet implemented",
+			Message: fmt.Sprintf("Resolve BackupClass %q: %s", className, err.Error()),
 		}, nil
 	}
 
@@ -646,7 +630,7 @@ func resolveImportSource(
 	if err != nil {
 		return nil, controller.RestoreExecutionStatus{
 			State:   backupv1alpha1.RestoreStateFailed,
-			Message: fmt.Sprintf("failed to resolve import storage %q: %s", imp.StorageRef.Name, err.Error()),
+			Message: fmt.Sprintf("Resolve import storage %q: %s", imp.StorageRef.Name, err.Error()),
 		}, nil
 	}
 
@@ -654,7 +638,7 @@ func resolveImportSource(
 	if err := json.Unmarshal(imp.Parameters.Raw, &params); err != nil {
 		return nil, controller.RestoreExecutionStatus{
 			State:   backupv1alpha1.RestoreStateFailed,
-			Message: fmt.Sprintf("failed to parse import parameters: %s", err.Error()),
+			Message: fmt.Sprintf("Parse import parameters: %s", err.Error()),
 		}, nil
 	}
 
@@ -662,7 +646,7 @@ func resolveImportSource(
 	if s3Cfg == nil {
 		return nil, controller.RestoreExecutionStatus{
 			State:   backupv1alpha1.RestoreStateFailed,
-			Message: "storage does not have S3 configuration",
+			Message: "Missing S3 configuration",
 		}, nil
 	}
 

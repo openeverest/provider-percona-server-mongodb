@@ -46,7 +46,7 @@ type PerconaBackupParameters struct {
 // empty and ships an empty schema until requirements crystallize.
 type PerconaRestoreParameters struct{}
 
-// PerconaImportConfig describes the configuration accepted when an Instance
+// PerconaImportParameters describes the configuration accepted when an Instance
 // is created with spec.dataSource.type=Import referencing this BackupClass.
 type PerconaImportParameters struct {
 	// Path is the S3 path (prefix) where the PBM/mongodump backup data resides.

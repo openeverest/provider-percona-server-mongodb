@@ -220,56 +220,27 @@ func SyncPSMDB(c *controller.Context) error {
 		return err
 	}
 
-	// For Backup and Provider Managed Import DataSources, initial seeding from
-	// .spec.dataSource is gated on the engine being Ready
+	// Initial seeding from .spec.dataSource: gated on the engine being Ready
 	// AND PSMDB having published a BackupVersion. Issuing the Restore before
 	// the operator has selected a backup-agent image causes the restore to
 	// hang in a Waiting state. While the gate is not satisfied the helper is
 	// not invoked and StatusPSMDB will report Restoring so callers know the
 	// Instance is still being seeded.
-	if ds != nil {
+	if c.Instance().Spec.DataSource != nil {
 		current := &psmdbv1.PerconaServerMongoDB{}
 		if err := c.Get(current, c.Name()); err != nil {
 			// Cluster has not been created yet (first Sync). The next
 			// reconcile after the PSMDB CR appears will re-enter this branch.
 			return nil
 		}
-
-		switch ds.Type {
-		case backupv1alpha1.DataSourceTypeBackup:
-			// For Backup type, wait for Ready + BackupVersion before restore
-			if current.Status.State != psmdbv1.AppStateReady || current.Status.BackupVersion == "" {
-				c.SetDataSourceStatus(controller.DataSourceStatus{
-					Done:    false,
-					State:   controller.DataSourceStateWaiting,
-					Reason:  corev1alpha1.ReasonDataSourceWaitingForCluster,
-					Message: "waiting for PerconaServerMongoDB to be Ready and publish a BackupVersion",
-				})
-				return nil
-			}
-
-		case backupv1alpha1.DataSourceTypeImport:
-			// For Import, check if using Job mode (classRef set) or ProviderManaged mode.
-			if ds.Import != nil && ds.Import.ClassRef != nil && ds.Import.ClassRef.Name != "" {
-				// Job mode import - not yet implemented
-				c.SetDataSourceStatus(controller.DataSourceStatus{
-					Done:    true,
-					State:   controller.DataSourceStateFailed,
-					Reason:  corev1alpha1.ReasonDataSourceFailed,
-					Message: "Job mode import is not yet implemented",
-				})
-				return nil
-			}
-			// ProviderManaged mode: wait for Ready + BackupVersion before restore.
-			if current.Status.State != psmdbv1.AppStateReady || current.Status.BackupVersion == "" {
-				c.SetDataSourceStatus(controller.DataSourceStatus{
-					Done:    false,
-					State:   controller.DataSourceStateWaiting,
-					Reason:  corev1alpha1.ReasonDataSourceWaitingForCluster,
-					Message: "waiting for PerconaServerMongoDB to be Ready and publish a BackupVersion",
-				})
-				return nil
-			}
+		if current.Status.State != psmdbv1.AppStateReady || current.Status.BackupVersion == "" {
+			c.SetDataSourceStatus(controller.DataSourceStatus{
+				Done:    false,
+				State:   controller.DataSourceStateWaiting,
+				Reason:  corev1alpha1.ReasonDataSourceWaitingForCluster,
+				Message: "waiting for PerconaServerMongoDB to be Ready and publish a BackupVersion",
+			})
+			return nil
 		}
 
 		if _, err := c.ReconcileDataSource(); err != nil {
@@ -339,15 +310,6 @@ func StatusPSMDB(c *controller.Context) (controller.Status, error) {
 
 	switch psmdb.Status.State {
 	case psmdbv1.AppStateReady:
-		if ds := c.GetDataSourceStatus(); ds != nil {
-			if !ds.Done {
-				return controller.Restoring(ds.Message), nil
-			}
-			if ds.State == controller.DataSourceStateFailed {
-				return controller.Failed(ds.Message), nil
-			}
-		}
-
 		details, err := buildConnectionDetails(c, psmdb)
 		if err != nil {
 			return controller.Failed("Failed to build connection details: " + err.Error()), nil
@@ -462,63 +424,44 @@ func createSecretCopy(c *controller.Context, targetSecretName string, sourceSecr
 // Unlike ensureDataSourceCredentials, this ALWAYS overwrites the target secret
 // because the import credentials MUST match the backup source.
 func ensureImportCredentials(c *controller.Context, targetSecretName string) error {
-	// Get the source credentials secret name from the import config.
-	sourceSecretName := getImportCredentialsSecretName(c)
-	if sourceSecretName == "" {
-		return fmt.Errorf("failed to get import credentails secret")
+	ds := c.Instance().Spec.DataSource
+
+	// nothing to import
+	if ds == nil || ds.Type != backupv1alpha1.DataSourceTypeImport || ds.Import == nil || ds.Import.Parameters == nil {
+		return nil
 	}
 
-	sourceSecret := &corev1.Secret{}
-	if err := c.Get(sourceSecret, sourceSecretName); err != nil {
+	var params pbm.PerconaImportParameters
+	if err := json.Unmarshal(ds.Import.Parameters.Raw, &params); err != nil {
+		return fmt.Errorf("failed to unmarshal import parameters: %w", err)
+	}
+
+	secretName := params.CredentialsSecretRef.Name
+
+	secret := &corev1.Secret{}
+	if err := c.Get(secret, secretName); err != nil {
 		if apierrors.IsNotFound(err) {
 			c.SetDataSourceStatus(controller.DataSourceStatus{
 				Done:    true,
 				State:   controller.DataSourceStateFailed,
 				Reason:  corev1alpha1.ReasonDataSourceFailed,
-				Message: fmt.Sprintf("import credentials secret %q not found", sourceSecretName),
+				Message: fmt.Sprintf("import credentials secret %q not found", secretName),
 			})
 			return &controller.DataSourceConfigError{
 				Reason:  corev1alpha1.ReasonDataSourceFailed,
-				Message: fmt.Sprintf("import credentials secret %q not found", sourceSecretName),
+				Message: fmt.Sprintf("import credentials secret %q not found", secretName),
 			}
 		}
-		return fmt.Errorf("get import credentials secret %q: %w", sourceSecretName, err)
+		return fmt.Errorf("get import credentials secret %q: %w", secretName, err)
 	}
 
 	// Set owner reference on the source secret so it's cleaned up with the Instance.
-	if err := c.Apply(sourceSecret); err != nil {
-		return fmt.Errorf("set owner reference on import credentials secret %q: %w", sourceSecretName, err)
+	if err := c.Apply(secret); err != nil {
+		return fmt.Errorf("set owner reference on import credentials secret %q: %w", secretName, err)
 	}
 
 	// Create the target secret with the same data.
-	return createSecretCopy(c, targetSecretName, sourceSecret)
-}
-
-// getImportCredentialsSecretName returns the credentials secret name
-// from the import parameters. This is used to set
-// psmdb.Spec.Secrets.Users directly.
-func getImportCredentialsSecretName(c *controller.Context) string {
-	ds := c.Instance().Spec.DataSource
-	if ds == nil {
-		return ""
-	}
-
-	var params []byte
-	switch ds.Type {
-	case backupv1alpha1.DataSourceTypeImport:
-		if ds.Import == nil || ds.Import.Parameters == nil {
-			return ""
-		}
-		params = ds.Import.Parameters.Raw
-	default:
-		return ""
-	}
-
-	var importCfg pbm.PerconaImportParameters
-	if err := json.Unmarshal(params, &importCfg); err != nil {
-		return ""
-	}
-	return importCfg.CredentialsSecretRef.Name
+	return createSecretCopy(c, targetSecretName, secret)
 }
 
 // dataSourceInstanceName resolves the Instance whose data is being seeded from.
