@@ -13,16 +13,7 @@ spec:
   displayName: Percona Backup for MongoDB
   executionMode: ProviderManaged
   importParametersSchema:
-    openAPIV3Schema:
-      properties:
-        credentialsSecretRef:
-          properties:
-            name:
-              type: string
-          type: object
-        path:
-          type: string
-      type: object
+    openAPIV3Schema: PerconaImportParameters
   parametersSchema:
     openAPIV3Schema:
       properties:
