@@ -348,48 +348,52 @@ func (p *PSMDBProvider) SyncBackup(c *controller.Context, backup *backupv1alpha1
 	return exec, nil
 }
 
-// SyncRestore creates or updates a PerconaServerMongoDBRestore based on the
-// Restore's DataSource type:
+// SyncRestore creates or updates a PerconaServerMongoDBRestore that points at
+// the source the Restore's data source resolves to: the mirror of the named
+// Backup CR for type Backup, the base backup selected for the stream for type
+// PointInTime (PBM replays the oplog forward from it), or an external storage
+// descriptor for type Import.
 //
-//   - Import: imports from an external storage. Provider Managed mode imports
-//     Percona Backup for MongoDB using Instance's backup class, Job mode
-//     import uses restore.spec.dataSource.import.classRef.
-//   - Backup: restores from an OpenEverest Backup CR. Same-cluster restores
-//     set .spec.backupName.
-//     Cross-cluster restore (e.g. seeding a new Instance from another
+// Three cases are handled:
+//
+//   - Same-cluster restore (source Backup.spec.instanceRef.name == this
+//     Instance): the operator backup lives on the same PSMDB cluster, so we
+//     set .spec.backupName to its name.
+//   - Cross-cluster restore (e.g. seeding a new Instance from another
 //     Instance's Backup via .spec.dataSource): the source operator backup
 //     belongs to a different PSMDB CR. The PSMDB operator cannot resolve it
 //     by name on this cluster, so we copy its .status into
 //     .spec.backupSource and set .spec.storageName to the target Instance's
 //     matching storage entry so credentials are taken from the target
 //     cluster's registered storages.
-//   - PointInTime: rolls a backup stream forward to a recovery target; PBM
-//     replays the oplog forward from the selected base backup.
+//   - Import restore (type=Import): the dump lives in external storage with no
+//     originating PSMDB CR. We build a self-contained .spec.backupSource
+//     (destination + S3 spec with its own credentials). ProviderManaged mode
+//     uses the Instance's backup class; Job mode uses
+//     restore.spec.dataSource.import.classRef (not yet implemented).
 func (p *PSMDBProvider) SyncRestore(c *controller.Context, restore *backupv1alpha1.Restore) (controller.RestoreExecutionStatus, error) {
-	// Import data sources build the operator restore from an external storage
-	// location rather than an existing Backup or stream, so handle them
-	// separately before resolving a source Backup.
-	if restore.Spec.DataSource.Type == backupv1alpha1.DataSourceTypeImport {
-		return p.syncImportRestore(c, restore)
-	}
-
-	sourceBackup, desiredPITR, exec, err := resolveRestoreSource(c, restore)
+	sourceBackup, desiredPITR, importSource, exec, err := resolveRestoreSource(c, restore)
 	if err != nil {
 		return controller.RestoreExecutionStatus{}, err
 	}
-	if sourceBackup == nil {
+	if sourceBackup == nil && importSource == nil {
 		return exec, nil
 	}
 
-	operatorBackupName := sourceBackup.Name
-	if sourceBackup.Status.OperatorBackupRef != nil && sourceBackup.Status.OperatorBackupRef.Name != "" {
-		operatorBackupName = sourceBackup.Status.OperatorBackupRef.Name
+	var operatorBackupName string
+	var crossCluster bool
+	if sourceBackup != nil {
+		operatorBackupName = sourceBackup.Name
+		if sourceBackup.Status.OperatorBackupRef != nil && sourceBackup.Status.OperatorBackupRef.Name != "" {
+			operatorBackupName = sourceBackup.Status.OperatorBackupRef.Name
+		}
+
+		// Detect cross-cluster restores. When the source Backup was produced by a
+		// different Instance, fetch its PerconaServerMongoDBBackup so we can copy
+		// the destination/storage spec into Spec.BackupSource.
+		crossCluster = sourceBackup.Spec.InstanceRef.Name != c.Name()
 	}
 
-	// Detect cross-cluster restores. When the source Backup was produced by a
-	// different Instance, fetch its PerconaServerMongoDBBackup so we can copy
-	// the destination/storage spec into Spec.BackupSource.
-	crossCluster := sourceBackup.Spec.InstanceRef.Name != c.Name()
 	var sourceOpBackup *psmdbv1.PerconaServerMongoDBBackup
 	if crossCluster {
 		sourceOpBackup = &psmdbv1.PerconaServerMongoDBBackup{}
@@ -419,7 +423,19 @@ func (p *PSMDBProvider) SyncRestore(c *controller.Context, restore *backupv1alph
 
 	if _, err := controllerutil.CreateOrUpdate(c.Context(), c.Client(), psmdbRestore, func() error {
 		psmdbRestore.Spec.ClusterName = c.Name()
-		if crossCluster {
+		switch {
+		case importSource != nil:
+			// Import: the descriptor points at an external storage location and
+			// carries its own S3 credentials, so no StorageName is needed.
+			if psmdbRestore.Labels == nil {
+				psmdbRestore.Labels = make(map[string]string)
+			}
+			psmdbRestore.Labels["app.kubernetes.io/managed-by"] = "openeverest"
+			psmdbRestore.Labels["app.kubernetes.io/instance"] = c.Name()
+			psmdbRestore.Labels["app.kubernetes.io/component"] = "import"
+			psmdbRestore.Spec.BackupSource = importSource
+			psmdbRestore.Spec.BackupName = ""
+		case crossCluster:
 			// Copy the source operator backup's storage descriptor verbatim
 			// (Destination + S3/Azure/GCS/Minio/Filesystem spec) so PSMDB can
 			// read the dump without consulting its own backup list. The
@@ -441,7 +457,7 @@ func (p *PSMDBProvider) SyncRestore(c *controller.Context, restore *backupv1alph
 			}
 			psmdbRestore.Spec.StorageName = sourceBackup.Spec.StorageRef.Name
 			psmdbRestore.Spec.BackupName = ""
-		} else {
+		default:
 			psmdbRestore.Spec.BackupName = operatorBackupName
 			psmdbRestore.Spec.BackupSource = nil
 		}
@@ -474,172 +490,33 @@ func (p *PSMDBProvider) SyncRestore(c *controller.Context, restore *backupv1alph
 	return out, nil
 }
 
-// syncImportRestore handles restore from an Import data source. It resolves the
-// read BackupClass and the external BackupStorage, then creates a
-// PerconaServerMongoDBRestore pointing at the external S3 location. Job mode is
-// not yet implemented.
-func (p *PSMDBProvider) syncImportRestore(c *controller.Context, restore *backupv1alpha1.Restore) (controller.RestoreExecutionStatus, error) {
-	imp := restore.Spec.DataSource.Import
-	if imp == nil {
-		return controller.RestoreExecutionStatus{
-			State:   backupv1alpha1.RestoreStateFailed,
-			Message: "restore.spec.dataSource.import is not set",
-		}, nil
-	}
-
-	// Resolve the read BackupClass from the import: an explicit classRef selects
-	// a Job-mode class, otherwise the Instance's backup class (ProviderManaged).
-	className := imp.ClassRef.Name
-	if className == "" {
-		className = c.Instance().Spec.Backup.ClassRef.Name
-	}
-
-	if className == "" {
-		return controller.RestoreExecutionStatus{
-			State:   backupv1alpha1.RestoreStateFailed,
-			Message: "cannot resolve BackupClass for import: set spec.dataSource.import.classRef or enable spec.backup with a classRef",
-		}, nil
-	}
-	bc, err := c.BackupClass(className)
-	if err != nil {
-		return controller.RestoreExecutionStatus{
-			State:   backupv1alpha1.RestoreStateFailed,
-			Message: fmt.Sprintf("failed to resolve BackupClass %q: %s", className, err.Error()),
-		}, nil
-	}
-
-	// Job mode import is not yet implemented.
-	if bc.Spec.ExecutionMode == backupv1alpha1.BackupExecutionModeJob {
-		return controller.RestoreExecutionStatus{
-			State:   backupv1alpha1.RestoreStateFailed,
-			Message: "Job mode import is not yet implemented",
-		}, nil
-	}
-
-	storage, err := c.BackupStorage(imp.StorageRef.Name)
-	if err != nil {
-		return controller.RestoreExecutionStatus{
-			State:   backupv1alpha1.RestoreStateFailed,
-			Message: fmt.Sprintf("failed to resolve import storage %q: %s", imp.StorageRef.Name, err.Error()),
-		}, nil
-	}
-
-	return p.syncImport(c, restore, imp, storage)
-}
-
-// syncImport creates a PerconaServerMongoDBRestore
-// for importing data from an external PBM backup.
-func (p *PSMDBProvider) syncImport(
-	c *controller.Context,
-	restore *backupv1alpha1.Restore,
-	imp *backupv1alpha1.DataSourceImport,
-	storage *backupv1alpha1.BackupStorage,
-) (controller.RestoreExecutionStatus, error) {
-	// Parse the import parameters
-	var params pbm.PerconaImportParameters
-	if err := json.Unmarshal(imp.Parameters.Raw, &params); err != nil {
-		return controller.RestoreExecutionStatus{
-			State:   backupv1alpha1.RestoreStateFailed,
-			Message: fmt.Sprintf("failed to parse import parameters: %s", err.Error()),
-		}, nil
-	}
-
-	s3Cfg := storage.Spec.S3
-	if s3Cfg == nil {
-		return controller.RestoreExecutionStatus{
-			State:   backupv1alpha1.RestoreStateFailed,
-			Message: "storage does not have S3 configuration",
-		}, nil
-	}
-
-	// Parse the backup path to extract prefix and destination
-	// Path format: "path/to/backup" -> prefix: "path/to"
-	// destination: "s3://bucket/path/to/backup"
-	backupPath := strings.Trim(params.Path, "/")
-	split := strings.Split(backupPath, "/")
-	prefix := strings.Join(split[:len(split)-1], "/")
-	destination := fmt.Sprintf("s3://%s/%s", s3Cfg.Bucket, backupPath)
-
-	forcePathStyle := s3Cfg.ForcePathStyle != nil && *s3Cfg.ForcePathStyle
-	verifyTLS := s3Cfg.VerifyTLS == nil || *s3Cfg.VerifyTLS
-
-	psmdbRestore := &psmdbv1.PerconaServerMongoDBRestore{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      restore.Name,
-			Namespace: restore.Namespace,
-		},
-	}
-
-	if _, err := controllerutil.CreateOrUpdate(c.Context(), c.Client(), psmdbRestore, func() error {
-		if psmdbRestore.Labels == nil {
-			psmdbRestore.Labels = make(map[string]string)
-		}
-		psmdbRestore.Labels["app.kubernetes.io/managed-by"] = "openeverest"
-		psmdbRestore.Labels["app.kubernetes.io/instance"] = c.Name()
-		psmdbRestore.Labels["app.kubernetes.io/component"] = "import"
-
-		psmdbRestore.Spec = psmdbv1.PerconaServerMongoDBRestoreSpec{
-			ClusterName: c.Name(),
-			BackupSource: &psmdbv1.PerconaServerMongoDBBackupStatus{
-				Type:        pbmdefs.LogicalBackup,
-				Destination: destination,
-				S3: &psmdbv1.BackupStorageS3Spec{
-					Bucket:                s3Cfg.Bucket,
-					Region:                s3Cfg.Region,
-					EndpointURL:           s3Cfg.EndpointURL,
-					CredentialsSecret:     s3Cfg.CredentialsSecretRef.Name,
-					Prefix:                prefix,
-					InsecureSkipTLSVerify: !verifyTLS,
-					ForcePathStyle:        &forcePathStyle,
-				},
-			},
-		}
-		return controllerutil.SetControllerReference(restore, psmdbRestore, c.Client().Scheme())
-	}); err != nil {
-		return controller.RestoreExecutionStatus{}, fmt.Errorf("create or update PSMDB restore: %w", err)
-	}
-
-	out := controller.RestoreExecutionStatus{
-		OperatorRestoreRef: &commonv1alpha1.TypedObjectRef{
-			Group: psmdbv1.SchemeGroupVersion.Group,
-			Kind:  "PerconaServerMongoDBRestore",
-			Name:  psmdbRestore.Name,
-		},
-	}
-	switch psmdbRestore.Status.State {
-	case psmdbv1.RestoreStateReady:
-		out.State = backupv1alpha1.RestoreStateSucceeded
-		now := metav1.Now()
-		out.CompletedAt = &now
-	case psmdbv1.RestoreStateError:
-		out.State = backupv1alpha1.RestoreStateFailed
-		out.Message = psmdbRestore.Status.Error
-	case psmdbv1.RestoreStateRequested, psmdbv1.RestoreStateRunning, psmdbv1.RestoreStateWaiting:
-		out.State = backupv1alpha1.RestoreStateRunning
-	default:
-		out.State = backupv1alpha1.RestoreStatePending
-	}
-	return out, nil
-}
-
 // resolveRestoreSource translates the Restore's data source into the operator
-// inputs: the Backup CR whose operator mirror the restore reads from, and the
-// PITR block when rolling the oplog stream forward.
+// inputs used to build the PerconaServerMongoDBRestore:
+//   - a Backup CR whose operator mirror the restore reads from (Backup and
+//     PointInTime),
+//   - the PITR block when rolling the oplog stream forward (PointInTime),
+//   - an external BackupSource descriptor when importing from external storage
+//     (Import).
 //
-// A nil Backup means the source is not usable yet (or at all) and the caller
-// should surface the returned status verbatim.
+// Exactly one of the Backup or the import descriptor is non-nil on success. A
+// nil Backup and nil descriptor mean the source is not usable yet (or at all)
+// and the caller should surface the returned status verbatim.
 func resolveRestoreSource(
 	c *controller.Context,
 	restore *backupv1alpha1.Restore,
-) (*backupv1alpha1.Backup, *psmdbv1.PITRestoreSpec, controller.RestoreExecutionStatus, error) {
+) (*backupv1alpha1.Backup, *psmdbv1.PITRestoreSpec, *psmdbv1.PerconaServerMongoDBBackupStatus, controller.RestoreExecutionStatus, error) {
 	switch restore.Spec.DataSource.Type {
 	case backupv1alpha1.DataSourceTypeBackup:
 		backup, exec, err := resolveBackupSource(c, restore)
-		return backup, nil, exec, err
+		return backup, nil, nil, exec, err
 	case backupv1alpha1.DataSourceTypePointInTime:
-		return resolvePointInTimeSource(c, restore)
+		backup, pitr, exec, err := resolvePointInTimeSource(c, restore)
+		return backup, pitr, nil, exec, err
+	case backupv1alpha1.DataSourceTypeImport:
+		src, exec, err := resolveImportSource(c, restore)
+		return nil, nil, src, exec, err
 	default:
-		return nil, nil, controller.RestoreExecutionStatus{
+		return nil, nil, nil, controller.RestoreExecutionStatus{
 			State:   backupv1alpha1.RestoreStateFailed,
 			Message: fmt.Sprintf("Unsupported dataSource type %q", restore.Spec.DataSource.Type),
 		}, nil
@@ -724,6 +601,95 @@ func resolvePointInTimeSource(
 	}
 
 	return base, out, controller.RestoreExecutionStatus{}, nil
+}
+
+// resolveImportSource builds the external BackupSource descriptor for a
+// type=Import data source. It resolves the read BackupClass (an explicit
+// classRef selects a Job-mode class, otherwise the Instance's ProviderManaged
+// class) and the external BackupStorage, then translates the import parameters
+// into the S3 descriptor PSMDB reads the dump from. Job mode is not yet
+// implemented.
+func resolveImportSource(
+	c *controller.Context,
+	restore *backupv1alpha1.Restore,
+) (*psmdbv1.PerconaServerMongoDBBackupStatus, controller.RestoreExecutionStatus, error) {
+	imp := restore.Spec.DataSource.Import
+	if imp == nil {
+		return nil, controller.RestoreExecutionStatus{
+			State:   backupv1alpha1.RestoreStateFailed,
+			Message: "restore.spec.dataSource.import is not set",
+		}, nil
+	}
+
+	className := controller.ImportBackupClassName(imp, c.Instance())
+	if className == "" {
+		return nil, controller.RestoreExecutionStatus{
+			State:   backupv1alpha1.RestoreStateFailed,
+			Message: "cannot resolve BackupClass for import",
+		}, nil
+	}
+	bc, err := c.BackupClass(className)
+	if err != nil {
+		return nil, controller.RestoreExecutionStatus{
+			State:   backupv1alpha1.RestoreStateFailed,
+			Message: fmt.Sprintf("failed to resolve BackupClass %q: %s", className, err.Error()),
+		}, nil
+	}
+	if bc.Spec.ExecutionMode == backupv1alpha1.BackupExecutionModeJob {
+		return nil, controller.RestoreExecutionStatus{
+			State:   backupv1alpha1.RestoreStateFailed,
+			Message: "Job mode import is not yet implemented",
+		}, nil
+	}
+
+	storage, err := c.BackupStorage(imp.StorageRef.Name)
+	if err != nil {
+		return nil, controller.RestoreExecutionStatus{
+			State:   backupv1alpha1.RestoreStateFailed,
+			Message: fmt.Sprintf("failed to resolve import storage %q: %s", imp.StorageRef.Name, err.Error()),
+		}, nil
+	}
+
+	var params pbm.PerconaImportParameters
+	if err := json.Unmarshal(imp.Parameters.Raw, &params); err != nil {
+		return nil, controller.RestoreExecutionStatus{
+			State:   backupv1alpha1.RestoreStateFailed,
+			Message: fmt.Sprintf("failed to parse import parameters: %s", err.Error()),
+		}, nil
+	}
+
+	s3Cfg := storage.Spec.S3
+	if s3Cfg == nil {
+		return nil, controller.RestoreExecutionStatus{
+			State:   backupv1alpha1.RestoreStateFailed,
+			Message: "storage does not have S3 configuration",
+		}, nil
+	}
+
+	// Parse the backup path to extract prefix and destination.
+	// Path format: "path/to/backup" -> prefix: "path/to",
+	// destination: "s3://bucket/path/to/backup".
+	backupPath := strings.Trim(params.Path, "/")
+	split := strings.Split(backupPath, "/")
+	prefix := strings.Join(split[:len(split)-1], "/")
+	destination := fmt.Sprintf("s3://%s/%s", s3Cfg.Bucket, backupPath)
+
+	forcePathStyle := s3Cfg.ForcePathStyle != nil && *s3Cfg.ForcePathStyle
+	verifyTLS := s3Cfg.VerifyTLS == nil || *s3Cfg.VerifyTLS
+
+	return &psmdbv1.PerconaServerMongoDBBackupStatus{
+		Type:        pbmdefs.LogicalBackup,
+		Destination: destination,
+		S3: &psmdbv1.BackupStorageS3Spec{
+			Bucket:                s3Cfg.Bucket,
+			Region:                s3Cfg.Region,
+			EndpointURL:           s3Cfg.EndpointURL,
+			CredentialsSecret:     s3Cfg.CredentialsSecretRef.Name,
+			Prefix:                prefix,
+			InsecureSkipTLSVerify: !verifyTLS,
+			ForcePathStyle:        &forcePathStyle,
+		},
+	}, controller.RestoreExecutionStatus{}, nil
 }
 
 // selectPITRBaseBackup returns the newest Succeeded Backup on the given stream
