@@ -217,7 +217,7 @@ require (
 	github.com/oasdiff/yaml v0.1.1 // indirect
 	github.com/oasdiff/yaml3 v0.0.14 // indirect
 	github.com/oklog/ulid/v2 v2.1.1 // indirect
-	github.com/openeverest/provider-sdk v0.1.1-0.20260720192309-4d37ccf4f10e // indirect
+	github.com/openeverest/provider-sdk v0.1.1-0.20260814074858-6d19ec0f051f // indirect
 	github.com/pelletier/go-toml/v2 v2.3.1 // indirect
 	github.com/percona/everest-operator v0.6.0-dev1.0.20260429065444-70caa52c384a // indirect
 	github.com/percona/percona-backup-mongodb v1.8.1-0.20251104101930-05ab6d7e1004 // indirect
