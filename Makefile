@@ -126,9 +126,9 @@ test-integration-backup-datasource-import: ## Run backup datasource import integ
 test-e2e-cluster: ## Run E2E cluster tests (requires PSMDB operator).
 	. ./test/vars.sh && chainsaw test --config ./test/e2e-cluster/.chainsaw.yaml ./test/e2e-cluster
 
-.PHONY: test-e2e-cluster-backup-import
-test-e2e-cluster-backup-import: ## Run backup import E2E cluster tests.
-	. ./test/vars.sh && chainsaw test --config ./test/e2e-cluster/.chainsaw.yaml ./test/e2e-cluster/backup/import
+.PHONY: test-e2e-cluster-datasource-import
+test-e2e-cluster-datasource-import: ## Run datasource import E2E cluster tests.
+	. ./test/vars.sh && chainsaw test --config ./test/e2e-cluster/.chainsaw.yaml ./test/e2e-cluster/datasource/import
 
 .PHONY: test-e2e
 test-e2e: ## Run Playwright E2E tests against a running Everest UI (http://localhost:8080).
