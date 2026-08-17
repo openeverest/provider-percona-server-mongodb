@@ -1,0 +1,28 @@
+apiVersion: core.openeverest.io/v1alpha1
+kind: Instance
+metadata:
+  name: psmdb-dest
+status:
+  phase: Restoring
+---
+apiVersion: backup.openeverest.io/v1alpha1
+kind: Restore
+metadata:
+  name: psmdb-dest-datasource
+spec:
+  instanceRef:
+    name: psmdb-dest
+  dataSource:
+    type: Backup
+    backup:
+      backupRef:
+        name: psmdb-src-backup
+---
+apiVersion: psmdb.percona.com/v1
+kind: PerconaServerMongoDBRestore
+metadata:
+  name: psmdb-dest-datasource
+spec:
+  clusterName: psmdb-dest
+  backupSource:
+    storageName: minio-storage

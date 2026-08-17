@@ -1,0 +1,9 @@
+apiVersion: backup.openeverest.io/v1alpha1
+kind: Backup
+metadata:
+  name: psmdb-src-backup
+spec:
+  instanceRef:
+    name: psmdb-src
+  storageRef:
+    name: minio-storage

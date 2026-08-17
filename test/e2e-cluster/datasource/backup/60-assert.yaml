@@ -1,0 +1,13 @@
+apiVersion: psmdb.percona.com/v1
+kind: PerconaServerMongoDBBackup
+metadata:
+  name: psmdb-src-backup
+status:
+  state: ready
+---
+apiVersion: backup.openeverest.io/v1alpha1
+kind: Backup
+metadata:
+  name: psmdb-src-backup
+status:
+  state: Succeeded
