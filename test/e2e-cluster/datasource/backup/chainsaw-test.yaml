@@ -156,6 +156,9 @@ spec:
         # (created via script, not apply).
         - script:
             content: |
-              kubectl delete -f ${OPERATOR_ROOT_PATH}/test/testdata/minio/deploy.yaml --wait=false || true
-              kubectl delete pod/psmdb-src-client -n $NAMESPACE --wait=false || true
-              kubectl delete pod/psmdb-dest-client -n $NAMESPACE --wait=false || true
+              # Delete the instances first and wait for their finalizers to
+              # drain (backup cleanup runs PBM's delete-backup against MinIO),
+              # then tear down MinIO last so the storage is still reachable.
+              kubectl delete instance/psmdb-src -n $NAMESPACE --ignore-not-found || true
+              kubectl delete instance/psmdb-dest -n $NAMESPACE --ignore-not-found || true
+              kubectl delete -f ${OPERATOR_ROOT_PATH}/test/testdata/minio/deploy.yaml --ignore-not-found || true

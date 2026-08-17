@@ -5,5 +5,7 @@ metadata:
 spec:
   instanceRef:
     name: psmdb-src
+  classRef:
+    name: percona-backup-mongodb
   storageRef:
     name: minio-storage
