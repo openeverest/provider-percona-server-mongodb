@@ -178,6 +178,6 @@ jobs:
     needs: [lint, build, verify]
     uses: ./.github/workflows/e2e-cluster-test.yaml
     with:
-      make_target: test-e2e-cluster-backup-import
+      make_target: test-e2e-cluster-datasource-import
       suite: import
     secrets: inherit
