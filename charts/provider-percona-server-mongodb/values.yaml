@@ -5,11 +5,11 @@ replicaCount: 1
 
 image:
   # -- Container image repository
-  repository: ghcr.io/openeverest/provider-percona-server-mongodb-dev
+  repository: ghcr.io/openeverest/provider-percona-server-mongodb
   # -- Image pull policy
   pullPolicy: IfNotPresent
   # -- Overrides the image tag whose default is the chart appVersion
-  tag: "latest"
+  tag: ""
 
 # -- Image pull secrets for private registries
 imagePullSecrets: []
@@ -162,7 +162,7 @@ presets:
         version: 8.0.12-4
         topology:
           type: sharded
-          config:
+          parameters:
             numShards: 2
         components:
           engine:
