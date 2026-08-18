@@ -3,11 +3,35 @@ kind: Instance
 metadata:
   name: psmdb-dest
 spec:
+  providerRef:
+    name: percona-server-mongodb
   dataSource:
     type: Backup
     backup:
       backupRef:
         name: psmdb-src-backup
+  backup:
+    enabled: true
+    classRef:
+      name: percona-backup-mongodb
+    storages:
+      - storageRef:
+          name: minio-storage
+  topology:
+    type: replicaset
+  components:
+    engine:
+      type: mongod
+      replicas: 1
+      storage:
+        size: 1Gi
+      resources:
+        limits:
+          cpu: 600m
+          memory: 512Mi
+        requests:
+          cpu: 600m
+          memory: 512Mi
 ---
 apiVersion: psmdb.percona.com/v1
 kind: PerconaServerMongoDB

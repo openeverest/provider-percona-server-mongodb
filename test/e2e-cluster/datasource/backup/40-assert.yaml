@@ -17,6 +17,13 @@ spec:
 status:
   state: ready
 ---
+apiVersion: core.openeverest.io/v1alpha1
+kind: Instance
+metadata:
+  name: psmdb-src
+status:
+  phase: Ready
+---
 apiVersion: v1
 kind: Secret
 metadata:

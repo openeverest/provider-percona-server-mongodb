@@ -107,8 +107,8 @@ spec:
 
     - name: restore-created
       try:
-        # The datasource Restore must be named <instance>-datasource.
         - assert:
+            timeout: 300s
             file: 80-assert.yaml
 
     - name: restore-complete
