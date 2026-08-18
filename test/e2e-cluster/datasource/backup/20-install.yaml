@@ -35,3 +35,17 @@ spec:
     supportsPITR: true
     limits:
       maxPITREnabledStorages: 1
+---
+apiVersion: monitoring.openeverest.io/v1alpha1
+kind: MonitoringConfig
+metadata:
+  name: mc-pmm
+spec:
+  type: pmm
+  pmm:
+    # The credentials Secret is created dynamically in the deploy-pmm step,
+    # since the PMM service-account token is generated at runtime.
+    credentialsSecretRef:
+      name: mc-pmm-secret
+    verifyTLS: false
+    url: https://pmm-server.pmm.svc

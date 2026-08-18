@@ -14,6 +14,14 @@ spec:
           endpointUrl: https://minio.minio.svc
           insecureSkipTLSVerify: true
           region: us-east-1
+  pmm:
+    enabled: true
+    serverHost: pmm-server.pmm.svc
+    image: percona/pmm-client:3.7.0
+    resources:
+      requests:
+        memory: 99604Ki
+        cpu: 95m
 status:
   state: ready
 ---

@@ -12,9 +12,11 @@ spec:
     MongoDB client.
   catch:
     - script:
-        content: kubectl -n $NAMESPACE get instance,psmdb,backup,psmdb-backup,restore,psmdb-restore,backupstorage -o yaml
+        content: kubectl -n $NAMESPACE get instance,psmdb,backup,psmdb-backup,restore,psmdb-restore,backupstorage,monitoringconfig -o yaml
     - script:
         content: kubectl get backupclass -o yaml
+    - script:
+        content: kubectl -n pmm get pods -o yaml
     - podLogs:
         namespace: provider-system
         selector: app.kubernetes.io/name=provider-percona-server-mongodb
@@ -38,6 +40,47 @@ spec:
             content: kubectl get pods -n minio -o yaml
         - script:
             content: kubectl logs -n minio minio -c minio --tail=50
+
+    - name: deploy-pmm
+      try:
+        - script:
+            content: |
+              kubectl apply -f ${OPERATOR_ROOT_PATH}/test/testdata/pmm/deploy.yaml
+        - script:
+            timeout: 360s
+            content: |
+              kubectl -n pmm wait --for=condition=Ready pod -l app=pmm-server --timeout=360s
+        # Provision a PMM3 service-account token (default admin/admin creds),
+        # then create the credentials Secret the MonitoringConfig references.
+        # The token is dynamic, so the Secret is created via script rather
+        # than a static manifest; the MonitoringConfig itself lives in
+        # 20-install.yaml.
+        - script:
+            timeout: 120s
+            content: |
+              PMM_POD="$(kubectl -n pmm get pod -l app=pmm-server -o jsonpath='{.items[0].metadata.name}')"
+
+              TOKEN="$(kubectl -n pmm exec "${PMM_POD}" -- sh -c '
+                set -e
+                SA_UID=$(curl -s -k -u admin:admin -X POST https://127.0.0.1:8443/graph/api/serviceaccounts \
+                  -H "Content-Type: application/json" \
+                  -d "{\"name\":\"everest\",\"role\":\"Admin\"}" \
+                  | sed -n "s/.*\"uid\":\"\([^\"]*\)\".*/\1/p")
+                curl -s -k -u admin:admin -X POST https://127.0.0.1:8443/graph/api/serviceaccounts/${SA_UID}/tokens \
+                  -H "Content-Type: application/json" \
+                  -d "{\"name\":\"everest-token\",\"role\":\"Admin\"}" \
+                  | sed -n "s/.*\"key\":\"\([^\"]*\)\".*/\1/p"')"
+
+              test -n "${TOKEN}"
+
+              kubectl -n ${NAMESPACE} create secret generic mc-pmm-secret \
+                --from-literal=apiKey="${TOKEN}" \
+                --dry-run=client -o yaml | kubectl apply -f -
+      catch:
+        - script:
+            content: kubectl -n pmm get pods -o yaml
+        - script:
+            content: kubectl -n pmm logs -l app=pmm-server --tail=100
 
     - name: setup-backup
       try:
@@ -162,3 +205,4 @@ spec:
               kubectl delete instance/psmdb-src -n $NAMESPACE --ignore-not-found || true
               kubectl delete instance/psmdb-dest -n $NAMESPACE --ignore-not-found || true
               kubectl delete -f ${OPERATOR_ROOT_PATH}/test/testdata/minio/deploy.yaml --ignore-not-found || true
+              kubectl delete -f ${OPERATOR_ROOT_PATH}/test/testdata/pmm/deploy.yaml --ignore-not-found || true
