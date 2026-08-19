@@ -1,0 +1,13 @@
+apiVersion: psmdb.percona.com/v1
+kind: PerconaServerMongoDBRestore
+metadata:
+  name: psmdb-imported-datasource
+status:
+  state: ready
+---
+apiVersion: core.openeverest.io/v1alpha1
+kind: Instance
+metadata:
+  name: psmdb-imported
+status:
+  phase: Ready

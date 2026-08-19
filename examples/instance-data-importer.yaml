@@ -1,0 +1,76 @@
+apiVersion: core.openeverest.io/v1alpha1
+kind: Instance
+metadata:
+  name: psmdb-imported
+  namespace: my-special-place
+spec:
+  # Provider identifier
+  providerRef:
+    name: percona-server-mongodb
+
+  # Version bundle for the new instance
+  version: 8.0.12
+
+  # Backup configuration is REQUIRED for ProviderManaged external imports.
+  backup:
+    enabled: true
+    classRef:
+      name: percona-backup-mongodb
+    storages:
+      - storageRef:
+          name: bs-msp-1
+
+  # Data source configuration for importing from external S3 storage
+  dataSource:
+    type: ProviderManagedImport
+    providerManagedImport:
+      storageRef:
+        name: bs-msp-1
+      # Parameters validated against BackupClass.spec.importConfig schema
+      parameters:
+        # Path to PBM backup in the S3 bucket (relative to bucket root)
+        path: "2026-07-22T12:22:02Z"
+        # Secret containing MongoDB credentials from the source database.
+        # PBM backups embed credential hashes, so these must match the source.
+        credentialsSecretRef:
+          name: import-credentials
+
+  # Topology configuration - must match the source database structure
+  topology:
+    type: replicaset
+
+  # Component configuration for the new instance
+  components:
+    engine:
+      type: mongod
+      replicas: 3
+      storage:
+        size: 10Gi
+      resources:
+        limits:
+          cpu: 1
+          memory: 4G
+        requests:
+          cpu: 500m
+          memory: 2Gi
+---
+# Import credentials Secret - MUST match the source database credentials
+# PBM backups embed password hashes, so mismatched credentials will cause
+# authentication failures after restore.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: import-credentials
+  namespace: my-special-place
+type: Opaque
+stringData:
+  MONGODB_USER_ADMIN_USER: "<match-source-user>"
+  MONGODB_USER_ADMIN_PASSWORD: "<match-source-password>"
+  MONGODB_BACKUP_USER: "<match-source-backup-user>"
+  MONGODB_BACKUP_PASSWORD: "<match-source-backup-password>"
+  MONGODB_CLUSTER_ADMIN_USER: "<match-source-cluster-admin-user>"
+  MONGODB_CLUSTER_ADMIN_PASSWORD: "<match-source-cluster-admin-password>"
+  MONGODB_CLUSTER_MONITOR_USER: "<match-source-cluster-monitor-user>"
+  MONGODB_CLUSTER_MONITOR_PASSWORD: "<match-source-cluster-monitor-password>"
+  MONGODB_DATABASE_ADMIN_USER: "<match-source-database-admin-user>"
+  MONGODB_DATABASE_ADMIN_PASSWORD: "<match-source-database-admin-password>"

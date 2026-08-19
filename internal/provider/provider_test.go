@@ -139,37 +139,6 @@ func TestValidatePSMDB(t *testing.T) {
 			},
 		},
 		{
-			name: "dataSource missing backup details",
-			instance: &corev1alpha1.Instance{
-				ObjectMeta: metav1.ObjectMeta{Name: "test-instance"},
-				Spec: corev1alpha1.InstanceSpec{
-					DataSource: &backupv1alpha1.DataSource{
-						Type: backupv1alpha1.DataSourceTypeBackup,
-					},
-					Components: map[string]corev1alpha1.ComponentSpec{
-						common.ComponentEngine: validEngine,
-					},
-				},
-			},
-			expectErr: "missing spec.dataSource.backup",
-		},
-		{
-			name: "dataSource missing backup name",
-			instance: &corev1alpha1.Instance{
-				ObjectMeta: metav1.ObjectMeta{Name: "test-instance"},
-				Spec: corev1alpha1.InstanceSpec{
-					DataSource: &backupv1alpha1.DataSource{
-						Type:   backupv1alpha1.DataSourceTypeBackup,
-						Backup: &backupv1alpha1.DataSourceBackup{},
-					},
-					Components: map[string]corev1alpha1.ComponentSpec{
-						common.ComponentEngine: validEngine,
-					},
-				},
-			},
-			expectErr: "missing spec.dataSource.backup.backupRef.name",
-		},
-		{
 			name: "missing engine component",
 			instance: &corev1alpha1.Instance{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-instance"},
@@ -556,7 +525,11 @@ func TestValidatePSMDB(t *testing.T) {
 			scheme := runtime.NewScheme()
 			require.NoError(t, corev1alpha1.AddToScheme(scheme))
 			require.NoError(t, backupv1alpha1.AddToScheme(scheme))
-			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(tt.instance).Build()
+
+			fakeClient := fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithObjects(tt.instance).
+				Build()
 			ctx := controller.NewContext(context.Background(), fakeClient, tt.instance, "psmdb")
 			err := ValidatePSMDB(ctx)
 

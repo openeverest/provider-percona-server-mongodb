@@ -20,6 +20,10 @@
 // +k8s:openapi-gen=true
 package perconabackupmongodb
 
+import (
+	commonv1alpha1 "github.com/openeverest/openeverest/v2/api/common/v1alpha1"
+)
+
 // PerconaBackupParameters describes the parameters accepted by Backup CRs
 // that target this class (spec.parameters). Mirrors the fields surfaced by
 // ui.yaml's `backup` section.
@@ -41,3 +45,34 @@ type PerconaBackupParameters struct {
 // restore-time options through OpenEverest; the struct is intentionally
 // empty and ships an empty schema until requirements crystallize.
 type PerconaRestoreParameters struct{}
+
+// PerconaImportParameters describes the configuration accepted when an Instance
+// is created with spec.dataSource.type=Import referencing this BackupClass.
+type PerconaImportParameters struct {
+	// Path is the S3 path (prefix) where the PBM/mongodump backup data resides.
+	// This is relative to the bucket root configured in the referenced BackupStorage.
+	// Example: "backups/2026-07-15/my-cluster" for a backup at
+	// s3://my-bucket/backups/2026-07-15/my-cluster
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
+	Path string `json:"path"`
+
+	// CredentialsSecretRef references a Secret in the Instance's namespace
+	// containing the MongoDB credentials from the source database that created
+	// the backup being imported.
+	//
+	// This is REQUIRED because PBM backups embed password hashes. The target
+	// Instance must use the same credentials as the source to access the
+	// restored data. The provider uses this secret directly as the PSMDB
+	// users secret.
+	//
+	// The Secret must contain the standard PSMDB users secret keys:
+	//   - MONGODB_BACKUP_USER / MONGODB_BACKUP_PASSWORD
+	//   - MONGODB_CLUSTER_ADMIN_USER / MONGODB_CLUSTER_ADMIN_PASSWORD
+	//   - MONGODB_CLUSTER_MONITOR_USER / MONGODB_CLUSTER_MONITOR_PASSWORD
+	//   - MONGODB_DATABASE_ADMIN_USER / MONGODB_DATABASE_ADMIN_PASSWORD
+	//   - MONGODB_USER_ADMIN_USER / MONGODB_USER_ADMIN_PASSWORD
+	//
+	// +kubebuilder:validation:Required
+	CredentialsSecretRef commonv1alpha1.SecretRef `json:"credentialsSecretRef"`
+}

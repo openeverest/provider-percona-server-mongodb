@@ -1,0 +1,31 @@
+apiVersion: core.openeverest.io/v1alpha1
+kind: Instance
+metadata:
+  name: psmdb-imported
+spec:
+  dataSource:
+    type: Import
+    import:
+      storageRef:
+        name: test-storage-s3
+      parameters:
+        path: "/psmdb/2026-07-17T06:29:55Z"
+        credentialsSecretRef:
+          name: import-credentials
+---
+apiVersion: psmdb.percona.com/v1
+kind: PerconaServerMongoDB
+metadata:
+  name: psmdb-imported
+spec:
+  backup:
+    enabled: true
+    storages:
+      test-storage-s3:
+        type: s3
+        s3:
+          bucket: test-backup-bucket
+          credentialsSecret: backup-storage-credentials
+          endpointUrl: http://minio.minio.svc.cluster.local:9000
+          insecureSkipTLSVerify: true
+          region: us-east-1

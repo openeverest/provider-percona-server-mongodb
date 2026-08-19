@@ -118,6 +118,10 @@ test-integration-backup: ## Run backup integration tests.
 test-integration-backup-datasource: ## Run backup datasource integration tests.
 	. ./test/vars.sh && chainsaw test --config ./test/integration/.chainsaw.yaml ./test/integration/backup/datasource
 
+.PHONY: test-integration-backup-datasource-import
+test-integration-backup-datasource-import: ## Run backup datasource import integration tests.
+	. ./test/vars.sh && chainsaw test --config ./test/integration/.chainsaw.yaml ./test/integration/backup/datasource-import
+
 .PHONY: test-e2e
 test-e2e: ## Run Playwright E2E tests against a running Everest UI (http://localhost:8080).
 	cd test/e2e && npm ci && npx playwright test

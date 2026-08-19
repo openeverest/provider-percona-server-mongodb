@@ -6,11 +6,14 @@ metadata:
   name: percona-backup-mongodb
 spec:
   description: |
-    BackupClass for the Percona Server MongoDB provider. Backups are managed
-    natively by Percona Backup for MongoDB (PBM) embedded in the PSMDB operator;
-    OpenEverest does not run any side-car Job for this class.
+    BackupClass for the Percona Server MongoDB provider. Backups, restores,
+    and external data imports are managed natively by Percona Backup for
+    MongoDB (PBM) embedded in the PSMDB operator; OpenEverest does not run
+    any side-car Job for this class.
   displayName: Percona Backup for MongoDB
   executionMode: ProviderManaged
+  importParametersSchema:
+    openAPIV3Schema: PerconaImportParameters
   parametersSchema:
     openAPIV3Schema:
       properties:
@@ -26,6 +29,7 @@ spec:
     limits:
       maxPITREnabledStorages: 1
       maxStorages: 1
+    supportsImport: true
     supportsPITR: true
   restoreParametersSchema:
     openAPIV3Schema:

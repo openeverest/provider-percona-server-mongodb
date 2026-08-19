@@ -21,7 +21,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 
-	backupv1alpha1 "github.com/openeverest/openeverest/v2/api/backup/v1alpha1"
 	"github.com/openeverest/openeverest/v2/provider-runtime/controller"
 
 	"github.com/openeverest/provider-percona-server-mongodb/definition/topologies/sharded"
@@ -141,24 +140,7 @@ func validateEngine(c *controller.Context) error {
 	return nil
 }
 
-// validateDataSource validates the dataSource spec.
-func validateDataSource(c *controller.Context) error {
-	ds := c.Instance().Spec.DataSource
 
-	if ds == nil || ds.Type != backupv1alpha1.DataSourceTypeBackup {
-		return nil
-	}
-
-	if ds.Backup == nil {
-		return fmt.Errorf("missing spec.dataSource.backup")
-	}
-
-	if ds.Backup.BackupRef.Name == "" {
-		return fmt.Errorf("missing spec.dataSource.backup.backupRef.name")
-	}
-
-	return nil
-}
 
 // validateShardedTopology validates sharded cluster topology and its components.
 func validateShardedTopology(c *controller.Context) error {

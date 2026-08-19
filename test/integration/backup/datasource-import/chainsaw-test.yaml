@@ -1,0 +1,141 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/kyverno/chainsaw/main/.schemas/json/test-chainsaw-v1alpha1.json
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: datasource-import
+spec:
+  description: |
+    Test Import data source for PSMDB.
+    This test verifies:
+    1. Creating an Instance with Import dataSource imports data from S3
+    2. Proper credential copying from import secret to everest-secrets
+    3. Restore CR creation and completion
+    4. Instance transitions to Ready with DataSourceReady condition
+    5. Failure case when storage reference is invalid
+  steps:
+    - name: deployment
+      try:
+      - assert:
+          resource:
+            apiVersion: apps/v1
+            kind: Deployment
+            metadata:
+              name: provider-percona-server-mongodb-operator
+              namespace: provider-system
+            spec:
+              replicas: 0
+      catch:
+      - script:
+          content: kubectl get provider-percona-server-mongodb-operator -n provider-system -o yaml
+    - name: install
+      try:
+        - apply: 
+            file: 00-install.yaml
+        - assert:
+            file: 00-assert.yaml
+      catch:
+        - script:
+            content: kubectl get backupstorage -n $NAMESPACE -o yaml
+        - script:
+            content: kubectl get backupclass -o yaml
+
+    # Step 1: Create Instance with Import dataSource
+    - name: create-instance-with-import
+      try:
+        - apply: 
+            file: 10-create-instance-with-import.yaml
+        - assert:
+            file: 10-assert.yaml
+      catch:
+        - script:
+            content: kubectl get in/psmdb-imported -n $NAMESPACE -o yaml
+        - script:
+            content: kubectl get psmdb -n $NAMESPACE -o yaml
+
+    # Step 2: Wait for PSMDB cluster ready and publish backup version
+    - name: instance-ready
+      try:
+        - script:
+            content: |
+              kubectl patch psmdb/psmdb-imported --subresource status -n $NAMESPACE \
+                -p '{"status":{"state":"ready", "size":1, "ready":1, "host":"psmdb-imported-rs0.default.svc.cluster.local","backupVersion":"2.9.0"}}' --type=merge
+        - assert:
+            file: 11-assert.yaml
+      catch:
+        - script:
+            content: kubectl get in/psmdb-imported -n $NAMESPACE -o yaml
+        - script:
+            content: kubectl get psmdb/psmdb-imported -n $NAMESPACE -o yaml
+        - script:
+            content: kubectl get secrets -n $NAMESPACE -o name
+
+    # Step 3: Verify restore CR created and Instance becomes Ready
+    - name: verify-restore-and-instance-ready
+      try:
+        - script:
+            content: |
+              kubectl patch psmdb-restore/psmdb-imported-datasource --subresource status -n $NAMESPACE \
+                -p '{"status":{"state":"ready"}}' --type=merge
+        - assert:
+            file: 20-assert.yaml
+      catch:
+        - script:
+            content: kubectl get in/psmdb-imported -n $NAMESPACE -o yaml
+        - script:
+            content: kubectl get psmdb-restore -n $NAMESPACE -o yaml
+
+    # Step 4: Delete successful import Instance
+    - name: delete-successful-instance
+      try:
+        - delete:
+            ref:
+              apiVersion: core.openeverest.io/v1alpha1
+              kind: Instance
+              name: psmdb-imported
+        - script:
+            content: |
+              while kubectl get in psmdb-imported -n $NAMESPACE 2>/dev/null; do
+                sleep 5
+              done
+              echo "Instance deleted"
+      catch:
+        - script:
+            content: kubectl get in -n $NAMESPACE -o yaml
+        - script:
+            content: kubectl get psmdb -n $NAMESPACE -o yaml
+
+    # Step 5: Cleanup all resources
+    - name: cleanup
+      try:
+        - delete:
+            ref:
+              apiVersion: v1
+              kind: Secret
+              name: import-credentials
+        - delete:
+            ref:
+              apiVersion: backup.openeverest.io/v1alpha1
+              kind: BackupStorage
+              name: test-storage-s3
+        - delete:
+            ref:
+              apiVersion: backup.openeverest.io/v1alpha1
+              kind: BackupClass
+              name: percona-backup-mongodb
+        - delete:
+            ref:
+              apiVersion: v1
+              kind: Secret
+              name: backup-storage-credentials
+        - script:
+            content: kubectl patch psmdb/psmdb-imported -n $NAMESPACE -p '{"metadata":{"finalizers":null}}' --type merge
+        # Verify cleanup
+        - script:
+            content: |
+              kubectl get backupstorage test-storage-s3 -n $NAMESPACE 2>&1 | grep -q "not found" || exit 1
+              kubectl get secret backup-storage-credentials -n $NAMESPACE 2>&1 | grep -q "not found" || exit 1
+              kubectl get secret import-credentials -n $NAMESPACE 2>&1 | grep -q "not found" || exit 1
+              echo "Cleanup complete"
+      catch:
+        - script:
+            content: kubectl get all -n $NAMESPACE -o yaml

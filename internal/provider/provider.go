@@ -15,6 +15,7 @@
 package provider
 
 import (
+	"encoding/json"
 	"fmt"
 
 	psmdbv1 "github.com/percona/percona-server-mongodb-operator/pkg/apis/psmdb/v1"
@@ -33,6 +34,7 @@ import (
 	monitoringv1alpha1 "github.com/openeverest/openeverest/v2/api/monitoring/v1alpha1"
 	"github.com/openeverest/openeverest/v2/provider-runtime/controller"
 
+	pbm "github.com/openeverest/provider-percona-server-mongodb/definition/backupclasses/percona-backup-mongodb"
 	"github.com/openeverest/provider-percona-server-mongodb/internal/common"
 )
 
@@ -100,11 +102,6 @@ func ValidatePSMDB(c *controller.Context) error {
 	if err := validateMetadata(c); err != nil {
 		l.Error(err, "Metadata validation failed", "cluster", c.Name())
 		return fmt.Errorf("metadata validation failed: %w", err)
-	}
-
-	if err := validateDataSource(c); err != nil {
-		l.Error(err, "DataSource validation failed", "cluster", c.Name())
-		return fmt.Errorf("dataSource validation failed: %w", err)
 	}
 
 	if err := validateComponents(c); err != nil {
@@ -183,7 +180,28 @@ func SyncPSMDB(c *controller.Context) error {
 	psmdb.Spec.Backup = backupSpec
 
 	usersSecretName := "everest-secrets-" + c.Name()
+	ds := c.Instance().Spec.DataSource
 
+	// When seeding from a DataSource (Backup or Import), the target cluster's
+	// users secret must contain the same credentials as the source cluster.
+	// PBM backups embed credential hashes; mismatched secrets render the
+	// restored data inaccessible. Copy BEFORE applying the PSMDB CR so the
+	// operator never initializes the secret with random passwords.
+	if ds != nil {
+		switch ds.Type {
+		case backupv1alpha1.DataSourceTypeBackup:
+			if err := ensureDataSourceCredentials(c, usersSecretName); err != nil {
+				return err
+			}
+		case backupv1alpha1.DataSourceTypeImport:
+			if err := ensureImportCredentials(c, usersSecretName); err != nil {
+				return err
+			}
+		}
+	}
+
+	// Configure monitoring after ensuring data source user credentials,
+	// as it adds PMM credentials to the user secret.
 	pmmSpec, err := configureMonitoring(c, usersSecretName)
 	if err != nil {
 		return err
@@ -196,17 +214,6 @@ func SyncPSMDB(c *controller.Context) error {
 		Users:         usersSecretName,
 		EncryptionKey: c.Name() + "-mongodb-encryption-key",
 		SSLInternal:   c.Name() + "-ssl-internal",
-	}
-
-	// When seeding from a DataSource, the target cluster's users secret must
-	// contain the same credentials as the source cluster. The PSMDB backup
-	// embeds credential hashes; mismatched secrets render the restored data
-	// inaccessible. Copy BEFORE applying the PSMDB CR so the operator never
-	// initializes the secret with random passwords.
-	if c.Instance().Spec.DataSource != nil {
-		if err := ensureDataSourceCredentials(c, usersSecretName); err != nil {
-			return err
-		}
 	}
 
 	if err := c.Apply(psmdb); err != nil {
@@ -235,6 +242,7 @@ func SyncPSMDB(c *controller.Context) error {
 			})
 			return nil
 		}
+
 		if _, err := c.ReconcileDataSource(); err != nil {
 			return fmt.Errorf("reconcile data source: %w", err)
 		}
@@ -383,6 +391,11 @@ func ensureDataSourceCredentials(c *controller.Context, targetSecretName string)
 	}
 
 	// Create the target secret with the same data.
+	return createSecretCopy(c, targetSecretName, sourceSecret)
+}
+
+func createSecretCopy(c *controller.Context, targetSecretName string, sourceSecret *corev1.Secret) error {
+	// Create the target secret with the same data.
 	newSecret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      targetSecretName,
@@ -402,6 +415,53 @@ func ensureDataSourceCredentials(c *controller.Context, targetSecretName string)
 		return fmt.Errorf("create target credentials secret %q: %w", targetSecretName, err)
 	}
 	return nil
+}
+
+// ensureImportCredentials copies the user-provided import credentials
+// secret to the target Instance's users secret. This is called before
+// applying the PSMDB CR to ensure the operator initializes its internal
+// users secret with the correct password hashes (matching the backup).
+// Unlike ensureDataSourceCredentials, this ALWAYS overwrites the target secret
+// because the import credentials MUST match the backup source.
+func ensureImportCredentials(c *controller.Context, targetSecretName string) error {
+	ds := c.Instance().Spec.DataSource
+
+	// nothing to import
+	if ds == nil || ds.Type != backupv1alpha1.DataSourceTypeImport || ds.Import == nil || ds.Import.Parameters == nil {
+		return nil
+	}
+
+	var params pbm.PerconaImportParameters
+	if err := json.Unmarshal(ds.Import.Parameters.Raw, &params); err != nil {
+		return fmt.Errorf("failed to unmarshal import parameters: %w", err)
+	}
+
+	secretName := params.CredentialsSecretRef.Name
+
+	secret := &corev1.Secret{}
+	if err := c.Get(secret, secretName); err != nil {
+		if apierrors.IsNotFound(err) {
+			c.SetDataSourceStatus(controller.DataSourceStatus{
+				Done:    true,
+				State:   controller.DataSourceStateFailed,
+				Reason:  corev1alpha1.ReasonDataSourceFailed,
+				Message: fmt.Sprintf("import credentials secret %q not found", secretName),
+			})
+			return &controller.DataSourceConfigError{
+				Reason:  corev1alpha1.ReasonDataSourceFailed,
+				Message: fmt.Sprintf("import credentials secret %q not found", secretName),
+			}
+		}
+		return fmt.Errorf("get import credentials secret %q: %w", secretName, err)
+	}
+
+	// Set owner reference on the source secret so it's cleaned up with the Instance.
+	if err := c.Apply(secret); err != nil {
+		return fmt.Errorf("set owner reference on import credentials secret %q: %w", secretName, err)
+	}
+
+	// Create the target secret with the same data.
+	return createSecretCopy(c, targetSecretName, secret)
 }
 
 // dataSourceInstanceName resolves the Instance whose data is being seeded from.
