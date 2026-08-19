@@ -13,7 +13,7 @@ RELEASE_FULLCOMMIT ?= $(shell git rev-parse HEAD)
 CONTAINER_TOOL ?= docker
 
 # OpenEverest branch to use for OpenEverest CRD installation.
-OPENEVEREST_BRANCH ?= release-2.0
+OPENEVEREST_BRANCH ?= main
 
 # Image URL to use all building/pushing image targets
 IMG ?= ghcr.io/openeverest/provider-percona-server-mongodb-dev:latest
