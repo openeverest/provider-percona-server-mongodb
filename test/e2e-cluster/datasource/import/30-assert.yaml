@@ -1,0 +1,10 @@
+apiVersion: core.openeverest.io/v1alpha1
+kind: Instance
+metadata:
+  name: psmdb-import-test
+spec:
+  dataSource:
+    type: Import
+    import:
+      storageRef:
+        name: minio-storage

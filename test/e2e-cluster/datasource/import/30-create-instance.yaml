@@ -1,0 +1,57 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: psmdb-import-credentials
+type: Opaque
+data:
+  # These credentials must match the backup source
+  MONGODB_BACKUP_PASSWORD: azgydGlnR0xONlNyS3pVODI=
+  MONGODB_BACKUP_USER: YmFja3Vw
+  MONGODB_CLUSTER_ADMIN_PASSWORD: QnkwVjU3RlprZnhJVE5LdTZhRQ==
+  MONGODB_CLUSTER_ADMIN_USER: Y2x1c3RlckFkbWlu
+  MONGODB_CLUSTER_MONITOR_PASSWORD: VzBYNlYydWZjQjRXQ21GWQ==
+  MONGODB_CLUSTER_MONITOR_USER: Y2x1c3Rlck1vbml0b3I=
+  MONGODB_DATABASE_ADMIN_PASSWORD: bUhZeVFNQ3RraGpNdUVlYw==
+  MONGODB_DATABASE_ADMIN_USER: ZGF0YWJhc2VBZG1pbg==
+  MONGODB_USER_ADMIN_PASSWORD: RlNGYmlKV2tSbU1NYzhTc3dF
+  MONGODB_USER_ADMIN_USER: dXNlckFkbWlu
+---
+apiVersion: core.openeverest.io/v1alpha1
+kind: Instance
+metadata:
+  name: psmdb-import-test
+spec:
+  providerRef:
+    name: percona-server-mongodb
+  backup:
+    enabled: true
+    classRef:
+      name: percona-backup-mongodb
+    storages:
+      - storageRef:
+          name: minio-storage
+  dataSource:
+    type: Import
+    import:
+      storageRef:
+        name: minio-storage
+      parameters:
+        # Path to the PBM backup in Minio (from testdata/backups/psmdb.tar)
+        path: "/psmdb/2025-11-03T09:34:50Z"
+        credentialsSecretRef:
+          name: psmdb-import-credentials
+  topology:
+    type: replicaset
+  components:
+    engine:
+      type: mongod
+      replicas: 1
+      storage:
+        size: 1Gi
+      resources:
+        limits:
+          cpu: 600m
+          memory: 512Mi
+        requests:
+          cpu: 600m
+          memory: 512Mi

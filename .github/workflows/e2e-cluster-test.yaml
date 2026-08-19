@@ -1,13 +1,14 @@
 ---
-# Reusable workflow — run one chainsaw integration test suite inside a k3d cluster.
+# Reusable workflow — run one chainsaw e2e-cluster test suite inside a k3d cluster.
+# Unlike integration tests, e2e-cluster tests require the PSMDB operator to be running.
 # Called by ci.yaml; not triggered directly.
-name: Integration test
+name: E2E Cluster test
 
 on:
   workflow_call:
     inputs:
       make_target:
-        description: 'Make target for the chainsaw suite (e.g. test-integration-core)'
+        description: 'Make target for the chainsaw suite (e.g. test-e2e-cluster-backup-import)'
         type: string
         required: true
       suite:
@@ -21,7 +22,7 @@ permissions:
 env:
   IMG: provider-percona-server-mongodb:ci
   # Branch of openeverest/openeverest to build the platform from.
-  OPENEVEREST_BRANCH: main
+  OPENEVEREST_BRANCH: release-2.0
 
 jobs:
   run:
@@ -30,10 +31,10 @@ jobs:
     timeout-minutes: 45
 
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@v4
 
       - name: Checkout OpenEverest (v2)
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        uses: actions/checkout@v4
         with:
           repository: openeverest/openeverest
           ref: ${{ env.OPENEVEREST_BRANCH }}
@@ -72,8 +73,8 @@ jobs:
         env:
           OPENEVEREST_BRANCH: ${{ env.OPENEVEREST_BRANCH }}
 
-      - name: Deploy provider
-        run: make deploy-provider-ci
+      - name: Deploy provider with PSMDB operator
+        run: make deploy-provider-e2e
 
       - name: Deploy OpenEverest controller
         working-directory: _openeverest
@@ -81,12 +82,10 @@ jobs:
 
       - name: Run ${{ inputs.make_target }}
         run: make ${{ inputs.make_target }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload chainsaw report on failure
         if: failure()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@v4
         with:
           name: chainsaw-${{ inputs.suite }}-${{ github.run_id }}
           path: /tmp/chainsaw-report*.xml

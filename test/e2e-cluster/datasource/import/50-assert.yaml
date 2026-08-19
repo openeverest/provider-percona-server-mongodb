@@ -1,0 +1,32 @@
+apiVersion: core.openeverest.io/v1alpha1
+kind: Instance
+metadata:
+  name: psmdb-import-test
+status:
+  phase: Restoring
+---
+apiVersion: backup.openeverest.io/v1alpha1
+kind: Restore
+metadata:
+  name: psmdb-import-test-datasource
+spec:
+  instanceRef:
+    name: psmdb-import-test
+  dataSource:
+    type: Import
+---
+apiVersion: psmdb.percona.com/v1
+kind: PerconaServerMongoDBRestore
+metadata:
+  name: psmdb-import-test-datasource
+spec:
+  clusterName: psmdb-import-test
+  backupSource:
+    type: logical
+    s3:
+      bucket: everest-operator
+      region: us-east-1
+      endpointUrl: https://minio.minio.svc
+      credentialsSecret: minio-credentials
+      insecureSkipTLSVerify: true
+      forcePathStyle: true
