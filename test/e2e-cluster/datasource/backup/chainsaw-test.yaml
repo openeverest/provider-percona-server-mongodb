@@ -99,7 +99,7 @@ spec:
     - name: source-cluster-ready
       try:
         - assert:
-            timeout: 300s
+            timeout: 120s
             file: 40-assert.yaml
 
     - name: create-source-mongodb-client
@@ -137,7 +137,7 @@ spec:
     - name: backup-complete
       try:
         - assert:
-            timeout: 300s
+            timeout: 120s
             file: 60-assert.yaml
 
     - name: create-instance-from-backup
@@ -145,19 +145,19 @@ spec:
         - apply:
             file: 70-create-dest.yaml
         - assert:
-            timeout: 300s
+            timeout: 120s
             file: 70-assert.yaml
 
     - name: restore-created
       try:
         - assert:
-            timeout: 300s
+            timeout: 120s
             file: 80-assert.yaml
 
     - name: restore-complete
       try:
         - assert:
-            timeout: 300s
+            timeout: 120s
             file: 90-assert.yaml
 
     - name: create-dest-mongodb-client
@@ -196,7 +196,7 @@ spec:
     - name: cleanup
       try:
         - script:
-            timeout: 300s
+            timeout: 120s
             content: |
               kubectl delete instance/psmdb-src -n $NAMESPACE --ignore-not-found || true
               kubectl delete instance/psmdb-dest -n $NAMESPACE --ignore-not-found || true
