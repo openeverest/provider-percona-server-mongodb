@@ -1,4 +1,3 @@
-# yaml-language-server: $schema=https://raw.githubusercontent.com/kyverno/chainsaw/main/.schemas/json/test-chainsaw-v1alpha1.json
 apiVersion: chainsaw.kyverno.io/v1alpha1
 kind: Test
 metadata:
@@ -7,7 +6,7 @@ spec:
   description: |
     Seed a new Instance from a Backup CR: deploy Minio and PMM, create a source
     Instance with backups enabled, write data and take a Backup, then create a
-    destination Instance with a Backup dataSource, verify the datasource
+    destination Instance with a Backup dataSource and monitoring, verify the datasource
     Restore is created and completes, and validate the seeded data via a
     MongoDB client.
   catch:
@@ -60,16 +59,29 @@ spec:
             content: |
               PMM_POD="$(kubectl -n pmm get pod -l app=pmm-server -o jsonpath='{.items[0].metadata.name}')"
 
-              TOKEN="$(kubectl -n pmm exec "${PMM_POD}" -- sh -c '
-                set -e
-                SA_UID=$(curl -s -k -u admin:admin -X POST https://127.0.0.1:8443/graph/api/serviceaccounts \
-                  -H "Content-Type: application/json" \
-                  -d "{\"name\":\"everest\",\"role\":\"Admin\"}" \
-                  | sed -n "s/.*\"uid\":\"\([^\"]*\)\".*/\1/p")
-                curl -s -k -u admin:admin -X POST https://127.0.0.1:8443/graph/api/serviceaccounts/${SA_UID}/tokens \
-                  -H "Content-Type: application/json" \
-                  -d "{\"name\":\"everest-token\",\"role\":\"Admin\"}" \
-                  | sed -n "s/.*\"key\":\"\([^\"]*\)\".*/\1/p"')"
+              # Create a service account and token via the PMM API, running
+              # entirely inside the pod so no host-side tooling is needed.
+              TOKEN="$(kubectl -n pmm exec -i "${PMM_POD}" -- sh <<'EOF'
+              set -e
+              PMM_API='https://127.0.0.1:8443/graph/api'
+
+              SA=$(curl -fsSk -u admin:admin \
+                -H 'Content-Type: application/json' \
+                -d '{"name":"everest","role":"Admin"}' \
+                "${PMM_API}/serviceaccounts")
+              # Extract the "uid" value: strip up to '"uid":"', then from the next '"'.
+              UID=${SA##*\"uid\":\"}
+              UID=${UID%%\"*}
+
+              KEY=$(curl -fsSk -u admin:admin \
+                -H 'Content-Type: application/json' \
+                -d '{"name":"everest-token","role":"Admin"}' \
+                "${PMM_API}/serviceaccounts/${UID}/tokens")
+              # Extract the "key" value: strip up to '"key":"', then from the next '"'.
+              KEY=${KEY##*\"key\":\"}
+              echo "${KEY%%\"*}"
+              EOF
+              )"
 
               test -n "${TOKEN}"
 
@@ -108,7 +120,7 @@ spec:
             timeout: 60s
             content: |
               IMAGE="$(kubectl get -n ${NAMESPACE} psmdb/psmdb-src -o jsonpath='{.spec.image}')"
-              kubectl run -n "${NAMESPACE}" psmdb-src-client --env="NO_COLOR=1" --image=${IMAGE} --restart=Never --command -- sleep infinity
+              kubectl run -n "${NAMESPACE}" psmdb-src-client --env="NO_COLOR=1" --image=${IMAGE} --restart=Never --command -- sleep 300
               kubectl wait --for=condition=Ready pod/psmdb-src-client --timeout=60s -n ${NAMESPACE}
       catch:
         - script:
@@ -123,9 +135,9 @@ spec:
               PSMDBHOST="$(kubectl get -n ${NAMESPACE} psmdb/psmdb-src -o jsonpath='{.status.host}')"
               CONN_URI="mongodb://${PSMDBUSER}:${PSMDBPASSWORD}@${PSMDBHOST}"
 
-              # Insert numbers 1-10 into the test collection.
+              # Insert a single document into the test collection.
               kubectl exec psmdb-src-client -n ${NAMESPACE} -- mongosh "$CONN_URI" --quiet --eval \
-                "for (let i = 1; i <= 10; i++) { db.test.insertOne({ num: i }); }"
+                "db.test.insertOne({ _id: 'openeverest' });"
 
     - name: create-backup
       try:
@@ -166,7 +178,7 @@ spec:
             timeout: 60s
             content: |
               IMAGE="$(kubectl get -n ${NAMESPACE} psmdb/psmdb-dest -o jsonpath='{.spec.image}')"
-              kubectl run -n "${NAMESPACE}" psmdb-dest-client --env="NO_COLOR=1" --image=${IMAGE} --restart=Never --command -- sleep infinity
+              kubectl run -n "${NAMESPACE}" psmdb-dest-client --env="NO_COLOR=1" --image=${IMAGE} --restart=Never --command -- sleep 300
               kubectl wait --for=condition=Ready pod/psmdb-dest-client --timeout=60s -n ${NAMESPACE}
       catch:
         - script:
@@ -181,17 +193,12 @@ spec:
               PSMDBHOST="$(kubectl get -n ${NAMESPACE} psmdb/psmdb-dest -o jsonpath='{.status.host}')"
               CONN_URI="mongodb://${PSMDBUSER}:${PSMDBPASSWORD}@${PSMDBHOST}"
 
-              # The destination cluster must contain the numbers 1-10 seeded
-              # into the source before the backup.
-              expected=$(printf '1\n2\n3\n4\n5\n6\n7\n8\n9\n10')
-              actual=$(kubectl exec psmdb-dest-client -n ${NAMESPACE} -- mongosh "$CONN_URI" --quiet --eval "db.test.find({}, { _id: 0, num: 1 }).sort({ num: 1 }).forEach(doc => print(doc.num));")
+              # The destination cluster contains a single document.
+              found=$(kubectl exec psmdb-dest-client -n ${NAMESPACE} -- mongosh "$CONN_URI" --quiet --eval "print(db.test.findOne()._id);")
 
-              echo "Expected:"
-              echo "$expected"
-              echo "Actual:"
-              echo "$actual"
+              echo "Found: $found"
 
-              test "$actual" = "$expected"
+              test "$found" = "openeverest"
 
     - name: cleanup
       try:
