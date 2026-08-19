@@ -5,7 +5,7 @@ metadata:
   name: backup-datasource
 spec:
   description: |
-    Seed a new Instance from a Backup CR: deploy Minio, create a source
+    Seed a new Instance from a Backup CR: deploy Minio and PMM, create a source
     Instance with backups enabled, write data and take a Backup, then create a
     destination Instance with a Backup dataSource, verify the datasource
     Restore is created and completes, and validate the seeded data via a
@@ -195,13 +195,9 @@ spec:
 
     - name: cleanup
       try:
-        # Delete resources not managed by chainsaw's automatic cleanup
-        # (created via script, not apply).
         - script:
+            timeout: 300s
             content: |
-              # Delete the instances first and wait for their finalizers to
-              # drain (backup cleanup runs PBM's delete-backup against MinIO),
-              # then tear down MinIO last so the storage is still reachable.
               kubectl delete instance/psmdb-src -n $NAMESPACE --ignore-not-found || true
               kubectl delete instance/psmdb-dest -n $NAMESPACE --ignore-not-found || true
               kubectl delete -f ${OPERATOR_ROOT_PATH}/test/testdata/minio/deploy.yaml --ignore-not-found || true

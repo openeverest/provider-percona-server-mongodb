@@ -184,6 +184,24 @@ func SyncPSMDB(c *controller.Context) error {
 
 	usersSecretName := "everest-secrets-" + c.Name()
 
+	// When seeding from a DataSource, the target cluster's users secret must
+	// contain the same credentials as the source cluster. The PSMDB backup
+	// embeds credential hashes; mismatched secrets render the restored data
+	// inaccessible. This MUST run before configureMonitoring: when PMM is
+	// enabled the latter creates the users secret to hold PMM_SERVER_TOKEN,
+	// which would make ensureDataSourceCredentials treat the secret as already
+	// provisioned and skip copying the source credentials. Copying first seeds
+	// the full source secret, and configureMonitoring then merges the PMM token
+	// on top of it.
+	if c.Instance().Spec.DataSource != nil {
+		if err := ensureDataSourceCredentials(c, usersSecretName); err != nil {
+			return err
+		}
+	}
+
+	// Configure monitoring after ensuring data source user credentials.
+	// Configure monitoring adds PMM_SERVER_TOKEN to the users secret
+	// or creates user secret if none exists.
 	pmmSpec, err := configureMonitoring(c, usersSecretName)
 	if err != nil {
 		return err
@@ -196,17 +214,6 @@ func SyncPSMDB(c *controller.Context) error {
 		Users:         usersSecretName,
 		EncryptionKey: c.Name() + "-mongodb-encryption-key",
 		SSLInternal:   c.Name() + "-ssl-internal",
-	}
-
-	// When seeding from a DataSource, the target cluster's users secret must
-	// contain the same credentials as the source cluster. The PSMDB backup
-	// embeds credential hashes; mismatched secrets render the restored data
-	// inaccessible. Copy BEFORE applying the PSMDB CR so the operator never
-	// initializes the secret with random passwords.
-	if c.Instance().Spec.DataSource != nil {
-		if err := ensureDataSourceCredentials(c, usersSecretName); err != nil {
-			return err
-		}
 	}
 
 	if err := c.Apply(psmdb); err != nil {
