@@ -51,9 +51,9 @@ func configureMongos(c *controller.Context) (*psmdbv1.MongosSpec, error) {
 	}
 
 	// Override with user-provided affinity if specified
-	if proxy.Affinity != nil {
+	if proxy.SchedulingPolicy != nil && proxy.SchedulingPolicy.Affinity != nil {
 		podAffinity = &psmdbv1.PodAffinity{
-			Advanced: proxy.Affinity,
+			Advanced: proxy.SchedulingPolicy.Affinity,
 		}
 	}
 

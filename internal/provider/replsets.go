@@ -21,6 +21,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 
+	commonv1alpha1 "github.com/openeverest/openeverest/v2/api/common/v1alpha1"
 	corev1alpha1 "github.com/openeverest/openeverest/v2/api/core/v1alpha1"
 	"github.com/openeverest/openeverest/v2/provider-runtime/controller"
 
@@ -30,7 +31,7 @@ import (
 )
 
 // configureReplset configures a single replset based on the provided parameters.
-func configureReplset(name string, replicas *int32, resources *corev1.ResourceRequirements, storageSize *corev1alpha1.Storage, expose bool, config string, affinity *corev1.Affinity, service *corev1alpha1.Service) *psmdbv1.ReplsetSpec {
+func configureReplset(name string, replicas *int32, resources *corev1.ResourceRequirements, storageSize *corev1alpha1.Storage, expose bool, config string, scheduling *commonv1alpha1.SchedulingPolicy, service *corev1alpha1.Service) *psmdbv1.ReplsetSpec {
 	configuration := psmdbDefaultConfigurationTemplate
 	if config != "" {
 		configuration = config
@@ -53,9 +54,9 @@ func configureReplset(name string, replicas *int32, resources *corev1.ResourceRe
 	}
 
 	// Override with user-provided affinity if specified
-	if affinity != nil {
+	if scheduling != nil && scheduling.Affinity != nil {
 		podAffinity = &psmdbv1.PodAffinity{
-			Advanced: affinity,
+			Advanced: scheduling.Affinity,
 		}
 	}
 
@@ -172,7 +173,7 @@ func configureReplsets(c *controller.Context) ([]*psmdbv1.ReplsetSpec, error) {
 	// TODO: implement disabling
 	if spec.Topology == nil || spec.Topology.Type != "sharded" {
 		return []*psmdbv1.ReplsetSpec{
-			configureReplset(rsName(0), engine.Replicas, engine.Resources, engine.Storage, true, config, engine.Affinity, engine.Service),
+			configureReplset(rsName(0), engine.Replicas, engine.Resources, engine.Storage, true, config, engine.SchedulingPolicy, engine.Service),
 		}, nil
 	}
 
@@ -185,7 +186,7 @@ func configureReplsets(c *controller.Context) ([]*psmdbv1.ReplsetSpec, error) {
 	// For sharded topology, replsets should not be exposed directly (clients connect via mongos)
 	replsets := make([]*psmdbv1.ReplsetSpec, 0, numShards)
 	for i := 0; i < numShards; i++ {
-		replsets = append(replsets, configureReplset(rsName(i), engine.Replicas, engine.Resources, engine.Storage, false, config, engine.Affinity, nil))
+		replsets = append(replsets, configureReplset(rsName(i), engine.Replicas, engine.Resources, engine.Storage, false, config, engine.SchedulingPolicy, nil))
 	}
 
 	return replsets, nil
@@ -212,5 +213,5 @@ func configureConfigServerReplset(c *controller.Context) (*psmdbv1.ReplsetSpec, 
 	// TODO: check if this is okay. It adds the configuration, expose.type,
 	// name, podDisruptionBudget that we didn't have in the everest operator
 	// Config servers should never be exposed directly - they are internal infrastructure
-	return configureReplset("configsvr", cfgSrv.Replicas, cfgSrv.Resources, cfgSrv.Storage, false, config, cfgSrv.Affinity, nil), nil
+	return configureReplset("configsvr", cfgSrv.Replicas, cfgSrv.Resources, cfgSrv.Storage, false, config, cfgSrv.SchedulingPolicy, nil), nil
 }
