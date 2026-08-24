@@ -5,6 +5,9 @@ on:
   pull_request:
   push:
     branches: [main]
+  schedule:
+    # Nightly at 03:00 UTC on the default branch.
+    - cron: "0 3 * * *"
 
 # Cancel in-progress runs for the same branch/PR when a new commit arrives.
 # On main we let runs queue so every commit is validated.
@@ -168,4 +171,13 @@ jobs:
     with:
       make_target: test-integration-backup-datasource
       suite: backup
+    secrets: inherit
+
+  test-e2e-cluster-datasource-backup:
+    name: E2E Cluster / backup datasource
+    needs: [lint, build, verify]
+    uses: ./.github/workflows/e2e-cluster-test.yaml
+    with:
+      make_target: test-e2e-cluster-datasource-backup
+      suite: datasource
     secrets: inherit

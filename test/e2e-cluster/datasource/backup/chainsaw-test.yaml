@@ -1,0 +1,211 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: backup-datasource
+spec:
+  description: |
+    Seed a new Instance from a Backup CR: deploy Minio and PMM, create a source
+    Instance with backups enabled, write data and take a Backup, then create a
+    destination Instance with a Backup dataSource and monitoring, verify the datasource
+    Restore is created and completes, and validate the seeded data via a
+    MongoDB client.
+  catch:
+    - script:
+        content: kubectl -n $NAMESPACE get instance,psmdb,backup,psmdb-backup,restore,psmdb-restore,backupstorage,monitoringconfig -o yaml
+    - script:
+        content: kubectl get backupclass -o yaml
+    - script:
+        content: kubectl -n pmm get pods -o yaml
+    - podLogs:
+        namespace: provider-system
+        selector: app.kubernetes.io/name=provider-percona-server-mongodb
+        tail: 100
+  steps:
+    - name: provider-operator-installed
+      try:
+        - assert:
+            file: 00-assert.yaml
+
+    - name: deploy-minio
+      try:
+        - script:
+            content: |
+              kubectl apply -f ${OPERATOR_ROOT_PATH}/test/testdata/minio/deploy.yaml
+        - script:
+            content: |
+              kubectl wait pod/minio --for=condition=Ready -n minio --timeout=120s
+      catch:
+        - script:
+            content: kubectl get pods -n minio -o yaml
+        - script:
+            content: kubectl logs -n minio minio -c minio --tail=50
+
+    - name: deploy-pmm
+      try:
+        - script:
+            content: |
+              kubectl apply -f ${OPERATOR_ROOT_PATH}/test/testdata/pmm/deploy.yaml
+        - script:
+            timeout: 360s
+            content: |
+              kubectl -n pmm wait --for=condition=Ready pod -l app=pmm-server --timeout=360s
+        # Provision a PMM3 service-account token (default admin/admin creds),
+        # then create the credentials Secret the MonitoringConfig references.
+        # The token is dynamic, so the Secret is created via script rather
+        # than a static manifest; the MonitoringConfig itself lives in
+        # 20-install.yaml.
+        - script:
+            timeout: 120s
+            content: |
+              PMM_POD="$(kubectl -n pmm get pod -l app=pmm-server -o jsonpath='{.items[0].metadata.name}')"
+
+              # Create a service account and token via the PMM API, running
+              # entirely inside the pod so no host-side tooling is needed.
+              TOKEN="$(kubectl -n pmm exec -i "${PMM_POD}" -- sh <<'EOF'
+              set -e
+              PMM_API='https://127.0.0.1:8443/graph/api'
+
+              SA=$(curl -fsSk -u admin:admin \
+                -H 'Content-Type: application/json' \
+                -d '{"name":"everest","role":"Admin"}' \
+                "${PMM_API}/serviceaccounts")
+              # Extract the "uid" value: strip up to '"uid":"', then from the next '"'.
+              UID=${SA##*\"uid\":\"}
+              UID=${UID%%\"*}
+
+              KEY=$(curl -fsSk -u admin:admin \
+                -H 'Content-Type: application/json' \
+                -d '{"name":"everest-token","role":"Admin"}' \
+                "${PMM_API}/serviceaccounts/${UID}/tokens")
+              # Extract the "key" value: strip up to '"key":"', then from the next '"'.
+              KEY=${KEY##*\"key\":\"}
+              echo "${KEY%%\"*}"
+              EOF
+              )"
+
+              test -n "${TOKEN}"
+
+              kubectl -n ${NAMESPACE} create secret generic mc-pmm-secret \
+                --from-literal=apiKey="${TOKEN}" \
+                --dry-run=client -o yaml | kubectl apply -f -
+      catch:
+        - script:
+            content: kubectl -n pmm get pods -o yaml
+        - script:
+            content: kubectl -n pmm logs -l app=pmm-server --tail=100
+
+    - name: setup-backup
+      try:
+        - apply:
+            file: 20-install.yaml
+        - assert:
+            file: 20-assert.yaml
+
+    - name: create-source-instance
+      try:
+        - apply:
+            file: 30-create-source.yaml
+        - assert:
+            file: 30-assert.yaml
+
+    - name: source-cluster-ready
+      try:
+        - assert:
+            timeout: 120s
+            file: 40-assert.yaml
+
+    - name: create-source-mongodb-client
+      try:
+        - script:
+            timeout: 60s
+            content: |
+              IMAGE="$(kubectl get -n ${NAMESPACE} psmdb/psmdb-src -o jsonpath='{.spec.image}')"
+              kubectl run -n "${NAMESPACE}" psmdb-src-client --env="NO_COLOR=1" --image=${IMAGE} --restart=Never --command -- sleep 300
+              kubectl wait --for=condition=Ready pod/psmdb-src-client --timeout=60s -n ${NAMESPACE}
+      catch:
+        - script:
+            content: kubectl get pod/psmdb-src-client -n $NAMESPACE -o yaml
+
+    - name: seed-source-data
+      try:
+        - script:
+            content: |
+              PSMDBPASSWORD="$(kubectl get -n ${NAMESPACE} secret/everest-secrets-psmdb-src -o jsonpath='{.data.MONGODB_DATABASE_ADMIN_PASSWORD}' | base64 --decode)"
+              PSMDBUSER="databaseAdmin"
+              PSMDBHOST="$(kubectl get -n ${NAMESPACE} psmdb/psmdb-src -o jsonpath='{.status.host}')"
+              CONN_URI="mongodb://${PSMDBUSER}:${PSMDBPASSWORD}@${PSMDBHOST}"
+
+              # Insert a single document into the test collection.
+              kubectl exec psmdb-src-client -n ${NAMESPACE} -- mongosh "$CONN_URI" --quiet --eval \
+                "db.test.insertOne({ _id: 'openeverest' });"
+
+    - name: create-backup
+      try:
+        - apply:
+            file: 50-create-backup.yaml
+        - assert:
+            file: 50-assert.yaml
+
+    - name: backup-complete
+      try:
+        - assert:
+            timeout: 120s
+            file: 60-assert.yaml
+
+    - name: create-instance-from-backup
+      try:
+        - apply:
+            file: 70-create-dest.yaml
+        - assert:
+            timeout: 120s
+            file: 70-assert.yaml
+
+    - name: restore-created
+      try:
+        - assert:
+            timeout: 120s
+            file: 80-assert.yaml
+
+    - name: restore-complete
+      try:
+        - assert:
+            timeout: 120s
+            file: 90-assert.yaml
+
+    - name: create-dest-mongodb-client
+      try:
+        - script:
+            timeout: 60s
+            content: |
+              IMAGE="$(kubectl get -n ${NAMESPACE} psmdb/psmdb-dest -o jsonpath='{.spec.image}')"
+              kubectl run -n "${NAMESPACE}" psmdb-dest-client --env="NO_COLOR=1" --image=${IMAGE} --restart=Never --command -- sleep 300
+              kubectl wait --for=condition=Ready pod/psmdb-dest-client --timeout=60s -n ${NAMESPACE}
+      catch:
+        - script:
+            content: kubectl get pod/psmdb-dest-client -n $NAMESPACE -o yaml
+
+    - name: verify-seeded-data
+      try:
+        - script:
+            content: |
+              PSMDBPASSWORD="$(kubectl get -n ${NAMESPACE} secret/everest-secrets-psmdb-dest -o jsonpath='{.data.MONGODB_DATABASE_ADMIN_PASSWORD}' | base64 --decode)"
+              PSMDBUSER="databaseAdmin"
+              PSMDBHOST="$(kubectl get -n ${NAMESPACE} psmdb/psmdb-dest -o jsonpath='{.status.host}')"
+              CONN_URI="mongodb://${PSMDBUSER}:${PSMDBPASSWORD}@${PSMDBHOST}"
+
+              # The destination cluster contains a single document.
+              found=$(kubectl exec psmdb-dest-client -n ${NAMESPACE} -- mongosh "$CONN_URI" --quiet --eval "print(db.test.findOne()._id);")
+
+              echo "Found: $found"
+
+              test "$found" = "openeverest"
+
+    - name: cleanup
+      try:
+        - script:
+            timeout: 120s
+            content: |
+              kubectl delete instance/psmdb-src -n $NAMESPACE --ignore-not-found || true
+              kubectl delete instance/psmdb-dest -n $NAMESPACE --ignore-not-found || true
+              kubectl delete -f ${OPERATOR_ROOT_PATH}/test/testdata/minio/deploy.yaml --ignore-not-found || true
+              kubectl delete -f ${OPERATOR_ROOT_PATH}/test/testdata/pmm/deploy.yaml --ignore-not-found || true

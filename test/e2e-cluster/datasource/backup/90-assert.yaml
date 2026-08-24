@@ -1,0 +1,27 @@
+apiVersion: psmdb.percona.com/v1
+kind: PerconaServerMongoDBRestore
+metadata:
+  name: psmdb-dest-datasource
+status:
+  state: ready
+---
+apiVersion: backup.openeverest.io/v1alpha1
+kind: Restore
+metadata:
+  name: psmdb-dest-datasource
+status:
+  state: Succeeded
+---
+apiVersion: core.openeverest.io/v1alpha1
+kind: Instance
+metadata:
+  name: psmdb-dest
+status:
+  phase: Ready
+---
+apiVersion: psmdb.percona.com/v1
+kind: PerconaServerMongoDB
+metadata:
+  name: psmdb-dest
+status:
+  state: ready

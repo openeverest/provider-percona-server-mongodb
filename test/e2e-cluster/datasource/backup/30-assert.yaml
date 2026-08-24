@@ -1,0 +1,54 @@
+apiVersion: core.openeverest.io/v1alpha1
+kind: Instance
+metadata:
+  name: psmdb-src
+spec:
+  providerRef:
+    name: percona-server-mongodb
+  backup:
+    enabled: true
+    classRef:
+      name: percona-backup-mongodb
+    storages:
+      - storageRef:
+          name: minio-storage
+  topology:
+    type: replicaset
+  components:
+    engine:
+      type: mongod
+      replicas: 1
+      storage:
+        size: 1Gi
+      resources:
+        limits:
+          cpu: 600m
+          memory: 512Mi
+        requests:
+          cpu: 600m
+          memory: 512Mi
+---
+apiVersion: psmdb.percona.com/v1
+kind: PerconaServerMongoDB
+metadata:
+  name: psmdb-src
+spec:
+  backup:
+    enabled: true
+    storages:
+      minio-storage:
+        type: s3
+        s3:
+          bucket: everest-operator
+          credentialsSecret: minio-credentials
+          endpointUrl: https://minio.minio.svc
+          insecureSkipTLSVerify: true
+          region: us-east-1
+  pmm:
+    enabled: true
+    serverHost: pmm-server.pmm.svc
+    image: percona/pmm-client:3.7.0
+    resources:
+      requests:
+        memory: 99604Ki
+        cpu: 95m
