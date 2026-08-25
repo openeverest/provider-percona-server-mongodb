@@ -157,7 +157,7 @@ ui:
             # https://github.com/openeverest/openeverest/issues/2398
         configuration:
           uiType: text
-          path: spec.components.engine.config
+          path: spec.components.engine.parameters.configuration
           fieldParams:
             label: "Engine configuration"
             placeholder: |2

@@ -103,7 +103,7 @@ spec:
                   operationProfiling:
                     mode: slowOps
                     slowOpThresholdMs: 200
-              path: spec.components.engine.config
+              path: spec.components.engine.parameters.configuration
               uiType: text
             externalAccess:
               fieldParams:
@@ -258,7 +258,7 @@ spec:
                   operationProfiling:
                     mode: slowOps
                     slowOpThresholdMs: 200
-              path: spec.components.engine.config
+              path: spec.components.engine.parameters.configuration
               uiType: text
             externalAccess:
               fieldParams:
@@ -447,7 +447,7 @@ spec:
               fieldParams:
                 defaultValue: 1
                 label: Nº of shards
-              path: spec.topology.config.numShards
+              path: spec.topology.parameters.numShards
               uiType: number
               validation:
                 int: true
@@ -455,7 +455,7 @@ spec:
                 modes:
                   edit:
                     celExpressions:
-                      - celExpr: spec.topology.config.numShards >= original.spec.topology.config.numShards
+                      - celExpr: spec.topology.parameters.numShards >= original.spec.topology.parameters.numShards
                         message: Number of shards cannot be decreased
                 required: true
           componentsOrder:
