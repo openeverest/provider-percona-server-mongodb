@@ -46,7 +46,7 @@ ui:
       components:
         shards:
           uiType: number
-          path: "spec.topology.config.numShards"
+          path: "spec.topology.parameters.numShards"
           fieldParams:
             label: "Nº of shards"
             defaultValue: 1
@@ -57,7 +57,7 @@ ui:
             modes:
               edit:
                 celExpressions:
-                  - celExpr: "spec.topology.config.numShards >= original.spec.topology.config.numShards"
+                  - celExpr: "spec.topology.parameters.numShards >= original.spec.topology.parameters.numShards"
                     message: "Number of shards cannot be decreased"
         numberOfnodes:
           path: "spec.components.engine.replicas"
@@ -231,7 +231,7 @@ ui:
             # https://github.com/openeverest/openeverest/issues/2398
         configuration:
           uiType: text
-          path: spec.components.engine.config
+          path: spec.components.engine.parameters.configuration
           fieldParams:
             label: "Еngine parameters"
             placeholder: |2
