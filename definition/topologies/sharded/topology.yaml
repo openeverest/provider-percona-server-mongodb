@@ -9,12 +9,53 @@ config:
     engine:
       defaults:
         replicas: 3
-    proxy: {}
-    configServer: {}
+      # No service: shards are not exposed directly, clients reach them
+      # through mongos, and configureReplsets passes nil for a sharded engine.
+      supportedFields:
+        required: [storage]
+        properties:
+          storage: {}
+          resources: {}
+          replicas: {minimum: 1}
+          schedulingPolicy:
+            # Only affinity: the provider reads nothing else off the policy.
+            properties:
+              affinity: {}
+    proxy:
+      # mongos routes; it holds no data, so no storage.
+      supportedFields:
+        properties:
+          resources: {}
+          replicas: {minimum: 1}
+          schedulingPolicy:
+            # Only affinity: the provider reads nothing else off the policy.
+            properties:
+              affinity: {}
+          service: {}
+    configServer:
+      # Internal to the cluster, so no service.
+      supportedFields:
+        required: [storage]
+        properties:
+          storage: {}
+          resources: {}
+          replicas: {minimum: 1}
+          schedulingPolicy:
+            # Only affinity: the provider reads nothing else off the policy.
+            properties:
+              affinity: {}
     backupAgent:
       optional: true
+      # Nothing is configurable: the provider hardcodes the PBM sidecar's
+      # resources, though PerconaServerMongoDB.spec.backup.resources exposes
+      # them. Declaring them would publish a no-op; wiring them is a separate fix.
+      supportedFields:
+        properties: {}
     monitoring:
       optional: true
+      supportedFields:
+        properties:
+          resources: {}
 
 # UI schema: rendering hints for the frontend form.
 # Paths reference fields in the Instance CR spec.
