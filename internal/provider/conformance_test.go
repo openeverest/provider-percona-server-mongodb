@@ -25,3 +25,9 @@ func TestUISchemaIsReconciled(t *testing.T) {
 		Provider: NewPSMDBProviderInterface(),
 	})
 }
+
+func TestSupportedFieldsAreReconciled(t *testing.T) {
+	conformance.SupportedFieldsAreReconciled(t, conformance.Config{
+		Provider: NewPSMDBProviderInterface(),
+	})
+}
