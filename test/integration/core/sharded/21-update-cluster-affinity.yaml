@@ -11,45 +11,48 @@ spec:
       numShards: 3
   components:
     engine:
-      affinity:
-        podAntiAffinity:
-          preferredDuringSchedulingIgnoredDuringExecution:
-            - weight: 100
-              podAffinityTerm:
-                labelSelector:
+      schedulingPolicy:
+        affinity:
+          podAntiAffinity:
+            preferredDuringSchedulingIgnoredDuringExecution:
+              - weight: 100
+                podAffinityTerm:
+                  labelSelector:
+                    matchExpressions:
+                      - key: security
+                        operator: In
+                        values:
+                          - S2
+                  topologyKey: kubernetes.io/hostname
+    proxy:
+      schedulingPolicy:
+        affinity:
+          podAffinity:
+            requiredDuringSchedulingIgnoredDuringExecution:
+              - labelSelector:
                   matchExpressions:
                     - key: security
                       operator: In
                       values:
-                        - S2
-                topologyKey: kubernetes.io/hostname
-    proxy:
-      affinity:
-        podAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            - labelSelector:
-                matchExpressions:
-                  - key: security
-                    operator: In
-                    values:
-                      - S1
-              topologyKey: failure-domain.beta.kubernetes.io/zone
+                        - S1
+                topologyKey: failure-domain.beta.kubernetes.io/zone
     configServer:
-      affinity:
-        nodeAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            nodeSelectorTerms:
-              - matchExpressions:
-                  - key: kubernetes.io/e2e-az-name
-                    operator: In
-                    values:
-                      - e2e-az1
-                      - e2e-az2
-          preferredDuringSchedulingIgnoredDuringExecution:
-            - weight: 1
-              preference:
-                matchExpressions:
-                  - key: another-node-label-key
-                    operator: In
-                    values:
-                      - another-node-label-value
+      schedulingPolicy:
+        affinity:
+          nodeAffinity:
+            requiredDuringSchedulingIgnoredDuringExecution:
+              nodeSelectorTerms:
+                - matchExpressions:
+                    - key: kubernetes.io/e2e-az-name
+                      operator: In
+                      values:
+                        - e2e-az1
+                        - e2e-az2
+            preferredDuringSchedulingIgnoredDuringExecution:
+              - weight: 1
+                preference:
+                  matchExpressions:
+                    - key: another-node-label-key
+                      operator: In
+                      values:
+                        - another-node-label-value
