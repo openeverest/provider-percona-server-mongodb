@@ -37,12 +37,13 @@ spec:
         limits:
           cpu: 2
           memory: 4Gi
-      affinity:
-        podAntiAffinity:
-          preferredDuringSchedulingIgnoredDuringExecution:
-            - weight: 1
-              podAffinityTerm:
-                topologyKey: kubernetes.io/hostname
+      schedulingPolicy:
+        affinity:
+          podAntiAffinity:
+            preferredDuringSchedulingIgnoredDuringExecution:
+              - weight: 1
+                podAffinityTerm:
+                  topologyKey: kubernetes.io/hostname
 
     # Proxy/router (required for sharded topology)
     proxy:
@@ -57,12 +58,13 @@ spec:
         #   sourceRanges:
         #     - "192.168.1.100"
 
-      affinity:
-        podAntiAffinity:
-          preferredDuringSchedulingIgnoredDuringExecution:
-            - weight: 1
-              podAffinityTerm:
-                topologyKey: kubernetes.io/hostname
+      schedulingPolicy:
+        affinity:
+          podAntiAffinity:
+            preferredDuringSchedulingIgnoredDuringExecution:
+              - weight: 1
+                podAffinityTerm:
+                  topologyKey: kubernetes.io/hostname
 
     # Config server (required for sharded topology)
     configServer:
@@ -70,12 +72,13 @@ spec:
       replicas: 3
       storage:
         size: 5Gi
-      affinity:
-        podAntiAffinity:
-          preferredDuringSchedulingIgnoredDuringExecution:
-            - weight: 1
-              podAffinityTerm:
-                topologyKey: kubernetes.io/hostname
+      schedulingPolicy:
+        affinity:
+          podAntiAffinity:
+            preferredDuringSchedulingIgnoredDuringExecution:
+              - weight: 1
+                podAffinityTerm:
+                  topologyKey: kubernetes.io/hostname
 
     # Backup agent (optional)
     backupAgent:
