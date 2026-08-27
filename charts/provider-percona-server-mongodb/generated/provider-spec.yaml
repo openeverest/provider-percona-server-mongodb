@@ -69,18 +69,79 @@ spec:
       components:
         backupAgent:
           optional: true
-        engine: {}
+          supportedFields:
+            openAPIV3Schema:
+              properties: {}
+        engine:
+          supportedFields:
+            openAPIV3Schema:
+              properties:
+                replicas:
+                  minimum: 1
+                resources: {}
+                schedulingPolicy:
+                  properties:
+                    affinity: {}
+                service: {}
+                storage: {}
+              required:
+                - storage
         monitoring:
           optional: true
+          supportedFields:
+            openAPIV3Schema:
+              properties:
+                resources: {}
     sharded:
       components:
         backupAgent:
           optional: true
-        configServer: {}
-        engine: {}
+          supportedFields:
+            openAPIV3Schema:
+              properties: {}
+        configServer:
+          supportedFields:
+            openAPIV3Schema:
+              properties:
+                replicas:
+                  minimum: 1
+                resources: {}
+                schedulingPolicy:
+                  properties:
+                    affinity: {}
+                storage: {}
+              required:
+                - storage
+        engine:
+          supportedFields:
+            openAPIV3Schema:
+              properties:
+                replicas:
+                  minimum: 1
+                resources: {}
+                schedulingPolicy:
+                  properties:
+                    affinity: {}
+                storage: {}
+              required:
+                - storage
         monitoring:
           optional: true
-        proxy: {}
+          supportedFields:
+            openAPIV3Schema:
+              properties:
+                resources: {}
+        proxy:
+          supportedFields:
+            openAPIV3Schema:
+              properties:
+                replicas:
+                  minimum: 1
+                resources: {}
+                schedulingPolicy:
+                  properties:
+                    affinity: {}
+                service: {}
       parametersSchema:
         openAPIV3Schema:
           properties:
