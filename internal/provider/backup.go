@@ -211,7 +211,10 @@ func (p *PSMDBProvider) Mirror(ctx context.Context, c client.Client, obj client.
 			Namespace: ub.Namespace,
 		},
 		Spec: backupv1alpha1.BackupSpec{
-			InstanceRef:  commonv1alpha1.ObjectRef{Name: ub.Spec.ClusterName},
+			Origin: backupv1alpha1.BackupOrigin{
+				Type:        backupv1alpha1.BackupOriginTypeInstance,
+				InstanceRef: &commonv1alpha1.ObjectRef{Name: ub.Spec.ClusterName},
+			},
 			ClassRef:     commonv1alpha1.ObjectRef{Name: instance.Spec.Backup.ClassRef.Name},
 			StorageRef:   commonv1alpha1.ObjectRef{Name: ub.Spec.StorageName},
 			ScheduleName: taskName,
@@ -376,9 +379,11 @@ func (p *PSMDBProvider) SyncRestore(c *controller.Context, restore *backupv1alph
 	}
 
 	// Detect cross-cluster restores. When the source Backup was produced by a
-	// different Instance, fetch its PerconaServerMongoDBBackup so we can copy
+	// different live Instance, fetch its PerconaServerMongoDBBackup so we can copy
 	// the destination/storage spec into Spec.BackupSource.
-	crossCluster := sourceBackup.Spec.InstanceRef.Name != c.Name()
+	// Import is not cross-cluster: the source Instance is not live.
+	crossCluster := sourceBackup.Spec.Origin.InstanceRef != nil &&
+		sourceBackup.Spec.Origin.InstanceRef.Name != c.Name()
 	var sourceOpBackup *psmdbv1.PerconaServerMongoDBBackup
 	if crossCluster {
 		sourceOpBackup = &psmdbv1.PerconaServerMongoDBBackup{}

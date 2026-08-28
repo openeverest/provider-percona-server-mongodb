@@ -430,7 +430,13 @@ func dataSourceInstanceName(c *controller.Context) (string, error) {
 			}
 			return "", fmt.Errorf("get source Backup %q for credential copy: %w", ds.Backup.BackupRef.Name, err)
 		}
-		return srcBackup.Spec.InstanceRef.Name, nil
+		if srcBackup.Spec.Origin.InstanceRef == nil {
+			return "", fmt.Errorf(
+				"no source instance exists for backup %q created from import",
+				ds.Backup.BackupRef.Name,
+			)
+		}
+		return srcBackup.Spec.Origin.InstanceRef.Name, nil
 	case backupv1alpha1.DataSourceTypePointInTime:
 		if ds.PointInTime == nil || ds.PointInTime.Source.InstanceRef == nil {
 			return "", nil
