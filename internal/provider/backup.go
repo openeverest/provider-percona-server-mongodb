@@ -354,7 +354,7 @@ func (p *PSMDBProvider) SyncBackup(c *controller.Context, backup *backupv1alpha1
 //
 // Two cases are handled:
 //
-//   - Same-cluster restore (source Backup.spec.instanceRef.name == this
+//   - Same-cluster restore (source Backup.spec.origin.instanceRef.name == this
 //     Instance): the operator backup lives on the same PSMDB cluster, so we
 //     set .spec.backupName to its name.
 //   - Cross-cluster restore (e.g. seeding a new Instance from another
