@@ -146,12 +146,13 @@ presets:
             storage:
               size: 25Gi
               # storageClass: ""  # Specify a storage class if you want to set the default
-            affinity:
-              podAntiAffinity:
-                preferredDuringSchedulingIgnoredDuringExecution:
-                  - weight: 1
-                    podAffinityTerm:
-                      topologyKey: kubernetes.io/hostname
+            schedulingPolicy:
+              affinity:
+                podAntiAffinity:
+                  preferredDuringSchedulingIgnoredDuringExecution:
+                    - weight: 1
+                      podAffinityTerm:
+                        topologyKey: kubernetes.io/hostname
             service:
               serviceType: ClusterIP
     - name: sharded
@@ -174,24 +175,26 @@ presets:
             storage:
               size: 25Gi
               # storageClass: ""  # Specify a storage class if you want to set the default
-            affinity:
-              podAntiAffinity:
-                preferredDuringSchedulingIgnoredDuringExecution:
-                  - weight: 1
-                    podAffinityTerm:
-                      topologyKey: kubernetes.io/hostname
+            schedulingPolicy:
+              affinity:
+                podAntiAffinity:
+                  preferredDuringSchedulingIgnoredDuringExecution:
+                    - weight: 1
+                      podAffinityTerm:
+                        topologyKey: kubernetes.io/hostname
           proxy:
             replicas: 3
             resources:
               limits:
                 cpu: "1"
                 memory: 2Gi
-            affinity:
-              podAntiAffinity:
-                preferredDuringSchedulingIgnoredDuringExecution:
-                  - weight: 1
-                    podAffinityTerm:
-                      topologyKey: kubernetes.io/hostname
+            schedulingPolicy:
+              affinity:
+                podAntiAffinity:
+                  preferredDuringSchedulingIgnoredDuringExecution:
+                    - weight: 1
+                      podAffinityTerm:
+                        topologyKey: kubernetes.io/hostname
             service:
               serviceType: ClusterIP
           configServer:
