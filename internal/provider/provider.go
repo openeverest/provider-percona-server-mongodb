@@ -17,7 +17,9 @@ package provider
 import (
 	"fmt"
 
+	goversion "github.com/hashicorp/go-version"
 	psmdbv1 "github.com/percona/percona-server-mongodb-operator/pkg/apis/psmdb/v1"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -87,9 +89,57 @@ func defaultSpec() psmdbv1.PerconaServerMongoDBSpec {
 			Enabled: false,
 		},
 		VolumeExpansionEnabled: true,
-		// FIXME
-		CRVersion: "1.22.0",
 	}
+}
+
+// convergedCRVersion decides the CRVersion to apply. New clusters leave it
+// unset: the operator pins it to its own version at admission, so no restart
+// is implied. An existing cluster lagging behind the running operator needs a
+// rolling restart to converge, so the bump is gated on maintenance approval
+// and the CR keeps its current version until the owner authorizes.
+func convergedCRVersion(c *controller.Context) (string, error) {
+	current := &psmdbv1.PerconaServerMongoDB{}
+	if err := c.Get(current, c.Name()); err != nil {
+		if apierrors.IsNotFound(err) {
+			return "", nil
+		}
+		return "", fmt.Errorf("fetching current PSMDB CR: %w", err)
+	}
+	if current.Spec.CRVersion == "" {
+		// Mid-creation: the operator has not defaulted it yet.
+		return "", nil
+	}
+
+	operatorVer, err := operatorVersion(c)
+	if err != nil {
+		return "", err
+	}
+	if sameVersion(current.Spec.CRVersion, operatorVer) {
+		return current.Spec.CRVersion, nil
+	}
+
+	token := "upgrade-to-" + operatorVer
+	if spec, err := c.ProviderSpec(); err == nil && spec.Release != nil && spec.Release.Version != "" {
+		token = "upgrade-to-" + spec.Release.Version
+	}
+	approved := c.RequestMaintenance(token,
+		"Apply the new engine compatibility version (causes a brief rolling restart)",
+		controller.MaintenanceRollingRestart)
+	if approved {
+		return operatorVer, nil
+	}
+	return current.Spec.CRVersion, nil
+}
+
+// sameVersion compares two version strings semantically ("1.22" == "1.22.0"),
+// falling back to string equality when either does not parse.
+func sameVersion(a, b string) bool {
+	va, errA := goversion.NewVersion(a)
+	vb, errB := goversion.NewVersion(b)
+	if errA != nil || errB != nil {
+		return a == b
+	}
+	return va.Equal(vb)
 }
 
 // ValidatePSMDB validates the Instance spec for PSMDB.
@@ -131,6 +181,14 @@ func SyncPSMDB(c *controller.Context) error {
 		ObjectMeta: meta,
 		Spec:       defaultSpec(),
 	}
+
+	// Converge CRVersion onto the bundled operator only with the owner's
+	// approval: the bump rolls the database one node at a time.
+	crVersion, err := convergedCRVersion(c)
+	if err != nil {
+		return err
+	}
+	psmdb.Spec.CRVersion = crVersion
 
 	// Get the engine component spec
 	engine := c.Instance().Spec.Components[common.ComponentEngine]
@@ -492,6 +550,8 @@ func NewPSMDBProviderInterface() *PSMDBProvider {
 		SchemeFuncs: []func(*runtime.Scheme) error{
 			psmdbv1.SchemeBuilder.AddToScheme,
 			monitoringv1alpha1.SchemeBuilder.AddToScheme,
+			// Deployments are read to discover the running operator version.
+			appsv1.AddToScheme,
 		},
 		WatchConfigs: []controller.WatchConfig{
 			// Watch owned PSMDB resources - only trigger on spec changes
