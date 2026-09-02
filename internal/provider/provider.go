@@ -107,6 +107,11 @@ func ValidatePSMDB(c *controller.Context) error {
 		return fmt.Errorf("dataSource validation failed: %w", err)
 	}
 
+	if err := validateUserSecret(c); err != nil {
+		l.Error(err, "UserSecret validation failed", "cluster", c.Name())
+		return fmt.Errorf("userSecret validation failed: %w", err)
+	}
+
 	if err := validateComponents(c); err != nil {
 		l.Error(err, "Components validation failed", "cluster", c.Name())
 		return fmt.Errorf("components validation failed: %w", err)
@@ -184,6 +189,19 @@ func SyncPSMDB(c *controller.Context) error {
 
 	usersSecretName := "everest-secrets-" + c.Name()
 
+	// When the user seeds initial credentials via spec.userSecretRef, copy
+	// them into the canonical users secret so the engine bootstraps with those
+	// credentials. Every other path (monitoring token merge, connection
+	// details, data-source seeding) assumes the canonical name, so we
+	// materialize into it rather than repointing PSMDB at the user's secret.
+	// This MUST run before configureMonitoring for the same reason as the
+	// data-source path below.
+	if ref := c.Instance().Spec.UserSecretRef; ref != nil {
+		if err := ensureUserSecret(c, ref.Name, usersSecretName); err != nil {
+			return err
+		}
+	}
+
 	// When seeding from a DataSource, the target cluster's users secret must
 	// contain the same credentials as the source cluster. The PSMDB backup
 	// embeds credential hashes; mismatched secrets render the restored data
@@ -193,6 +211,11 @@ func SyncPSMDB(c *controller.Context) error {
 	// provisioned and skip copying the source credentials. Copying first seeds
 	// the full source secret, and configureMonitoring then merges the PMM token
 	// on top of it.
+	//
+	// This MUST also run after the userSecretRef block above: when seeding from
+	// an imported backup the source Instance is gone, so credentials come from
+	// spec.userSecretRef. That block seeds the canonical secret first, making
+	// this call a no-op via its already-exists short-circuit rather than an error.
 	if c.Instance().Spec.DataSource != nil {
 		if err := ensureDataSourceCredentials(c, usersSecretName); err != nil {
 			return err
@@ -347,6 +370,31 @@ func buildConnectionDetails(c *controller.Context, psmdb *psmdbv1.PerconaServerM
 	}, nil
 }
 
+// ensureUserSecret copies the user-supplied credentials secret
+// referenced by .spec.userSecretRef into the canonical users secret so the
+// engine bootstraps with those credentials. It is idempotent: once the
+// canonical secret exists it is not overwritten.
+func ensureUserSecret(c *controller.Context, sourceSecretName, targetSecretName string) error {
+	// If the target secret already exists, a previous reconcile created it (or
+	// the engine has since rotated it); leave it untouched.
+	targetSecret := &corev1.Secret{}
+	err := c.Get(targetSecret, targetSecretName)
+	if err == nil {
+		return nil
+	}
+
+	if !apierrors.IsNotFound(err) {
+		return fmt.Errorf("get target user secret %q: %w", targetSecretName, err)
+	}
+
+	sourceSecret := &corev1.Secret{}
+	if err := c.Get(sourceSecret, sourceSecretName); err != nil {
+		return fmt.Errorf("get source credentials secret %q: %w", sourceSecretName, err)
+	}
+
+	return createSecret(c, targetSecretName, sourceSecret.Data)
+}
+
 // ensureDataSourceCredentials copies the users secret from the source Instance
 // to the target Instance when seeding from .spec.dataSource.
 // This is idempotent: if the target secret already exists it is not
@@ -390,6 +438,11 @@ func ensureDataSourceCredentials(c *controller.Context, targetSecretName string)
 	}
 
 	// Create the target secret with the same data.
+	return createSecret(c, targetSecretName, sourceSecret.Data)
+}
+
+// createSecret creates the secret named targetSecretName populated with data.
+func createSecret(c *controller.Context, targetSecretName string, data map[string][]byte) error {
 	newSecret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      targetSecretName,
@@ -399,14 +452,14 @@ func ensureDataSourceCredentials(c *controller.Context, targetSecretName string)
 				"app.kubernetes.io/instance":   c.Name(),
 			},
 		},
-		Data: sourceSecret.Data,
+		Data: data,
 	}
 	if err := c.Client().Create(c.Context(), newSecret); err != nil {
 		if apierrors.IsAlreadyExists(err) {
 			// Race: another reconcile beat us to it.
 			return nil
 		}
-		return fmt.Errorf("create target credentials secret %q: %w", targetSecretName, err)
+		return fmt.Errorf("create target secret %q: %w", targetSecretName, err)
 	}
 	return nil
 }

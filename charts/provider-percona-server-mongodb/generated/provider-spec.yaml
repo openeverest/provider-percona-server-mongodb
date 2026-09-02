@@ -64,6 +64,116 @@ spec:
               type: string
           type: object
       type: mongod
+  secrets:
+    user:
+      parametersSchema:
+        openAPIV3Schema:
+          properties:
+            MONGODB_BACKUP_PASSWORD:
+              type: string
+            MONGODB_BACKUP_USER:
+              type: string
+            MONGODB_CLUSTER_ADMIN_PASSWORD:
+              type: string
+            MONGODB_CLUSTER_ADMIN_USER:
+              type: string
+            MONGODB_CLUSTER_MONITOR_PASSWORD:
+              type: string
+            MONGODB_CLUSTER_MONITOR_USER:
+              type: string
+            MONGODB_DATABASE_ADMIN_PASSWORD:
+              type: string
+            MONGODB_DATABASE_ADMIN_USER:
+              type: string
+            MONGODB_USER_ADMIN_PASSWORD:
+              type: string
+            MONGODB_USER_ADMIN_USER:
+              type: string
+          type: object
+      uiSchema:
+        components:
+          backupPassword:
+            fieldParams:
+              label: Backup Password
+            path: stringData.MONGODB_BACKUP_PASSWORD
+            uiType: text
+            validation:
+              required: true
+          backupUser:
+            fieldParams:
+              label: Backup User
+            path: stringData.MONGODB_BACKUP_USER
+            uiType: text
+            validation:
+              required: true
+          clusterAdminPassword:
+            fieldParams:
+              label: Cluster Admin Password
+            path: stringData.MONGODB_CLUSTER_ADMIN_PASSWORD
+            uiType: text
+            validation:
+              required: true
+          clusterAdminUser:
+            fieldParams:
+              label: Cluster Admin User
+            path: stringData.MONGODB_CLUSTER_ADMIN_USER
+            uiType: text
+            validation:
+              required: true
+          clusterMonitorPassword:
+            fieldParams:
+              label: Cluster Monitor Password
+            path: stringData.MONGODB_CLUSTER_MONITOR_PASSWORD
+            uiType: text
+            validation:
+              required: true
+          clusterMonitorUser:
+            fieldParams:
+              label: Cluster Monitor User
+            path: stringData.MONGODB_CLUSTER_MONITOR_USER
+            uiType: text
+            validation:
+              required: true
+          databaseAdminPassword:
+            fieldParams:
+              label: Database Admin Password
+            path: stringData.MONGODB_DATABASE_ADMIN_PASSWORD
+            uiType: text
+            validation:
+              required: true
+          databaseAdminUser:
+            fieldParams:
+              label: Database Admin User
+            path: stringData.MONGODB_DATABASE_ADMIN_USER
+            uiType: text
+            validation:
+              required: true
+          userAdminPassword:
+            fieldParams:
+              label: User Admin Password
+            path: stringData.MONGODB_USER_ADMIN_PASSWORD
+            uiType: text
+            validation:
+              required: true
+          userAdminUser:
+            fieldParams:
+              label: User Admin User
+            path: stringData.MONGODB_USER_ADMIN_USER
+            uiType: text
+            validation:
+              required: true
+        componentsOrder:
+          - databaseAdminUser
+          - databaseAdminPassword
+          - clusterAdminUser
+          - clusterAdminPassword
+          - backupUser
+          - backupPassword
+          - clusterMonitorUser
+          - clusterMonitorPassword
+          - userAdminUser
+          - userAdminPassword
+        label: User Credentials Secret
   topologies:
     replicaSet:
       components:
