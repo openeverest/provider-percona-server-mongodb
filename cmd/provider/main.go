@@ -16,11 +16,13 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"os"
 
 	ctrl "sigs.k8s.io/controller-runtime"
 
+	"github.com/openeverest/openeverest/v2/provider-runtime/preflight"
 	"github.com/openeverest/openeverest/v2/provider-runtime/reconciler"
 
 	"github.com/openeverest/provider-percona-server-mongodb/internal/provider"
@@ -30,15 +32,27 @@ import (
 func main() {
 	var serverPort int
 	var metricsBindAddress string
+	var preflightSpec string
 
 	flag.IntVar(&serverPort, "server-port", 8082, "The port for the provider HTTP server.")
 	flag.StringVar(&metricsBindAddress, "metrics-bind-address", ":8081", "The address the metrics endpoint binds to. Use 0 to disable.")
+	flag.StringVar(&preflightSpec, "preflight-spec", "", "Run the upgrade preflight against the target Provider spec at this path and exit. Used by the chart's pre-upgrade hook.")
 	flag.Parse()
 
 	l := ctrl.Log.WithName("setup")
 	ctx := ctrl.SetupSignalHandler()
 
 	provider := provider.NewPSMDBProviderInterface()
+
+	if preflightSpec != "" {
+		if err := preflight.Run(ctx, provider, preflight.Options{TargetSpecFile: preflightSpec}); err != nil {
+			if !errors.Is(err, preflight.ErrUpgradeBlocked) {
+				l.Error(err, "upgrade preflight could not run")
+			}
+			os.Exit(1)
+		}
+		return
+	}
 
 	opts := []reconciler.ReconcilerOption{
 		// Enable HTTP server for validation endpoint
