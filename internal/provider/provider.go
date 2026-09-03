@@ -189,34 +189,23 @@ func SyncPSMDB(c *controller.Context) error {
 
 	usersSecretName := "everest-secrets-" + c.Name()
 
-	// When the user seeds initial credentials via spec.userSecretRef, copy
-	// them into the canonical users secret so the engine bootstraps with those
-	// credentials. Every other path (monitoring token merge, connection
-	// details, data-source seeding) assumes the canonical name, so we
-	// materialize into it rather than repointing PSMDB at the user's secret.
-	// This MUST run before configureMonitoring for the same reason as the
-	// data-source path below.
+	// Setting user secret MUST run before configureMonitoring: when PMM
+	// is enabled, it creates or updates the user secret to hold
+	// PMM_SERVER_TOKEN, which would make ensureUserSecret and
+	// ensureDataSourceCredentials treat the secret as already provisioned and
+	// skip copying the secret.
 	if ref := c.Instance().Spec.UserSecretRef; ref != nil {
+		// When the user seeds initial credentials via spec.userSecretRef, copy
+		// them into the users secret because the secret name is assumed by
+		// connection details.
 		if err := ensureUserSecret(c, ref.Name, usersSecretName); err != nil {
 			return err
 		}
-	}
-
-	// When seeding from a DataSource, the target cluster's users secret must
-	// contain the same credentials as the source cluster. The PSMDB backup
-	// embeds credential hashes; mismatched secrets render the restored data
-	// inaccessible. This MUST run before configureMonitoring: when PMM is
-	// enabled the latter creates the users secret to hold PMM_SERVER_TOKEN,
-	// which would make ensureDataSourceCredentials treat the secret as already
-	// provisioned and skip copying the source credentials. Copying first seeds
-	// the full source secret, and configureMonitoring then merges the PMM token
-	// on top of it.
-	//
-	// This MUST also run after the userSecretRef block above: when seeding from
-	// an imported backup the source Instance is gone, so credentials come from
-	// spec.userSecretRef. That block seeds the canonical secret first, making
-	// this call a no-op via its already-exists short-circuit rather than an error.
-	if c.Instance().Spec.DataSource != nil {
+	} else if c.Instance().Spec.DataSource != nil {
+		// When seeding from a DataSource, the target cluster's users secret must
+		// contain the same credentials as the source cluster. The PSMDB backup
+		// embeds credential hashes; mismatched secrets render the restored data
+		// inaccessible.
 		if err := ensureDataSourceCredentials(c, usersSecretName); err != nil {
 			return err
 		}

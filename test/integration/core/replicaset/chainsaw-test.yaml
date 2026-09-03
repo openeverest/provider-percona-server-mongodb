@@ -111,9 +111,6 @@ spec:
             for:
               deletion: {}
 
-    # Seed initial credentials from a user-supplied Secret via
-    # spec.userSecretRef and verify the provider copies them into the canonical
-    # users secret the engine bootstraps from.
     - name: create-cluster-with-user-secret
       try:
         - apply:
