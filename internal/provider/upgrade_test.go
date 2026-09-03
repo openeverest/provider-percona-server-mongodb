@@ -54,12 +54,14 @@ func skewPSMDB(name, crVersion string) *psmdbv1.PerconaServerMongoDB {
 func TestCheckUpgrade(t *testing.T) {
 	p := &PSMDBProvider{}
 
-	t.Run("outside the hook nothing is checked", func(t *testing.T) {
+	t.Run("unset target version warns instead of going silent", func(t *testing.T) {
 		t.Setenv(targetOperatorVersionEnv, "")
 
 		issues := p.CheckUpgrade(skewContext(t), nil, []corev1alpha1.Instance{skewInstance("mongo-1")})
 
-		assert.Empty(t, issues)
+		require.Len(t, issues, 1)
+		assert.Equal(t, controller.UpgradeWarning, issues[0].Severity)
+		assert.Equal(t, reasonSkewUnverified, issues[0].Reason)
 	})
 
 	t.Run("deferred convergence outside the window blocks", func(t *testing.T) {
@@ -70,9 +72,23 @@ func TestCheckUpgrade(t *testing.T) {
 
 		require.Len(t, issues, 1)
 		assert.Equal(t, controller.UpgradeError, issues[0].Severity)
-		assert.Equal(t, "SkewWindowExceeded", issues[0].Reason)
+		assert.Equal(t, reasonSkewWindowExceeded, issues[0].Reason)
 		assert.Contains(t, issues[0].Message, "approve the pending restart")
+		assert.NotContains(t, issues[0].Message, "operator", "message must not leak the operator axis")
 		assert.Equal(t, "mongo-1", issues[0].InstanceName)
+		assert.Equal(t, "db", issues[0].Namespace)
+	})
+
+	t.Run("engine ahead of the target blocks as a downgrade", func(t *testing.T) {
+		t.Setenv(targetOperatorVersionEnv, "1.24.0")
+		c := skewContext(t, skewPSMDB("mongo-1", "1.25.0"))
+
+		issues := p.CheckUpgrade(c, nil, []corev1alpha1.Instance{skewInstance("mongo-1")})
+
+		require.Len(t, issues, 1)
+		assert.Equal(t, controller.UpgradeError, issues[0].Severity)
+		assert.Equal(t, reasonSkewWindowExceeded, issues[0].Reason)
+		assert.Contains(t, issues[0].Message, "newer than")
 	})
 
 	t.Run("lag within the window passes", func(t *testing.T) {
@@ -105,14 +121,53 @@ func TestCheckUpgrade(t *testing.T) {
 		assert.Empty(t, issues)
 	})
 
-	t.Run("unparseable versions degrade to warnings", func(t *testing.T) {
+	t.Run("unparseable target version degrades to a warning", func(t *testing.T) {
 		t.Setenv(targetOperatorVersionEnv, "not-a-version")
 
 		issues := p.CheckUpgrade(skewContext(t), nil, []corev1alpha1.Instance{skewInstance("mongo-1")})
 
 		require.Len(t, issues, 1)
 		assert.Equal(t, controller.UpgradeWarning, issues[0].Severity)
-		assert.Equal(t, "SkewUnverified", issues[0].Reason)
+		assert.Equal(t, reasonSkewUnverified, issues[0].Reason)
+	})
+
+	t.Run("unparseable engine version degrades to a warning", func(t *testing.T) {
+		t.Setenv(targetOperatorVersionEnv, "1.24.0")
+		c := skewContext(t, skewPSMDB("mongo-1", "not-a-version"))
+
+		issues := p.CheckUpgrade(c, nil, []corev1alpha1.Instance{skewInstance("mongo-1")})
+
+		require.Len(t, issues, 1)
+		assert.Equal(t, controller.UpgradeWarning, issues[0].Severity)
+		assert.Equal(t, reasonSkewUnverified, issues[0].Reason)
+	})
+
+	t.Run("issues aggregate across instances", func(t *testing.T) {
+		t.Setenv(targetOperatorVersionEnv, "1.24.0")
+		c := skewContext(t,
+			skewPSMDB("mongo-1", "1.21.0"),
+			skewPSMDB("mongo-2", "1.23.0"),
+			skewPSMDB("mongo-3", "1.20.0"))
+
+		issues := p.CheckUpgrade(c, nil, []corev1alpha1.Instance{
+			skewInstance("mongo-1"), skewInstance("mongo-2"), skewInstance("mongo-3"),
+		})
+
+		require.Len(t, issues, 2)
+		assert.Equal(t, "mongo-1", issues[0].InstanceName)
+		assert.Equal(t, "mongo-3", issues[1].InstanceName)
+	})
+
+	t.Run("deleting instances are skipped", func(t *testing.T) {
+		t.Setenv(targetOperatorVersionEnv, "1.24.0")
+		c := skewContext(t, skewPSMDB("mongo-1", "1.21.0"))
+		in := skewInstance("mongo-1")
+		now := metav1.Now()
+		in.DeletionTimestamp = &now
+
+		issues := p.CheckUpgrade(c, nil, []corev1alpha1.Instance{in})
+
+		assert.Empty(t, issues)
 	})
 
 	t.Run("major version change is always outside the window", func(t *testing.T) {

@@ -36,6 +36,12 @@ const skewWindowMinors = 3
 // bundled operator subchart version the target release would install.
 const targetOperatorVersionEnv = "TARGET_OPERATOR_VERSION"
 
+// Reasons reported on skew-check issues.
+const (
+	reasonSkewWindowExceeded = "SkewWindowExceeded"
+	reasonSkewUnverified     = "SkewUnverified"
+)
+
 var _ controller.UpgradeProvider = (*PSMDBProvider)(nil)
 
 // CheckUpgrade blocks a provider upgrade that would push an Instance's
@@ -46,15 +52,20 @@ var _ controller.UpgradeProvider = (*PSMDBProvider)(nil)
 func (p *PSMDBProvider) CheckUpgrade(c *controller.Context, _ *corev1alpha1.ProviderSpec, instances []corev1alpha1.Instance) []controller.UpgradeIssue {
 	targetRaw := os.Getenv(targetOperatorVersionEnv)
 	if targetRaw == "" {
-		// Not running inside the hook; nothing to check.
-		return nil
+		// CheckUpgrade only runs from the hook, whose Job template sets the
+		// env; absence means the delivery drifted — say so, don't go silent.
+		return []controller.UpgradeIssue{{
+			Severity: controller.UpgradeWarning,
+			Reason:   reasonSkewUnverified,
+			Message:  "cannot verify compatibility skew: " + targetOperatorVersionEnv + " is not set on the preflight job",
+		}}
 	}
 	targetVer, err := goversion.NewVersion(targetRaw)
 	if err != nil {
 		return []controller.UpgradeIssue{{
 			Severity: controller.UpgradeWarning,
-			Reason:   "SkewUnverified",
-			Message:  fmt.Sprintf("cannot verify operator skew: target operator version %q is not a valid version", targetRaw),
+			Reason:   reasonSkewUnverified,
+			Message:  fmt.Sprintf("cannot verify compatibility skew: target version %q is not a valid version", targetRaw),
 		}}
 	}
 
@@ -84,8 +95,8 @@ func (p *PSMDBProvider) checkInstanceSkew(c *controller.Context, in *corev1alpha
 	}
 	if err != nil {
 		issue.Severity = controller.UpgradeWarning
-		issue.Reason = "SkewUnverified"
-		issue.Message = fmt.Sprintf("cannot verify operator skew: fetching the engine resource failed: %v", err)
+		issue.Reason = reasonSkewUnverified
+		issue.Message = fmt.Sprintf("cannot verify compatibility skew: fetching the engine resource failed: %v", err)
 		return issue
 	}
 	if current.Spec.CRVersion == "" {
@@ -94,28 +105,44 @@ func (p *PSMDBProvider) checkInstanceSkew(c *controller.Context, in *corev1alpha
 	crVer, err := goversion.NewVersion(current.Spec.CRVersion)
 	if err != nil {
 		issue.Severity = controller.UpgradeWarning
-		issue.Reason = "SkewUnverified"
-		issue.Message = fmt.Sprintf("cannot verify operator skew: engine compatibility version %q is not a valid version", current.Spec.CRVersion)
+		issue.Reason = reasonSkewUnverified
+		issue.Message = fmt.Sprintf("cannot verify compatibility skew: engine compatibility version %q is not a valid version", current.Spec.CRVersion)
 		return issue
 	}
 
-	if !withinSkewWindow(targetVer, crVer) {
+	lag, ok := skewLag(targetVer, crVer)
+	switch {
+	case !ok:
+		// Newer than the target: this is a downgrade (chart rollback), which
+		// the engine does not support at all.
 		issue.Severity = controller.UpgradeError
-		issue.Reason = "SkewWindowExceeded"
+		issue.Reason = reasonSkewWindowExceeded
 		issue.Message = fmt.Sprintf(
-			"this database has a deferred compatibility upgrade (still at %s) that the target operator %s would no longer manage; approve the pending restart (spec.maintenance.approved) and let it converge before upgrading the provider",
+			"this database's engine compatibility version %s is newer than what the target provider release supports (%s); the change would leave it unmanageable",
 			crVer.Original(), targetVer.Original())
+		return issue
+	case lag >= skewWindowMinors:
+		issue.Severity = controller.UpgradeError
+		issue.Reason = reasonSkewWindowExceeded
+		issue.Message = fmt.Sprintf(
+			"this database has a deferred compatibility upgrade (engine compatibility version %s) that would fall outside the target provider release's support window; approve the pending restart (spec.maintenance.approved) and let it converge before upgrading the provider",
+			crVer.Original())
 		return issue
 	}
 	return nil
 }
 
-// withinSkewWindow reports whether an engine CR at crVer stays manageable by
-// an operator at targetVer. Different majors are always outside the window.
-func withinSkewWindow(targetVer, crVer *goversion.Version) bool {
+// skewLag returns how many minors the engine CR lags the target operator.
+// ok is false when the CR is ahead of the target (downgrade) or the majors
+// differ — both are outside any support window.
+func skewLag(targetVer, crVer *goversion.Version) (int, bool) {
 	t, c := targetVer.Segments(), crVer.Segments()
 	if t[0] != c[0] {
-		return false
+		return 0, false
 	}
-	return t[1]-c[1] < skewWindowMinors
+	lag := t[1] - c[1]
+	if lag < 0 {
+		return 0, false
+	}
+	return lag, true
 }
