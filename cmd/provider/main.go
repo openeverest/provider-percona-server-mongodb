@@ -18,6 +18,7 @@ package main
 import (
 	"errors"
 	"flag"
+	"fmt"
 	"os"
 
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -47,7 +48,9 @@ func main() {
 	if preflightSpec != "" {
 		if err := preflight.Run(ctx, provider, preflight.Options{TargetSpecFile: preflightSpec}); err != nil {
 			if !errors.Is(err, preflight.ErrUpgradeBlocked) {
-				l.Error(err, "upgrade preflight could not run")
+				// The controller-runtime logger is not initialized on this
+				// path; stderr is the pod log the hook preserves.
+				fmt.Fprintln(os.Stderr, "upgrade preflight could not run:", err)
 			}
 			os.Exit(1)
 		}

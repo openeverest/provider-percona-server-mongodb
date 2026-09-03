@@ -5,9 +5,10 @@
 # applied. Runs only on `helm upgrade`, never on install.
 {{- $operatorVersion := "" }}
 {{- range .Chart.Dependencies }}
-{{- /* the psmdb-operator dependency is aliased to "operator" */}}
+{{- /* Helm rewrites a dependency's Name to its alias; psmdb-operator is aliased to "operator" */}}
 {{- if eq .Name "operator" }}{{- $operatorVersion = .Version }}{{- end }}
 {{- end }}
+{{- if not $operatorVersion }}{{ fail "preflight-hook: operator dependency not found in .Chart.Dependencies" }}{{- end }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -87,15 +88,30 @@ metadata:
     helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
 spec:
   backoffLimit: 0
+  # Bound unschedulable/unpullable pods so a broken hook fails the upgrade
+  # deterministically instead of hanging until the Helm timeout.
+  activeDeadlineSeconds: 300
   template:
     metadata:
       labels:
-        {{- include "provider-percona-server-mongodb.labels" . | nindent 8 }}
+        # Deliberately not the shared labels helper: it embeds the Service's
+        # selector labels, which must not match a pod that serves nothing.
+        helm.sh/chart: {{ include "provider-percona-server-mongodb.chart" . }}
+        app.kubernetes.io/managed-by: {{ .Release.Service }}
+        app.kubernetes.io/component: preflight
     spec:
       restartPolicy: Never
       serviceAccountName: {{ include "provider-percona-server-mongodb.fullname" . }}-preflight
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
       containers:
         - name: preflight
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
           image: {{ include "provider-percona-server-mongodb.image" . }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           args:
@@ -105,6 +121,8 @@ spec:
             # by provider-specific upgrade checks (e.g. the skew-window check).
             - name: TARGET_OPERATOR_VERSION
               value: {{ $operatorVersion | quote }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
           volumeMounts:
             - name: target-spec
               mountPath: /preflight
@@ -113,3 +131,15 @@ spec:
         - name: target-spec
           configMap:
             name: {{ include "provider-percona-server-mongodb.fullname" . }}-preflight
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
