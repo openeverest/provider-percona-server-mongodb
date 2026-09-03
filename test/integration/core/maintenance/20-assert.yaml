@@ -16,7 +16,9 @@ status:
   pendingMaintenance:
     - description: Apply the new engine compatibility version (causes a brief rolling restart)
       severity: RollingRestart
-      approvalToken: upgrade-to-1.22.0
+  # The token value is provider-chosen (release-based, or operator-based
+  # fallback); the approve step reads it from status, so only assert presence.
+  (pendingMaintenance[0].approvalToken != ''): true
   (conditions[?type == 'MaintenancePending'])[0]:
     status: "True"
     reason: AwaitingApproval

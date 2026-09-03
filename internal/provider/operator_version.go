@@ -49,7 +49,8 @@ var currentNamespace = func() (string, error) {
 // operatorVersion returns the version of the PSMDB operator actually running,
 // parsed from its Deployment's image tag (the same approach the v1 platform
 // used). The Deployment is discovered by image rather than name because the
-// subchart derives its name from the Helm release.
+// subchart derives its name from the Helm release. Multiple matches with
+// conflicting tags are an error rather than a coin flip.
 func operatorVersion(c *controller.Context) (string, error) {
 	namespace, err := currentNamespace()
 	if err != nil {
@@ -59,14 +60,37 @@ func operatorVersion(c *controller.Context) (string, error) {
 	if err := c.Client().List(c.Context(), deployments, client.InNamespace(namespace)); err != nil {
 		return "", fmt.Errorf("listing deployments in %q: %w", namespace, err)
 	}
+	version := ""
 	for _, d := range deployments.Items {
 		for _, container := range d.Spec.Template.Spec.Containers {
-			repo, tag, ok := strings.Cut(container.Image, ":")
-			if !ok || !strings.HasSuffix(repo, operatorImageRepo) || strings.Contains(tag, "@") {
+			tag, ok := operatorImageTag(container.Image)
+			if !ok {
 				continue
 			}
-			return strings.TrimPrefix(tag, "v"), nil
+			if version != "" && version != tag {
+				return "", fmt.Errorf("multiple PSMDB operator deployments with conflicting versions (%s, %s) in namespace %q", version, tag, namespace)
+			}
+			version = tag
 		}
 	}
-	return "", errors.New("PSMDB operator deployment not found in namespace " + namespace)
+	if version == "" {
+		return "", errors.New("PSMDB operator deployment not found in namespace " + namespace)
+	}
+	return version, nil
+}
+
+// operatorImageTag returns the version tag when image is an operator image
+// reference. The tag is everything after the last colon (a registry may carry
+// a port, which sits before the first slash), with any digest stripped first;
+// digest-only references carry no version and are skipped.
+func operatorImageTag(image string) (string, bool) {
+	image, _, _ = strings.Cut(image, "@")
+	repo, tag := image, ""
+	if i := strings.LastIndex(image, ":"); i >= 0 && !strings.Contains(image[i:], "/") {
+		repo, tag = image[:i], image[i+1:]
+	}
+	if tag == "" || !strings.HasSuffix(repo, operatorImageRepo) {
+		return "", false
+	}
+	return strings.TrimPrefix(tag, "v"), true
 }

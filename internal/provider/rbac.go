@@ -28,7 +28,7 @@ package provider
 
 // Operator-version discovery (crVersion convergence reads the running
 // operator's Deployment image tag):
-// +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch
+// +kubebuilder:rbac:groups=apps,resources=deployments,verbs=list;watch
 
 // =============================================================================
 // PSMDB-SPECIFIC RBAC — Percona Server MongoDB Operator integration.

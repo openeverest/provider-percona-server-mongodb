@@ -39,7 +39,6 @@ rules:
   resources:
   - deployments
   verbs:
-  - get
   - list
   - watch
 - apiGroups:

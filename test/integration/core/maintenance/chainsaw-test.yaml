@@ -55,11 +55,18 @@ spec:
             file: 20-assert.yaml
 
     # The owner copies the approval token into spec.maintenance.approved; the
-    # provider then applies the bump and the pending action clears.
+    # provider then applies the bump and the pending action clears. The token
+    # is read from status rather than hard-coded so the test tracks whatever
+    # the provider surfaces (release-based once the chart declares one,
+    # operator-based fallback until then).
     - name: approve-and-converge
       try:
-        - apply:
-            file: 30-approve.yaml
+        - script:
+            content: |
+              TOKEN=$(kubectl -n $NAMESPACE get instance test-psmdb-cluster -o jsonpath='{.status.pendingMaintenance[0].approvalToken}')
+              test -n "$TOKEN"
+              kubectl -n $NAMESPACE patch instance test-psmdb-cluster --type=merge \
+                -p "{\"spec\":{\"maintenance\":{\"approved\":\"$TOKEN\"}}}"
         - assert:
             file: 30-assert.yaml
 

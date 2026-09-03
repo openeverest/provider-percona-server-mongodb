@@ -97,7 +97,9 @@ func defaultSpec() psmdbv1.PerconaServerMongoDBSpec {
 // the first reconcile, so no restart is implied and the value never floats.
 // An existing cluster lagging behind the running operator needs a rolling
 // restart to converge, so the bump is gated on maintenance approval and the
-// CR keeps its current version until the owner authorizes.
+// CR keeps its current version until the owner authorizes. A CR at or ahead
+// of the running operator (e.g. after a provider chart rollback) is left
+// alone: converging is only ever an upgrade.
 func convergedCRVersion(c *controller.Context) (string, error) {
 	current := &psmdbv1.PerconaServerMongoDB{}
 	if err := c.Get(current, c.Name()); err != nil {
@@ -113,14 +115,23 @@ func convergedCRVersion(c *controller.Context) (string, error) {
 
 	operatorVer, err := operatorVersion(c)
 	if err != nil {
-		return "", err
+		// The version only gates this one field: hold the safe current value
+		// and keep the rest of spec management going rather than failing Sync.
+		log.FromContext(c.Context()).Error(err, "Operator version discovery failed; holding current CRVersion", "crVersion", current.Spec.CRVersion)
+		return current.Spec.CRVersion, nil
 	}
-	if sameVersion(current.Spec.CRVersion, operatorVer) {
+	if !versionLessThan(current.Spec.CRVersion, operatorVer) {
 		return current.Spec.CRVersion, nil
 	}
 
 	token := "upgrade-to-" + operatorVer
-	if spec, err := c.ProviderSpec(); err == nil && spec.Release != nil && spec.Release.Version != "" {
+	spec, err := c.ProviderSpec()
+	if err != nil {
+		// The token must stay stable while the action is pending; a transient
+		// Provider read failure must not flap it to the fallback.
+		return "", fmt.Errorf("fetching provider spec for the approval token: %w", err)
+	}
+	if spec.Release != nil && spec.Release.Version != "" {
 		token = "upgrade-to-" + spec.Release.Version
 	}
 	approved := c.RequestMaintenance(token,
@@ -132,15 +143,16 @@ func convergedCRVersion(c *controller.Context) (string, error) {
 	return current.Spec.CRVersion, nil
 }
 
-// sameVersion compares two version strings semantically ("1.22" == "1.22.0"),
-// falling back to string equality when either does not parse.
-func sameVersion(a, b string) bool {
+// versionLessThan reports a < b semantically, falling back to inequality-means-
+// not-less when either side does not parse (a definition bug must hold, not
+// churn).
+func versionLessThan(a, b string) bool {
 	va, errA := goversion.NewVersion(a)
 	vb, errB := goversion.NewVersion(b)
 	if errA != nil || errB != nil {
-		return a == b
+		return false
 	}
-	return va.Equal(vb)
+	return va.LessThan(vb)
 }
 
 // ValidatePSMDB validates the Instance spec for PSMDB.

@@ -72,7 +72,6 @@ func existingPSMDB(crVersion string) *psmdbv1.PerconaServerMongoDB {
 }
 
 func TestConvergedCRVersion(t *testing.T) {
-
 	t.Run("new cluster leaves crVersion for the operator to pin", func(t *testing.T) {
 		c := crVersionContext(t, nil)
 
@@ -84,7 +83,6 @@ func TestConvergedCRVersion(t *testing.T) {
 	})
 
 	t.Run("converged cluster stays put without maintenance", func(t *testing.T) {
-
 		c := crVersionContext(t, nil, existingPSMDB("1.22.0"))
 
 		got, err := convergedCRVersion(c)
@@ -105,7 +103,6 @@ func TestConvergedCRVersion(t *testing.T) {
 	})
 
 	t.Run("lagging cluster is held at its current version by default", func(t *testing.T) {
-
 		c := crVersionContext(t, nil, existingPSMDB("1.21.0"))
 
 		got, err := convergedCRVersion(c)
@@ -119,7 +116,6 @@ func TestConvergedCRVersion(t *testing.T) {
 	})
 
 	t.Run("tolerant instance converges hands-off", func(t *testing.T) {
-
 		c := crVersionContext(t,
 			&corev1alpha1.MaintenanceSpec{AutoApproveUpTo: corev1alpha1.MaintenanceRollingRestart},
 			existingPSMDB("1.21.0"))
@@ -132,7 +128,6 @@ func TestConvergedCRVersion(t *testing.T) {
 	})
 
 	t.Run("token approval converges a held cluster", func(t *testing.T) {
-
 		c := crVersionContext(t,
 			&corev1alpha1.MaintenanceSpec{Approved: "upgrade-to-0.3"},
 			existingPSMDB("1.21.0"))
@@ -141,6 +136,41 @@ func TestConvergedCRVersion(t *testing.T) {
 
 		require.NoError(t, err)
 		assert.Equal(t, "1.22.0", got)
+		assert.Empty(t, c.GetPendingMaintenance())
+	})
+
+	t.Run("mid-creation empty crVersion is left for the operator", func(t *testing.T) {
+		c := crVersionContext(t, nil, existingPSMDB(""))
+
+		got, err := convergedCRVersion(c)
+
+		require.NoError(t, err)
+		assert.Empty(t, got)
+		assert.Empty(t, c.GetPendingMaintenance())
+	})
+
+	t.Run("cluster ahead of the operator is left alone", func(t *testing.T) {
+		// A provider chart rollback leaves the CR ahead of the running
+		// operator; converging would be a downgrade, which is never offered.
+		c := crVersionContext(t, nil, existingPSMDB("1.23.0"))
+
+		got, err := convergedCRVersion(c)
+
+		require.NoError(t, err)
+		assert.Equal(t, "1.23.0", got)
+		assert.Empty(t, c.GetPendingMaintenance())
+	})
+
+	t.Run("discovery failure holds the current version without failing", func(t *testing.T) {
+		c := crVersionContext(t, nil, existingPSMDB("1.21.0"))
+		orig := currentNamespace
+		currentNamespace = func() (string, error) { return "", assert.AnError }
+		t.Cleanup(func() { currentNamespace = orig })
+
+		got, err := convergedCRVersion(c)
+
+		require.NoError(t, err, "a discovery failure must not stop unrelated spec management")
+		assert.Equal(t, "1.21.0", got)
 		assert.Empty(t, c.GetPendingMaintenance())
 	})
 }
