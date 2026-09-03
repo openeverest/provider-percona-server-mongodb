@@ -93,10 +93,11 @@ func defaultSpec() psmdbv1.PerconaServerMongoDBSpec {
 }
 
 // convergedCRVersion decides the CRVersion to apply. New clusters leave it
-// unset: the operator pins it to its own version at admission, so no restart
-// is implied. An existing cluster lagging behind the running operator needs a
-// rolling restart to converge, so the bump is gated on maintenance approval
-// and the CR keeps its current version until the owner authorizes.
+// unset: the operator's setCRVersion persists its own version into the CR on
+// the first reconcile, so no restart is implied and the value never floats.
+// An existing cluster lagging behind the running operator needs a rolling
+// restart to converge, so the bump is gated on maintenance approval and the
+// CR keeps its current version until the owner authorizes.
 func convergedCRVersion(c *controller.Context) (string, error) {
 	current := &psmdbv1.PerconaServerMongoDB{}
 	if err := c.Get(current, c.Name()); err != nil {
@@ -106,7 +107,7 @@ func convergedCRVersion(c *controller.Context) (string, error) {
 		return "", fmt.Errorf("fetching current PSMDB CR: %w", err)
 	}
 	if current.Spec.CRVersion == "" {
-		// Mid-creation: the operator has not defaulted it yet.
+		// Mid-creation: the operator has not pinned it yet.
 		return "", nil
 	}
 
