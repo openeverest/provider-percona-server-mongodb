@@ -139,6 +139,7 @@ jobs:
 
       - name: Verify preflight hook rendering
         run: |
+          helm repo add percona https://percona.github.io/percona-helm-charts/
           helm dependency build charts/provider-percona-server-mongodb
           helm template test charts/provider-percona-server-mongodb \
             --show-only templates/preflight-hook.yaml > /tmp/hook.yaml
