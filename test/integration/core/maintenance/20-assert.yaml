@@ -1,0 +1,22 @@
+# The lagging cluster is held: the CR keeps its current crVersion, the held
+# action is surfaced with the approval token, and the database stays Ready.
+apiVersion: psmdb.percona.com/v1
+kind: PerconaServerMongoDB
+metadata:
+  name: test-psmdb-cluster
+spec:
+  crVersion: 1.21.0
+---
+apiVersion: core.openeverest.io/v1alpha1
+kind: Instance
+metadata:
+  name: test-psmdb-cluster
+status:
+  phase: Ready
+  pendingMaintenance:
+    - description: Apply the new engine compatibility version (causes a brief rolling restart)
+      severity: RollingRestart
+      approvalToken: upgrade-to-1.22.0
+  (conditions[?type == 'MaintenancePending'])[0]:
+    status: "True"
+    reason: AwaitingApproval

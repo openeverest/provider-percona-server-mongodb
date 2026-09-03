@@ -1,0 +1,85 @@
+---
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: core-maintenance
+spec:
+  description: |
+    crVersion convergence gated on maintenance approval: a cluster lagging the
+    running operator is held at its current version with a pending action, and
+    converges after the owner approves the action's token (hold -> approve ->
+    converge, spec 009 walkthrough).
+  catch:
+    - script:
+        content: kubectl -n $NAMESPACE get instance,psmdb -o yaml
+    - podLogs:
+        namespace: provider-system
+        selector: app.kubernetes.io/name=provider-percona-server-mongodb
+        tail: 100
+  steps:
+    - name: provider-operator-installed
+      try:
+        - assert:
+            file: 00-assert.yaml
+
+    - name: create-cluster
+      try:
+        - apply:
+            file: 10-create-cluster.yaml
+        - assert:
+            file: 10-assert.yaml
+
+    # Create the users secret and simulate the PSMDB operator (scaled to 0)
+    # marking the cluster ready, mirroring the core/replicaset setup.
+    - name: cluster-ready
+      try:
+        - apply:
+            file: 11-cluster-ready.yaml
+        - script:
+            content: |
+              kubectl patch psmdb/test-psmdb-cluster --subresource status -n $NAMESPACE \
+                -p '{"status":{"state":"ready", "size":1, "ready":1, "host":"test-psmdb-cluster-host"}}' --type=merge
+        - assert:
+            file: 11-assert.yaml
+
+    # Simulate the state right after a provider upgrade swapped the operator:
+    # the engine CR still carries the previous operator's crVersion. The
+    # default tolerance (NonDisruptive) must hold the convergence bump.
+    - name: lagging-crversion-is-held
+      try:
+        - script:
+            content: |
+              kubectl patch psmdb/test-psmdb-cluster -n $NAMESPACE \
+                -p '{"spec":{"crVersion":"1.21.0"}}' --type=merge
+        - assert:
+            file: 20-assert.yaml
+
+    # The owner copies the approval token into spec.maintenance.approved; the
+    # provider then applies the bump and the pending action clears.
+    - name: approve-and-converge
+      try:
+        - apply:
+            file: 30-approve.yaml
+        - assert:
+            file: 30-assert.yaml
+
+    - name: delete-cluster
+      try:
+        - script:
+            content: |
+              kubectl -n $NAMESPACE delete in/test-psmdb-cluster psmdb/test-psmdb-cluster --wait=false && sleep 5
+              kubectl -n $NAMESPACE delete secret/everest-secrets-test-psmdb-cluster --ignore-not-found
+              # The PSMDB operator is scaled to 0, so nothing processes the psmdb finalizers.
+              kubectl -n $NAMESPACE patch psmdb/test-psmdb-cluster -p '{"metadata":{"finalizers":null}}' --type merge
+        - wait:
+            apiVersion: core.openeverest.io/v1alpha1
+            kind: Instance
+            name: test-psmdb-cluster
+            for:
+              deletion: {}
+        - wait:
+            apiVersion: psmdb.percona.com/v1
+            kind: PerconaServerMongoDB
+            name: test-psmdb-cluster
+            for:
+              deletion: {}
