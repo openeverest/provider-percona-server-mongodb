@@ -28,6 +28,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	backupv1alpha1 "github.com/openeverest/openeverest/v2/api/backup/v1alpha1"
+	"github.com/openeverest/openeverest/v2/provider-runtime/controller"
 )
 
 // pbmMetadataSuffix is the object-key suffix Percona Backup for MongoDB.
@@ -56,9 +57,13 @@ func (p *PSMDBProvider) ImportBackups(
 	ctx context.Context,
 	imp *backupv1alpha1.BackupImport,
 	storage *backupv1alpha1.BackupStorage,
-	s3c *s3.Client,
-) ([]*backupv1alpha1.Backup, error) {
+) (controller.BackupImportExecutionStatus, error) {
 	l := log.FromContext(ctx).WithValues("backupImport", imp.Name, "storage", storage.Name)
+
+	s3c, err := controller.NewS3Client(ctx, p.client, storage)
+	if err != nil {
+		return controller.BackupImportExecutionStatus{}, fmt.Errorf("build S3 client: %w", err)
+	}
 
 	bucket := storage.Spec.S3.Bucket
 
@@ -71,7 +76,7 @@ func (p *PSMDBProvider) ImportBackups(
 	for paginator.HasMorePages() {
 		page, perr := paginator.NextPage(ctx)
 		if perr != nil {
-			return nil, fmt.Errorf("list objects in bucket %q: %w", bucket, perr)
+			return controller.BackupImportExecutionStatus{}, fmt.Errorf("list objects in bucket %q: %w", bucket, perr)
 		}
 
 		for _, obj := range page.Contents {
@@ -82,7 +87,7 @@ func (p *PSMDBProvider) ImportBackups(
 
 			data, err := getObject(ctx, s3c, bucket, key)
 			if err != nil {
-				return nil, fmt.Errorf("read %q: %w", key, err)
+				return controller.BackupImportExecutionStatus{}, fmt.Errorf("read %q: %w", key, err)
 			}
 
 			backup, err := parsePBM(imp, key, data)
@@ -97,7 +102,10 @@ func (p *PSMDBProvider) ImportBackups(
 	}
 
 	l.Info("discovered PBM backups", "count", len(backups))
-	return backups, nil
+	return controller.BackupImportExecutionStatus{
+		Backups: backups,
+		State:   backupv1alpha1.BackupImportStateSucceeded,
+	}, nil
 }
 
 // getObject reads the full contents of a single object from the bucket.
