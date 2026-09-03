@@ -30,14 +30,14 @@ import (
 	"github.com/openeverest/openeverest/v2/provider-runtime/controller"
 )
 
-// skewContext builds a hook-like Context: a client and no Instance.
-func skewContext(t *testing.T, objs ...client.Object) *controller.Context {
+// skewContext builds the hook context CheckUpgrade runs under.
+func skewContext(t *testing.T, objs ...client.Object) *controller.HookContext {
 	t.Helper()
 	scheme := runtime.NewScheme()
 	require.NoError(t, corev1alpha1.AddToScheme(scheme))
 	require.NoError(t, psmdbv1.SchemeBuilder.AddToScheme(scheme))
 	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(objs...).Build()
-	return controller.NewContext(context.Background(), fakeClient, nil, "psmdb")
+	return controller.NewHookContext(context.Background(), fakeClient, "psmdb")
 }
 
 func skewInstance(name string) corev1alpha1.Instance {

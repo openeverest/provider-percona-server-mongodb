@@ -49,7 +49,7 @@ var _ controller.UpgradeProvider = (*PSMDBProvider)(nil)
 // (bounded deferral): a held convergence restart may be deferred indefinitely
 // on the current operator, but not across upgrades that would leave the
 // engine CR unmanageable.
-func (p *PSMDBProvider) CheckUpgrade(c *controller.Context, _ *corev1alpha1.ProviderSpec, instances []corev1alpha1.Instance) []controller.UpgradeIssue {
+func (p *PSMDBProvider) CheckUpgrade(h *controller.HookContext, _ *corev1alpha1.ProviderSpec, instances []corev1alpha1.Instance) []controller.UpgradeIssue {
 	targetRaw := os.Getenv(targetOperatorVersionEnv)
 	if targetRaw == "" {
 		// CheckUpgrade only runs from the hook, whose Job template sets the
@@ -75,21 +75,21 @@ func (p *PSMDBProvider) CheckUpgrade(c *controller.Context, _ *corev1alpha1.Prov
 		if in.DeletionTimestamp != nil {
 			continue
 		}
-		if issue := p.checkInstanceSkew(c, in, targetVer); issue != nil {
+		if issue := p.checkInstanceSkew(h, in, targetVer); issue != nil {
 			issues = append(issues, *issue)
 		}
 	}
 	return issues
 }
 
-func (p *PSMDBProvider) checkInstanceSkew(c *controller.Context, in *corev1alpha1.Instance, targetVer *goversion.Version) *controller.UpgradeIssue {
+func (p *PSMDBProvider) checkInstanceSkew(h *controller.HookContext, in *corev1alpha1.Instance, targetVer *goversion.Version) *controller.UpgradeIssue {
 	issue := &controller.UpgradeIssue{
 		InstanceName: in.Name,
 		Namespace:    in.Namespace,
 	}
 
 	current := &psmdbv1.PerconaServerMongoDB{}
-	err := c.Client().Get(c.Context(), client.ObjectKey{Namespace: in.Namespace, Name: in.Name}, current)
+	err := h.Client().Get(h.Context(), client.ObjectKey{Namespace: in.Namespace, Name: in.Name}, current)
 	if apierrors.IsNotFound(err) {
 		return nil
 	}
