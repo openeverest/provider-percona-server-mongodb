@@ -17,6 +17,7 @@ package provider
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/AlekSi/pointer"
@@ -277,6 +278,7 @@ func buildPSMDBStorages(
 				EndpointURL:           s3.EndpointURL,
 				CredentialsSecret:     s3.CredentialsSecretRef.Name,
 				InsecureSkipTLSVerify: !pointer.Get(s3.VerifyTLS),
+				ForcePathStyle:        s3.ForcePathStyle,
 			},
 		}
 	}
@@ -432,9 +434,13 @@ func (p *PSMDBProvider) SyncRestore(c *controller.Context, restore *backupv1alph
 		case external:
 			// Restore from imported data: PSMDB reads the dump straight from
 			// the storage descriptor built from the Backup's storageRef and
-			// external path.
+			// external path. StorageName is deliberately left empty: when set,
+			// the operator's getStorage resolves the cluster's registered
+			// storage (whose prefix is empty) instead of the backupSource S3
+			// spec, so its psmdb prefix would be lost and PBM would look for
+			// the backup metadata at the bucket root.
 			psmdbRestore.Spec.BackupSource = externalSource
-			psmdbRestore.Spec.StorageName = sourceBackup.Spec.StorageRef.Name
+			psmdbRestore.Spec.StorageName = ""
 			psmdbRestore.Spec.BackupName = ""
 		case crossCluster:
 			// Copy the source operator backup's storage descriptor verbatim
@@ -525,16 +531,24 @@ func buildExternalBackupSource(
 	}
 
 	s3 := bs.Spec.S3
+
+	var prefix string
+	trimmedPath := strings.Trim(external.Path, "/")
+	if i := strings.LastIndex(trimmedPath, "/"); i >= 0 {
+		prefix = trimmedPath[:i]
+	}
+
 	return &psmdbv1.PerconaServerMongoDBBackupStatus{
-		Destination: fmt.Sprintf("s3://%s/%s", s3.Bucket, external.Path),
+		Destination: "s3://" + s3.Bucket + "/" + trimmedPath,
 		StorageName: sourceBackup.Spec.StorageRef.Name,
-		PBMname:     external.Path,
 		S3: &psmdbv1.BackupStorageS3Spec{
 			Bucket:                s3.Bucket,
+			Prefix:                prefix,
 			Region:                s3.Region,
 			EndpointURL:           s3.EndpointURL,
 			CredentialsSecret:     s3.CredentialsSecretRef.Name,
 			InsecureSkipTLSVerify: !pointer.Get(s3.VerifyTLS),
+			ForcePathStyle:        s3.ForcePathStyle,
 		},
 	}, controller.RestoreExecutionStatus{}, nil
 }
