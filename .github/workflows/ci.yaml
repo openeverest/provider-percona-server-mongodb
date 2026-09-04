@@ -181,3 +181,12 @@ jobs:
       make_target: test-e2e-cluster-datasource-backup
       suite: datasource
     secrets: inherit
+
+  test-e2e-cluster-backup-import:
+    name: E2E Cluster / backup import
+    needs: [lint, build, verify]
+    uses: ./.github/workflows/e2e-cluster-test.yaml
+    with:
+      make_target: test-e2e-cluster-backup-import
+      suite: backup
+    secrets: inherit

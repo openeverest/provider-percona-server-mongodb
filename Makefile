@@ -126,6 +126,10 @@ test-e2e-cluster: ## Run E2E cluster tests (requires PSMDB operator).
 test-e2e-cluster-datasource-backup: ## Run backup datasource (seed from Backup CR) e2e-cluster test (requires a running PSMDB operator).
 	. ./test/vars.sh && chainsaw test --config ./test/e2e-cluster/.chainsaw.yaml ./test/e2e-cluster/datasource/backup
 
+.PHONY: test-e2e-cluster-backup-import
+test-e2e-cluster-backup-import: ## Run backup import test.
+	. ./test/vars.sh && chainsaw test --config ./test/e2e-cluster/.chainsaw.yaml ./test/e2e-cluster/backup/import
+
 .PHONY: test-e2e
 test-e2e: ## Run Playwright E2E tests against a running Everest UI (http://localhost:8080).
 	cd test/e2e && npm ci && npx playwright test
