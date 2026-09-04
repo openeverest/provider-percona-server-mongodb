@@ -31,12 +31,17 @@ import (
 	"github.com/openeverest/openeverest/v2/provider-runtime/controller"
 )
 
-// pbmMetadataSuffix is the object-key suffix Percona Backup for MongoDB.
+// pbmMetadataSuffix is the object-key suffix of the per-backup metadata
+// documents written by Percona Backup for MongoDB.
 const pbmMetadataSuffix = ".pbm.json"
 
 // pbmStatusDone is the PBM backup status that marks a backup as complete and
 // restorable. Only backups in this state are surfaced as importable.
 const pbmStatusDone = "done"
+
+// maxPBMMetaSize is the maximum size of a *.pbm.json metadata document.
+// Give generous cap for *.pbm.json files which are a few KB each.
+const maxPBMMetaSize = 1 << 20 // 1 MiB
 
 // pbmBackupMeta is the Percona Backup for MongoDB's per-backup
 // metadata document (<name>.pbm.json).
@@ -97,6 +102,10 @@ func (p *PSMDBProvider) ImportBackups(
 				continue
 			}
 
+			if backup == nil {
+				continue
+			}
+
 			backups = append(backups, backup)
 		}
 	}
@@ -118,7 +127,7 @@ func getObject(ctx context.Context, s3c *s3.Client, bucket, key string) ([]byte,
 		return nil, err
 	}
 	defer resp.Body.Close() //nolint:errcheck // read-only body close
-	return io.ReadAll(resp.Body)
+	return io.ReadAll(io.LimitReader(resp.Body, maxPBMMetaSize))
 }
 
 // parsePBM decodes a single PBM metadata document and, when it describes a

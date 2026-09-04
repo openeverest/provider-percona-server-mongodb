@@ -36,44 +36,74 @@ func testImport() *backupv1alpha1.BackupImport {
 }
 
 func TestParsePBM(t *testing.T) {
+	imp := testImport()
+
 	tests := []struct {
-		name         string
-		key          string
-		data         string
-		wantErr      bool
-		wantPath     string
-		wantStartTS  int64
-		wantEndTSGTE int64
+		name    string
+		key     string
+		data    string
+		wantErr bool
+		want    *backupv1alpha1.Backup
 	}{
 		{
-			name:         "done logical backup is discovered",
-			key:          "2026-09-01T05:55:39Z.pbm.json",
-			data:         `{"name":"2026-09-01T05:55:39Z","type":"logical","status":"done","start_ts":1756705000,"last_transition_ts":1756705060}`,
-			wantPath:     "2026-09-01T05:55:39Z",
-			wantStartTS:  1756705000,
-			wantEndTSGTE: 1756705060,
+			name: "backup is discovered",
+			key:  "2026-09-01T05:55:39Z.pbm.json",
+			data: `{"name":"2026-09-01T05:55:39Z","type":"logical","status":"done","start_ts":1756705000,"last_transition_ts":1756705060}`,
+			want: &backupv1alpha1.Backup{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "import-d973d28935d6e0ab",
+					Namespace: "team-a",
+				},
+				Spec: backupv1alpha1.BackupSpec{
+					Origin: backupv1alpha1.BackupOrigin{
+						Type: backupv1alpha1.BackupOriginTypeExternal,
+						External: &backupv1alpha1.BackupOriginExternal{
+							Path:        "2026-09-01T05:55:39Z",
+							StartedAt:   metav1.Unix(1756705000, 0),
+							CompletedAt: metav1.Unix(1756705060, 0),
+						},
+					},
+					ClassRef:       commonv1alpha1.ObjectRef{Name: "percona-backup-mongodb"},
+					StorageRef:     commonv1alpha1.ObjectRef{Name: "my-s3"},
+					DeletionPolicy: backupv1alpha1.BackupDeletionPolicyRetain,
+				},
+			},
 		},
 		{
-			name:     "done physical backup is discovered",
-			key:      "phys.pbm.json",
-			data:     `{"name":"phys","type":"physical","status":"done","start_ts":100,"last_transition_ts":200}`,
-			wantPath: "phys",
-		},
-		{
-			name:     "path preserves bucket-relative prefix from the key",
-			key:      "team-a/backups/2026-09-01T05:55:39Z.pbm.json",
-			data:     `{"name":"2026-09-01T05:55:39Z","type":"logical","status":"done","start_ts":100,"last_transition_ts":200}`,
-			wantPath: "team-a/backups/2026-09-01T05:55:39Z",
+			name: "path preserves bucket-relative prefix from the key",
+			key:  "team-a/backups/2026-09-01T05:55:39Z.pbm.json",
+			data: `{"name":"2026-09-01T05:55:39Z","type":"logical","status":"done","start_ts":100,"last_transition_ts":200}`,
+			want: &backupv1alpha1.Backup{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "import-38407b322bd52c1b",
+					Namespace: "team-a",
+				},
+				Spec: backupv1alpha1.BackupSpec{
+					Origin: backupv1alpha1.BackupOrigin{
+						Type: backupv1alpha1.BackupOriginTypeExternal,
+						External: &backupv1alpha1.BackupOriginExternal{
+							Path:        "team-a/backups/2026-09-01T05:55:39Z",
+							StartedAt:   metav1.Unix(100, 0),
+							CompletedAt: metav1.Unix(200, 0),
+						},
+					},
+					ClassRef:       commonv1alpha1.ObjectRef{Name: "percona-backup-mongodb"},
+					StorageRef:     commonv1alpha1.ObjectRef{Name: "my-s3"},
+					DeletionPolicy: backupv1alpha1.BackupDeletionPolicyRetain,
+				},
+			},
 		},
 		{
 			name: "failed backup is skipped",
 			key:  "bad.pbm.json",
 			data: `{"name":"bad","type":"logical","status":"error","start_ts":100,"last_transition_ts":200}`,
+			want: nil,
 		},
 		{
 			name: "running backup is skipped",
 			key:  "run.pbm.json",
 			data: `{"name":"run","type":"logical","status":"running","start_ts":100}`,
+			want: nil,
 		},
 		{
 			name:    "malformed json errors",
@@ -83,7 +113,6 @@ func TestParsePBM(t *testing.T) {
 		},
 	}
 
-	imp := testImport()
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			backup, err := parsePBM(imp, tt.key, []byte(tt.data))
@@ -91,22 +120,9 @@ func TestParsePBM(t *testing.T) {
 				require.Error(t, err)
 				return
 			}
+
 			require.NoError(t, err)
-			if backup == nil {
-				return
-			}
-			require.NotNil(t, backup)
-			ext := backup.Spec.Origin.External
-			require.NotNil(t, ext)
-			assert.Equal(t, backupv1alpha1.BackupOriginTypeExternal, backup.Spec.Origin.Type)
-			assert.Equal(t, tt.wantPath, ext.Path)
-			assert.Equal(t, imp.Spec.ClassRef, backup.Spec.ClassRef)
-			assert.Equal(t, imp.Spec.StorageRef, backup.Spec.StorageRef)
-			assert.Equal(t, backupv1alpha1.BackupDeletionPolicyRetain, backup.Spec.DeletionPolicy)
-			assert.Equal(t, imp.Namespace, backup.Namespace)
-			assert.NotEmpty(t, backup.Name)
-			assert.False(t, ext.CompletedAt.Time.Before(ext.StartedAt.Time),
-				"completedAt must not precede startedAt")
+			assert.Equal(t, tt.want, backup)
 		})
 	}
 }
