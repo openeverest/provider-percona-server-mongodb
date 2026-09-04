@@ -110,9 +110,8 @@ func (p *PSMDBProvider) checkInstanceSkew(h *controller.HookContext, in *corev1a
 		return issue
 	}
 
-	lag, ok := skewLag(targetVer, crVer)
 	switch {
-	case !ok:
+	case crVer.GreaterThan(targetVer):
 		// Newer than the target: this is a downgrade (chart rollback), which
 		// the engine does not support at all.
 		issue.Severity = controller.UpgradeError
@@ -121,7 +120,7 @@ func (p *PSMDBProvider) checkInstanceSkew(h *controller.HookContext, in *corev1a
 			"this database's engine compatibility version %s is newer than what the target provider release supports (%s); the change would leave it unmanageable",
 			crVer.Original(), targetVer.Original())
 		return issue
-	case lag >= skewWindowMinors:
+	case outsideSkewWindow(targetVer, crVer):
 		issue.Severity = controller.UpgradeError
 		issue.Reason = reasonSkewWindowExceeded
 		issue.Message = fmt.Sprintf(
@@ -132,17 +131,10 @@ func (p *PSMDBProvider) checkInstanceSkew(h *controller.HookContext, in *corev1a
 	return nil
 }
 
-// skewLag returns how many minors the engine CR lags the target operator.
-// ok is false when the CR is ahead of the target (downgrade) or the majors
-// differ — both are outside any support window.
-func skewLag(targetVer, crVer *goversion.Version) (int, bool) {
+// outsideSkewWindow reports whether an engine CR at or below the target
+// operator version is beyond what it can manage: a different major, or a lag
+// of skewWindowMinors or more minors.
+func outsideSkewWindow(targetVer, crVer *goversion.Version) bool {
 	t, c := targetVer.Segments(), crVer.Segments()
-	if t[0] != c[0] {
-		return 0, false
-	}
-	lag := t[1] - c[1]
-	if lag < 0 {
-		return 0, false
-	}
-	return lag, true
+	return t[0] != c[0] || t[1]-c[1] >= skewWindowMinors
 }

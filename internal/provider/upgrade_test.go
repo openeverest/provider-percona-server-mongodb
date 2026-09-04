@@ -178,5 +178,18 @@ func TestCheckUpgrade(t *testing.T) {
 
 		require.Len(t, issues, 1)
 		assert.Equal(t, controller.UpgradeError, issues[0].Severity)
+		assert.Contains(t, issues[0].Message, "approve the pending restart",
+			"a lagging CR must get the convergence remedy, not the downgrade message")
+	})
+
+	t.Run("engine a major ahead of the target blocks as a downgrade", func(t *testing.T) {
+		t.Setenv(targetOperatorVersionEnv, "1.24.0")
+		c := skewContext(t, skewPSMDB("mongo-1", "2.0.0"))
+
+		issues := p.CheckUpgrade(c, nil, []corev1alpha1.Instance{skewInstance("mongo-1")})
+
+		require.Len(t, issues, 1)
+		assert.Equal(t, controller.UpgradeError, issues[0].Severity)
+		assert.Contains(t, issues[0].Message, "newer than")
 	})
 }
