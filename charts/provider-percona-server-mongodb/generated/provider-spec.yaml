@@ -64,6 +64,34 @@ spec:
               type: string
           type: object
       type: mongod
+  release:
+    version: 0.1.0
+  secrets:
+    user:
+      parametersSchema:
+        openAPIV3Schema:
+          properties:
+            MONGODB_BACKUP_PASSWORD:
+              type: string
+            MONGODB_BACKUP_USER:
+              type: string
+            MONGODB_CLUSTER_ADMIN_PASSWORD:
+              type: string
+            MONGODB_CLUSTER_ADMIN_USER:
+              type: string
+            MONGODB_CLUSTER_MONITOR_PASSWORD:
+              type: string
+            MONGODB_CLUSTER_MONITOR_USER:
+              type: string
+            MONGODB_DATABASE_ADMIN_PASSWORD:
+              type: string
+            MONGODB_DATABASE_ADMIN_USER:
+              type: string
+            MONGODB_USER_ADMIN_PASSWORD:
+              type: string
+            MONGODB_USER_ADMIN_USER:
+              type: string
+          type: object
   topologies:
     replicaSet:
       components:

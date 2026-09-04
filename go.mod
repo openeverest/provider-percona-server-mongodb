@@ -9,6 +9,7 @@ require (
 	github.com/percona/percona-server-mongodb-operator v1.22.0
 	github.com/stretchr/testify v1.12.1
 	k8s.io/api v0.37.0
+	k8s.io/apiextensions-apiserver v0.37.0
 	k8s.io/apimachinery v0.37.0
 	sigs.k8s.io/controller-runtime v0.24.1
 )
@@ -218,7 +219,7 @@ require (
 	github.com/oasdiff/yaml v0.1.1 // indirect
 	github.com/oasdiff/yaml3 v0.0.14 // indirect
 	github.com/oklog/ulid/v2 v2.1.1 // indirect
-	github.com/openeverest/provider-sdk v0.1.1-0.20260827074057-252e196e9e5a // indirect
+	github.com/openeverest/provider-sdk v0.1.1-0.20260902223200-00524bea131d // indirect
 	github.com/pelletier/go-toml/v2 v2.3.1 // indirect
 	github.com/percona/everest-operator v0.6.0-dev1.0.20260429065444-70caa52c384a // indirect
 	github.com/percona/percona-backup-mongodb v1.8.1-0.20251104101930-05ab6d7e1004 // indirect
@@ -319,7 +320,6 @@ require (
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	honnef.co/go/tools v0.7.0 // indirect
-	k8s.io/apiextensions-apiserver v0.37.0 // indirect
 	k8s.io/client-go v0.37.0 // indirect
 	k8s.io/klog/v2 v2.140.0 // indirect
 	k8s.io/kube-openapi v0.0.0-20260721132016-d427ff9ee9ad // indirect
