@@ -26,6 +26,10 @@ package provider
 // +kubebuilder:rbac:groups=coordination.k8s.io,resources=leases,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 
+// Operator-version discovery (crVersion convergence reads the running
+// operator's Deployment image tag):
+// +kubebuilder:rbac:groups=apps,resources=deployments,verbs=list;watch
+
 // =============================================================================
 // PSMDB-SPECIFIC RBAC — Percona Server MongoDB Operator integration.
 // =============================================================================

@@ -17,7 +17,9 @@ package provider
 import (
 	"fmt"
 
+	goversion "github.com/hashicorp/go-version"
 	psmdbv1 "github.com/percona/percona-server-mongodb-operator/pkg/apis/psmdb/v1"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -87,9 +89,70 @@ func defaultSpec() psmdbv1.PerconaServerMongoDBSpec {
 			Enabled: false,
 		},
 		VolumeExpansionEnabled: true,
-		// FIXME
-		CRVersion: "1.22.0",
 	}
+}
+
+// convergedCRVersion decides the CRVersion to apply. New clusters leave it
+// unset: the operator's setCRVersion persists its own version into the CR on
+// the first reconcile, so no restart is implied and the value never floats.
+// An existing cluster lagging behind the running operator needs a rolling
+// restart to converge, so the bump is gated on maintenance approval and the
+// CR keeps its current version until the owner authorizes. A CR at or ahead
+// of the running operator (e.g. after a provider chart rollback) is left
+// alone: converging is only ever an upgrade.
+func convergedCRVersion(c *controller.Context) (string, error) {
+	current := &psmdbv1.PerconaServerMongoDB{}
+	if err := c.Get(current, c.Name()); err != nil {
+		if apierrors.IsNotFound(err) {
+			return "", nil
+		}
+		return "", fmt.Errorf("fetching current PSMDB CR: %w", err)
+	}
+	if current.Spec.CRVersion == "" {
+		// Mid-creation: the operator has not pinned it yet.
+		return "", nil
+	}
+
+	operatorVer, err := operatorVersion(c)
+	if err != nil {
+		// The version only gates this one field: hold the safe current value
+		// and keep the rest of spec management going rather than failing Sync.
+		log.FromContext(c.Context()).Error(err, "Operator version discovery failed; holding current CRVersion", "crVersion", current.Spec.CRVersion)
+		return current.Spec.CRVersion, nil
+	}
+	if !versionLessThan(current.Spec.CRVersion, operatorVer) {
+		return current.Spec.CRVersion, nil
+	}
+
+	token := "upgrade-to-" + operatorVer
+	spec, err := c.ProviderSpec()
+	if err != nil {
+		// The token must stay stable while the action is pending; a transient
+		// Provider read failure must not flap it to the fallback.
+		return "", fmt.Errorf("fetching provider spec for the approval token: %w", err)
+	}
+	if spec.Release != nil && spec.Release.Version != "" {
+		token = "upgrade-to-" + spec.Release.Version
+	}
+	approved := c.RequestMaintenance(token,
+		"Apply the new engine compatibility version (causes a brief rolling restart)",
+		controller.MaintenanceRollingRestart)
+	if approved {
+		return operatorVer, nil
+	}
+	return current.Spec.CRVersion, nil
+}
+
+// versionLessThan reports a < b semantically, falling back to inequality-means-
+// not-less when either side does not parse (a definition bug must hold, not
+// churn).
+func versionLessThan(a, b string) bool {
+	va, errA := goversion.NewVersion(a)
+	vb, errB := goversion.NewVersion(b)
+	if errA != nil || errB != nil {
+		return false
+	}
+	return va.LessThan(vb)
 }
 
 // ValidatePSMDB validates the Instance spec for PSMDB.
@@ -131,6 +194,14 @@ func SyncPSMDB(c *controller.Context) error {
 		ObjectMeta: meta,
 		Spec:       defaultSpec(),
 	}
+
+	// Converge CRVersion onto the bundled operator only with the owner's
+	// approval: the bump rolls the database one node at a time.
+	crVersion, err := convergedCRVersion(c)
+	if err != nil {
+		return err
+	}
+	psmdb.Spec.CRVersion = crVersion
 
 	// Get the engine component spec
 	engine := c.Instance().Spec.Components[common.ComponentEngine]
@@ -492,6 +563,8 @@ func NewPSMDBProviderInterface() *PSMDBProvider {
 		SchemeFuncs: []func(*runtime.Scheme) error{
 			psmdbv1.SchemeBuilder.AddToScheme,
 			monitoringv1alpha1.SchemeBuilder.AddToScheme,
+			// Deployments are read to discover the running operator version.
+			appsv1.AddToScheme,
 		},
 		WatchConfigs: []controller.WatchConfig{
 			// Watch owned PSMDB resources - only trigger on spec changes

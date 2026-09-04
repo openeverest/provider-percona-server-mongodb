@@ -1,0 +1,8 @@
+# A new cluster leaves crVersion for the operator to pin: the provider must
+# not set it, so no restart is ever implied by creation.
+apiVersion: psmdb.percona.com/v1
+kind: PerconaServerMongoDB
+metadata:
+  name: test-psmdb-cluster
+spec:
+  (crVersion == null): true
