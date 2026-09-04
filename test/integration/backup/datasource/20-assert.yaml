@@ -3,8 +3,10 @@ kind: Backup
 metadata:
   name: src-backup
 spec:
-  instanceRef:
-    name: src-psmdb-cluster
+  origin:
+    type: Instance
+    instanceRef:
+      name: src-psmdb-cluster
   classRef:
     name: percona-backup-mongodb
   storageRef:
