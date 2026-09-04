@@ -17,6 +17,7 @@ package provider
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/AlekSi/pointer"
@@ -277,6 +278,7 @@ func buildPSMDBStorages(
 				EndpointURL:           s3.EndpointURL,
 				CredentialsSecret:     s3.CredentialsSecretRef.Name,
 				InsecureSkipTLSVerify: !pointer.Get(s3.VerifyTLS),
+				ForcePathStyle:        s3.ForcePathStyle,
 			},
 		}
 	}
@@ -378,6 +380,21 @@ func (p *PSMDBProvider) SyncRestore(c *controller.Context, restore *backupv1alph
 		operatorBackupName = sourceBackup.Status.OperatorBackupRef.Name
 	}
 
+	// Imported backups reference data already sitting in a BackupStorage;
+	// there is no PerconaServerMongoDBBackup to resolve by name.
+	// Build the restore'sBackupSource directly from the storage descriptor and external path.
+	external := sourceBackup.Spec.Origin.Type == backupv1alpha1.BackupOriginTypeExternal
+	var externalSource *psmdbv1.PerconaServerMongoDBBackupStatus
+	if external {
+		externalSource, exec, err = buildExternalBackupSource(c, sourceBackup)
+		if err != nil {
+			return controller.RestoreExecutionStatus{}, err
+		}
+		if externalSource == nil {
+			return exec, nil
+		}
+	}
+
 	// Detect cross-cluster restores. When the source Backup was produced by a
 	// different live Instance, fetch its PerconaServerMongoDBBackup so we can copy
 	// the destination/storage spec into Spec.BackupSource.
@@ -413,7 +430,19 @@ func (p *PSMDBProvider) SyncRestore(c *controller.Context, restore *backupv1alph
 
 	if _, err := controllerutil.CreateOrUpdate(c.Context(), c.Client(), psmdbRestore, func() error {
 		psmdbRestore.Spec.ClusterName = c.Name()
-		if crossCluster {
+		switch {
+		case external:
+			// Restore from imported data: PSMDB reads the dump straight from
+			// the storage descriptor built from the Backup's storageRef and
+			// external path. StorageName is deliberately left empty: when set,
+			// the operator's getStorage resolves the cluster's registered
+			// storage (whose prefix is empty) instead of the backupSource S3
+			// spec, so its psmdb prefix would be lost and PBM would look for
+			// the backup metadata at the bucket root.
+			psmdbRestore.Spec.BackupSource = externalSource
+			psmdbRestore.Spec.StorageName = ""
+			psmdbRestore.Spec.BackupName = ""
+		case crossCluster:
 			// Copy the source operator backup's storage descriptor verbatim
 			// (Destination + S3/Azure/GCS/Minio/Filesystem spec) so PSMDB can
 			// read the dump without consulting its own backup list. The
@@ -435,7 +464,7 @@ func (p *PSMDBProvider) SyncRestore(c *controller.Context, restore *backupv1alph
 			}
 			psmdbRestore.Spec.StorageName = sourceBackup.Spec.StorageRef.Name
 			psmdbRestore.Spec.BackupName = ""
-		} else {
+		default:
 			psmdbRestore.Spec.BackupName = operatorBackupName
 			psmdbRestore.Spec.BackupSource = nil
 		}
@@ -466,6 +495,62 @@ func (p *PSMDBProvider) SyncRestore(c *controller.Context, restore *backupv1alph
 		out.State = backupv1alpha1.RestoreStatePending
 	}
 	return out, nil
+}
+
+// buildExternalBackupSource builds the PSMDB restore BackupSource for an
+// imported Backup (origin.type External). The data already lives in the
+// referenced BackupStorage at origin.external.path, so the descriptor is
+// assembled directly from the storage's S3 spec.
+func buildExternalBackupSource(
+	c *controller.Context,
+	sourceBackup *backupv1alpha1.Backup,
+) (*psmdbv1.PerconaServerMongoDBBackupStatus, controller.RestoreExecutionStatus, error) {
+	external := sourceBackup.Spec.Origin.External
+	if external == nil || external.Path == "" {
+		return nil, controller.RestoreExecutionStatus{
+			State:   backupv1alpha1.RestoreStateFailed,
+			Message: "External source Backup is missing origin.external.path",
+		}, nil
+	}
+
+	bs, err := c.BackupStorage(sourceBackup.Spec.StorageRef.Name)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil, controller.RestoreExecutionStatus{
+				State:   backupv1alpha1.RestoreStatePending,
+				Message: fmt.Sprintf("Waiting for BackupStorage %q", sourceBackup.Spec.StorageRef.Name),
+			}, nil
+		}
+		return nil, controller.RestoreExecutionStatus{}, fmt.Errorf("get BackupStorage %q: %w", sourceBackup.Spec.StorageRef.Name, err)
+	}
+	if bs.Spec.S3 == nil {
+		return nil, controller.RestoreExecutionStatus{
+			State:   backupv1alpha1.RestoreStateFailed,
+			Message: fmt.Sprintf("BackupStorage %q is not an S3 storage; only S3 imports are supported", bs.Name),
+		}, nil
+	}
+
+	s3 := bs.Spec.S3
+
+	var prefix string
+	trimmedPath := strings.Trim(external.Path, "/")
+	if i := strings.LastIndex(trimmedPath, "/"); i >= 0 {
+		prefix = trimmedPath[:i]
+	}
+
+	return &psmdbv1.PerconaServerMongoDBBackupStatus{
+		Destination: "s3://" + s3.Bucket + "/" + trimmedPath,
+		StorageName: sourceBackup.Spec.StorageRef.Name,
+		S3: &psmdbv1.BackupStorageS3Spec{
+			Bucket:                s3.Bucket,
+			Prefix:                prefix,
+			Region:                s3.Region,
+			EndpointURL:           s3.EndpointURL,
+			CredentialsSecret:     s3.CredentialsSecretRef.Name,
+			InsecureSkipTLSVerify: !pointer.Get(s3.VerifyTLS),
+			ForcePathStyle:        s3.ForcePathStyle,
+		},
+	}, controller.RestoreExecutionStatus{}, nil
 }
 
 // resolveRestoreSource translates the Restore's data source into the operator

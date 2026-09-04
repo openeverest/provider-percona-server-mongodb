@@ -1,0 +1,35 @@
+apiVersion: backup.openeverest.io/v1alpha1
+kind: BackupImport
+metadata:
+  name: minio-import
+spec:
+  classRef:
+    name: percona-backup-mongodb
+  storageRef:
+    name: minio-storage
+status:
+  state: Succeeded
+  discoveredCount: 1
+  createdCount: 1
+---
+apiVersion: backup.openeverest.io/v1alpha1
+kind: Backup
+metadata:
+  # The Backup CR name is deterministic hash derived from the BackupImport
+  # name and the backup path.
+  name: import-e34bbda7da13a277
+  labels:
+    backupImportName: minio-import
+spec:
+  origin:
+    type: External
+    external:
+      # Discovered from the PBM backup name in testdata/backups/psmdb.tar.
+      path: psmdb/2025-11-03T09:34:50Z
+  classRef:
+    name: percona-backup-mongodb
+  storageRef:
+    name: minio-storage
+  deletionPolicy: Retain
+status:
+  state: Succeeded
