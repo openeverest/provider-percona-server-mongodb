@@ -22,7 +22,7 @@ permissions:
 env:
   IMG: provider-percona-server-mongodb:ci
   # Branch of openeverest/openeverest to build the platform from.
-  OPENEVEREST_BRANCH: import-backup-cr
+  OPENEVEREST_BRANCH: reconcile-backup-import
 
 jobs:
   run:
