@@ -106,6 +106,10 @@ test-integration-core-replicaset: ## Run core replicaset integration tests.
 test-integration-core-sharded: ## Run core sharded integration tests.
 	. ./test/vars.sh && chainsaw test --config ./test/integration/.chainsaw.yaml ./test/integration/core/sharded
 
+.PHONY: test-integration-core-maintenance
+test-integration-core-maintenance: ## Run maintenance (crVersion convergence) integration tests.
+	. ./test/vars.sh && chainsaw test --config ./test/integration/.chainsaw.yaml ./test/integration/core/maintenance
+
 .PHONY: test-integration-monitoring-pmm
 test-integration-monitoring-pmm: ## Run PMM integration tests.
 	. ./test/vars.sh && chainsaw test --config ./test/integration/.chainsaw.yaml ./test/integration/monitoring/pmm
