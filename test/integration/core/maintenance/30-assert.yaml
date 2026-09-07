@@ -1,0 +1,19 @@
+# The approved action applies: crVersion converges to the running operator's
+# version, the pending list empties, and the condition flips to False.
+apiVersion: psmdb.percona.com/v1
+kind: PerconaServerMongoDB
+metadata:
+  name: test-psmdb-cluster
+spec:
+  crVersion: 1.22.0
+---
+apiVersion: core.openeverest.io/v1alpha1
+kind: Instance
+metadata:
+  name: test-psmdb-cluster
+status:
+  phase: Ready
+  (pendingMaintenance == null): true
+  (conditions[?type == 'MaintenancePending'])[0]:
+    status: "False"
+    reason: NoActionsPending

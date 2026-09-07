@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: everest-secrets-test-psmdb-cluster
+type: Opaque
+data:
+  MONGODB_DATABASE_ADMIN_USER: dGVzdC11c2Vy
+  MONGODB_DATABASE_ADMIN_PASSWORD: dGVzdC1wYXNzd29yZA==
