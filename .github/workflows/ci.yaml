@@ -137,6 +137,18 @@ jobs:
       - name: Lint Helm chart
         run: helm lint charts/provider-percona-server-mongodb
 
+      - name: Verify preflight hook rendering
+        run: |
+          helm repo add percona https://percona.github.io/percona-helm-charts/
+          helm dependency build charts/provider-percona-server-mongodb
+          helm template test charts/provider-percona-server-mongodb \
+            --show-only templates/preflight-hook.yaml > /tmp/hook.yaml
+          grep -q -- '--preflight-spec=/preflight/provider-spec.yaml' /tmp/hook.yaml
+          grep -q 'name: TARGET_OPERATOR_VERSION' /tmp/hook.yaml
+          grep -A1 'name: TARGET_OPERATOR_VERSION' /tmp/hook.yaml | grep -qE 'value: "[0-9]+\.[0-9]+' \
+            || { echo 'TARGET_OPERATOR_VERSION rendered empty'; exit 1; }
+          grep -q 'release:' /tmp/hook.yaml || { echo 'provider-spec release block missing from hook ConfigMap'; exit 1; }
+
   test-integration-core-replicaset:
     name: Integration / core replicaset
     needs: [lint, build, verify]

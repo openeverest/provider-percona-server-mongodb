@@ -7,7 +7,7 @@ require (
 	github.com/aws/aws-sdk-go-v2 v1.41.7
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.99.0
 	github.com/hashicorp/go-version v1.9.0
-	github.com/openeverest/openeverest/v2 v2.0.0-dev.2.0.20260904023920-dfe0eccc15e7
+	github.com/openeverest/openeverest/v2 v2.0.0-dev.2.0.20260907030326-395f5f5edd7f
 	github.com/percona/percona-server-mongodb-operator v1.22.0
 	github.com/stretchr/testify v1.12.1
 	k8s.io/api v0.37.0
