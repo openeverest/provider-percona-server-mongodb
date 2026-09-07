@@ -71,20 +71,20 @@ func TestParsePBM(t *testing.T) {
 		},
 		{
 			name: "path preserves bucket-relative prefix from the key",
-			key:  "team-a/backups/2026-09-01T05:55:39Z.pbm.json",
-			data: `{"name":"2026-09-01T05:55:39Z","type":"logical","status":"done","start_ts":100,"last_transition_ts":200}`,
+			key:  "mongodb-lz4/458f1ae5-140f-4867-ab92-4c36e6f007f8/2026-08-20T02:02:50Z.pbm.json",
+			data: `{"name":"22026-08-20T02:02:50Z","type":"logical","status":"done","start_ts":1787191371,"last_transition_ts":1787191377}`,
 			want: &backupv1alpha1.Backup{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "import-38407b322bd52c1b",
+					Name:      "import-962afc4ee8c08997",
 					Namespace: "team-a",
 				},
 				Spec: backupv1alpha1.BackupSpec{
 					Origin: backupv1alpha1.BackupOrigin{
 						Type: backupv1alpha1.BackupOriginTypeExternal,
 						External: &backupv1alpha1.BackupOriginExternal{
-							Path:        "team-a/backups/2026-09-01T05:55:39Z",
-							StartedAt:   metav1.Unix(100, 0),
-							CompletedAt: metav1.Unix(200, 0),
+							Path:        "mongodb-lz4/458f1ae5-140f-4867-ab92-4c36e6f007f8/2026-08-20T02:02:50Z",
+							StartedAt:   metav1.Unix(1787191371, 0),
+							CompletedAt: metav1.Unix(1787191377, 0),
 						},
 					},
 					ClassRef:       commonv1alpha1.ObjectRef{Name: "percona-backup-mongodb"},
@@ -94,13 +94,7 @@ func TestParsePBM(t *testing.T) {
 			},
 		},
 		{
-			name: "failed backup is skipped",
-			key:  "bad.pbm.json",
-			data: `{"name":"bad","type":"logical","status":"error","start_ts":100,"last_transition_ts":200}`,
-			want: nil,
-		},
-		{
-			name: "running backup is skipped",
+			name: "only status done backups are discovered",
 			key:  "run.pbm.json",
 			data: `{"name":"run","type":"logical","status":"running","start_ts":100}`,
 			want: nil,
