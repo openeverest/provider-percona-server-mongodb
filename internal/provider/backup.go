@@ -382,16 +382,13 @@ func (p *PSMDBProvider) SyncRestore(c *controller.Context, restore *backupv1alph
 
 	// Imported backups reference data already sitting in a BackupStorage;
 	// there is no PerconaServerMongoDBBackup to resolve by name.
-	// Build the restore'sBackupSource directly from the storage descriptor and external path.
+	// Build the restore's BackupSource directly from the storage descriptor and external path.
 	external := sourceBackup.Spec.Origin.Type == backupv1alpha1.BackupOriginTypeExternal
 	var externalSource *psmdbv1.PerconaServerMongoDBBackupStatus
 	if external {
 		externalSource, exec, err = buildExternalBackupSource(c, sourceBackup)
 		if err != nil {
 			return controller.RestoreExecutionStatus{}, err
-		}
-		if externalSource == nil {
-			return exec, nil
 		}
 	}
 
