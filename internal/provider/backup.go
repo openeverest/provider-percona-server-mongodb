@@ -330,12 +330,12 @@ func (p *PSMDBProvider) SyncBackup(c *controller.Context, backup *backupv1alpha1
 			Kind:  "PerconaServerMongoDBBackup",
 			Name:  psmdbBackup.Name,
 		},
+		StartedAt: nonZeroMetaTime(psmdbBackup.Status.StartAt),
 	}
 	switch psmdbBackup.Status.State {
 	case psmdbv1.BackupStateReady:
 		exec.State = backupv1alpha1.BackupStateSucceeded
-		now := metav1.Now()
-		exec.CompletedAt = &now
+		exec.CompletedAt = nonZeroMetaTime(psmdbBackup.Status.CompletedAt)
 	case psmdbv1.BackupStateError:
 		exec.State = backupv1alpha1.BackupStateFailed
 		exec.Message = psmdbBackup.Status.Error
@@ -451,12 +451,12 @@ func (p *PSMDBProvider) SyncRestore(c *controller.Context, restore *backupv1alph
 			Kind:  "PerconaServerMongoDBRestore",
 			Name:  psmdbRestore.Name,
 		},
+		StartedAt: nonZeroMetaTime(&psmdbRestore.CreationTimestamp),
 	}
 	switch psmdbRestore.Status.State {
 	case psmdbv1.RestoreStateReady:
 		out.State = backupv1alpha1.RestoreStateSucceeded
-		now := metav1.Now()
-		out.CompletedAt = &now
+		out.CompletedAt = nonZeroMetaTime(psmdbRestore.Status.CompletedAt)
 	case psmdbv1.RestoreStateError:
 		out.State = backupv1alpha1.RestoreStateFailed
 		out.Message = psmdbRestore.Status.Error
@@ -468,33 +468,19 @@ func (p *PSMDBProvider) SyncRestore(c *controller.Context, restore *backupv1alph
 	return out, nil
 }
 
-// resolveRestoreSource translates the Restore's data source into the operator
-// inputs: the Backup CR whose operator mirror the restore reads from, and the
-// PITR block when rolling the oplog stream forward.
-//
-// A nil Backup means the source is not usable yet (or at all) and the caller
-// should surface the returned status verbatim.
-func resolveRestoreSource(
-	c *controller.Context,
-	restore *backupv1alpha1.Restore,
-) (*backupv1alpha1.Backup, *psmdbv1.PITRestoreSpec, controller.RestoreExecutionStatus, error) {
-	switch restore.Spec.DataSource.Type {
-	case backupv1alpha1.DataSourceTypeBackup:
-		backup, exec, err := resolveBackupSource(c, restore)
-		return backup, nil, exec, err
-	case backupv1alpha1.DataSourceTypePointInTime:
-		return resolvePointInTimeSource(c, restore)
-	default:
-		return nil, nil, controller.RestoreExecutionStatus{
-			State:   backupv1alpha1.RestoreStateFailed,
-			Message: fmt.Sprintf("Unsupported dataSource type %q", restore.Spec.DataSource.Type),
-		}, nil
+func nonZeroMetaTime(t *metav1.Time) *metav1.Time {
+	if t == nil || t.IsZero() {
+		return nil
 	}
+	cp := *t
+	return &cp
 }
 
-// resolveBackupSource restores the state captured by a named Backup CR. The
-// Backup mirrors an operator backup of the same name.
-func resolveBackupSource(
+// resolveSourceBackup fetches the Backup CR referenced by the Restore's
+// DataSource. Returns (nil, exec, nil) when a terminal exec status should be
+// reported (e.g. missing data source field) and (backup, _, nil) when the
+// source Backup is in scope.
+func resolveSourceBackup(
 	c *controller.Context,
 	restore *backupv1alpha1.Restore,
 ) (*backupv1alpha1.Backup, controller.RestoreExecutionStatus, error) {
