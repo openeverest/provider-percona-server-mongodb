@@ -133,7 +133,7 @@ presets:
       spec:
         providerRef:
           name: percona-server-mongodb
-        version: 8.0.12-4
+        version: 8.0.12
         topology:
           type: replicaSet
         components:
@@ -160,7 +160,7 @@ presets:
       spec:
         providerRef:
           name: percona-server-mongodb
-        version: 8.0.12-4
+        version: 8.0.12
         topology:
           type: sharded
           parameters:
