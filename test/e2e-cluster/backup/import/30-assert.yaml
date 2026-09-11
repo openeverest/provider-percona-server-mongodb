@@ -19,7 +19,7 @@ metadata:
   # name and the backup path.
   name: import-e34bbda7da13a277
   labels:
-    backupImportName: minio-import
+    backup.openeverest.io/backup-import: minio-import
 spec:
   origin:
     type: External
