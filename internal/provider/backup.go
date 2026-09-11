@@ -390,6 +390,10 @@ func (p *PSMDBProvider) SyncRestore(c *controller.Context, restore *backupv1alph
 		if err != nil {
 			return controller.RestoreExecutionStatus{}, err
 		}
+
+		if externalSource == nil {
+			return exec, nil
+		}
 	}
 
 	// Detect cross-cluster restores. When the source Backup was produced by a
