@@ -141,6 +141,76 @@ func validateEngine(c *controller.Context) error {
 	return nil
 }
 
+// validateUserSecret validates the Secret referenced by spec.userSecretRef
+// against the provider's secret schema, and enforces whether the field is
+// required or forbidden given the configured data source.
+func validateUserSecret(c *controller.Context) error {
+	userSecretRef := c.Instance().Spec.UserSecretRef
+
+	ds := c.Instance().Spec.DataSource
+
+	if ds != nil {
+		switch ds.Type {
+		case backupv1alpha1.DataSourceTypePointInTime:
+			// The credentials must come from live Instance.
+			if userSecretRef != nil {
+				return fmt.Errorf(
+					"spec.userSecretRef must not be set when seeding " +
+						"from an Instance; the credentials are inherited " +
+						"from the source Instance",
+				)
+			}
+		case backupv1alpha1.DataSourceTypeBackup:
+			srcBackup := &backupv1alpha1.Backup{}
+			if err := c.Get(srcBackup, ds.Backup.BackupRef.Name); err != nil {
+				return fmt.Errorf("get Backup %q: %w", ds.Backup.BackupRef.Name, err)
+			}
+
+			switch srcBackup.Spec.Origin.Type {
+			case backupv1alpha1.BackupOriginTypeInstance:
+				// The credentials must come from live Instance.
+				if userSecretRef != nil {
+					return fmt.Errorf(
+						"spec.userSecretRef must not be set when seeding " +
+							"from an Instance; the credentials are inherited " +
+							"from the source Instance",
+					)
+				}
+			case backupv1alpha1.BackupOriginTypeExternal:
+				// Backup from a BackupStorage: user must supply userSecretRef.
+				if userSecretRef == nil {
+					return fmt.Errorf(
+						"spec.userSecretRef is required when seeding " +
+							"from an external backup; it must match the credentials " +
+							"of the Instance that produced the backup",
+					)
+				}
+			}
+		}
+	}
+
+	// Nothing to validate when no secret is referenced.
+	if userSecretRef == nil {
+		return nil
+	}
+
+	secret := &corev1.Secret{}
+	if err := c.Get(secret, userSecretRef.Name); err != nil {
+		return fmt.Errorf("failed to get user secret %q: %w", userSecretRef.Name, err)
+	}
+
+	providerSpec, err := c.ProviderSpec()
+	if err != nil {
+		return fmt.Errorf("failed to get provider spec: %w", err)
+	}
+
+	if err := controller.ValidateSecretSchema(secret, providerSpec); err != nil {
+		return fmt.Errorf("user secret %q validation failed: %w", userSecretRef.Name, err)
+	}
+
+	return nil
+}
+
 // validateDataSource validates the dataSource spec.
 func validateDataSource(c *controller.Context) error {
 	ds := c.Instance().Spec.DataSource
