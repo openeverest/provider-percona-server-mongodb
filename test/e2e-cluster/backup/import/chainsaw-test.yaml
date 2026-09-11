@@ -1,0 +1,132 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: backup-import
+spec:
+  description: |
+    Import PBM backups from S3-compatible storage as Backup CRs, then restore
+    one into a new Instance: deploy Minio with pre-loaded backup data, create a
+    BackupImport CR and verify it discovers the backup and materializes an
+    external Backup CR, create an Instance bootstrapped with the backup's
+    credentials, create a Restore CR that seeds it from the imported Backup,
+    verify the restore completes, and validate the imported data via a MongoDB
+    client.
+  catch:
+    - script:
+        content: kubectl -n $NAMESPACE get instance,psmdb,psmdb-restore,backupimport,backup,restore,backupstorage -o yaml
+    - script:
+        content: kubectl get backupclass -o yaml
+    - podLogs:
+        namespace: provider-system
+        selector: app.kubernetes.io/name=provider-percona-server-mongodb
+        tail: 100
+  steps:
+    - name: provider-operator-installed
+      try:
+        - assert:
+            file: 00-assert.yaml
+
+    - name: deploy-minio
+      try:
+        - script:
+            content: |
+              kubectl apply -f ${OPERATOR_ROOT_PATH}/test/testdata/minio/deploy.yaml
+        - script:
+            content: |
+              kubectl wait pod/minio --for=condition=Ready -n minio --timeout=120s
+        - script:
+            content: |
+              # Upload PSMDB backup data to Minio
+              cat ${OPERATOR_ROOT_PATH}/test/testdata/backups/psmdb.tar | kubectl exec -i minio -n minio -c cp-helper -- tar xf - -C /shared
+              kubectl exec --quiet minio -n minio -c minio -- mc alias set s3 https://minio.minio.svc minioadmin minioadmin --insecure
+              kubectl exec --quiet minio -n minio -c minio -- mc cp --recursive /shared/psmdb s3/everest-operator --insecure
+      catch:
+        - script:
+            content: kubectl get pods -n minio -o yaml
+        - script:
+            content: kubectl logs -n minio minio -c minio --tail=50
+
+    - name: setup-storage-and-class
+      try:
+        - apply:
+            file: 20-install.yaml
+        - assert:
+            file: 20-assert.yaml
+
+    - name: create-backup-import
+      try:
+        - apply:
+            file: 30-create-backup-import.yaml
+        - assert:
+            file: 30-assert.yaml
+
+    - name: create-instance
+      try:
+        - apply:
+            file: 40-create-instance.yaml
+        - assert:
+            file: 40-assert.yaml
+
+    - name: restore-created
+      try:
+        - assert:
+            timeout: 120s
+            file: 50-assert.yaml
+
+    - name: restore-ready
+      try:
+        - assert:
+            timeout: 120s
+            file: 60-assert.yaml
+
+    - name: create-mongodb-client
+      try:
+        - script:
+            timeout: 60s
+            content: |
+              IMAGE="$(kubectl get -n ${NAMESPACE} psmdb/psmdb-import-test -o jsonpath='{.spec.image}')"
+              kubectl run -n "${NAMESPACE}" psmdb-client --env="NO_COLOR=1" --image=${IMAGE} --restart=Never --command -- sleep infinity
+              kubectl wait --for=condition=Ready pod/psmdb-client --timeout=60s -n ${NAMESPACE}
+      catch:
+        - script:
+            content: kubectl get pod/psmdb-client -n $NAMESPACE -o yaml
+        - script:
+            content: kubectl logs pod/psmdb-client -n $NAMESPACE --tail=50
+
+    - name: verify-imported-data
+      try:
+        - script:
+            content: |
+              PSMDBPASSWORD="$(kubectl get -n ${NAMESPACE} secret/everest-secrets-psmdb-import-test -o jsonpath='{.data.MONGODB_DATABASE_ADMIN_PASSWORD}' | base64 --decode)"
+              PSMDBUSER="databaseAdmin"
+              # Get host from PSMDB status
+              PSMDBHOST="$(kubectl get -n ${NAMESPACE} psmdb/psmdb-import-test -o jsonpath='{.status.host}')"
+              CONN_URI="mongodb://${PSMDBUSER}:${PSMDBPASSWORD}@${PSMDBHOST}"
+
+              # The test backup contains numbers 1-10 in the test collection
+              expected=$(printf '1\n2\n3\n4\n5\n6\n7\n8\n9\n10')
+              actual=$(kubectl exec psmdb-client -n ${NAMESPACE} -- mongosh "$CONN_URI" --quiet --eval "db.test.find({}, { _id: 0, num: 1 }).sort({ num: 1 }).forEach(doc => print(doc.num));")
+
+              echo "Expected:"
+              echo "$expected"
+              echo "Actual:"
+              echo "$actual"
+
+              test "$actual" = "$expected"
+      catch:
+        - script:
+            content: kubectl exec psmdb-client -n $NAMESPACE -- mongosh --help || true
+
+    - name: cleanup
+      try:
+        # Delete resources not managed by chainsaw's automatic cleanup
+        # (created via script, not apply).
+        - script:
+            content: |
+              kubectl delete -f ${OPERATOR_ROOT_PATH}/test/testdata/minio/deploy.yaml --wait=false || true
+              kubectl delete pod/psmdb-client -n $NAMESPACE --wait=false || true
+              # The imported Backup CR is provider-created with deletionPolicy
+              # Retain, so chainsaw's automatic cleanup never removes it. Delete
+              # it here so the BackupStorage's in-use-protection finalizer releases
+              # before chainsaw deletes it.
+              kubectl delete backup --all -n $NAMESPACE --wait=false || true
