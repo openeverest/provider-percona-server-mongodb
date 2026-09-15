@@ -13,6 +13,10 @@ You do **not** need a local checkout of the OpenEverest core.
 - [kubectl](https://kubernetes.io/docs/tasks/tools/)
 - [Helm](https://helm.sh/docs/intro/install/)
 - [k3d](https://k3d.io/)
+  - **Linux:** load the `br_netfilter` kernel module before creating the
+    cluster (`sudo modprobe br_netfilter`). Without it, Service ClusterIPs
+    blackhole for pods sharing a node with their backend and replica sets never
+    become ready — see [Troubleshooting](#troubleshooting).
 - [Tilt](https://docs.tilt.dev/install.html)
 
 ## Quick start
@@ -95,3 +99,27 @@ The two instances manage disjoint Kubernetes objects, so they run side by side
 without conflicting. With `INSTALL_OPENEVEREST=false`, the OpenEverest core
 CRDs are expected to already exist in the cluster (installed by the core Tilt
 instance).
+
+## Troubleshooting
+
+### A replica set never becomes ready (DNS times out on some pods)
+
+The Instance hangs in `Provisioning`, `rs.status()` reports members as
+`(not reachable/healthy)`, and the affected pods restart in a loop on liveness
+probe timeouts — but which pods are affected changes on every `make dev-up`.
+On Linux this means `br_netfilter` is not loaded on the host, so kube-proxy's
+DNAT is bypassed for traffic that stays on one node's bridge. Pods sharing a
+node with CoreDNS lose DNS entirely, so the primary cannot resolve its peers
+and never propagates the replset config. Confirm with:
+
+```bash
+docker logs k3d-provider-psmdb-test-server-0 2>&1 | grep br_netfilter
+```
+
+Then load the module and recreate the cluster:
+
+```bash
+sudo modprobe br_netfilter
+echo br_netfilter | sudo tee /etc/modules-load.d/k8s.conf  # persist
+make dev-destroy && make dev-up
+```
