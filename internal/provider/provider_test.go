@@ -22,18 +22,56 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	backupv1alpha1 "github.com/openeverest/openeverest/v2/api/backup/v1alpha1"
 	commonv1alpha1 "github.com/openeverest/openeverest/v2/api/common/v1alpha1"
 	corev1alpha1 "github.com/openeverest/openeverest/v2/api/core/v1alpha1"
+	openeverestcommon "github.com/openeverest/openeverest/v2/pkg/common"
 	"github.com/openeverest/openeverest/v2/provider-runtime/controller"
 
 	"github.com/openeverest/provider-percona-server-mongodb/internal/common"
 )
+
+const userSecretDefinition = "database-credentials"
+
+func userSecret(name string, data map[string]string) *corev1.Secret {
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   name,
+			Labels: map[string]string{openeverestcommon.OpenEverestDefinitionLabel: userSecretDefinition},
+		},
+		StringData: data,
+	}
+}
+
+func backupWithOrigin(name string, originType backupv1alpha1.BackupOriginType) *backupv1alpha1.Backup {
+	origin := backupv1alpha1.BackupOrigin{Type: originType}
+	switch originType {
+	case backupv1alpha1.BackupOriginTypeInstance:
+		origin.InstanceRef = &commonv1alpha1.ObjectRef{Name: "source-instance"}
+	case backupv1alpha1.BackupOriginTypeExternal:
+		origin.External = &backupv1alpha1.BackupOriginExternal{Path: "some/path"}
+	}
+	return &backupv1alpha1.Backup{
+		ObjectMeta: metav1.ObjectMeta{Name: name},
+		Spec:       backupv1alpha1.BackupSpec{Origin: origin},
+	}
+}
+
+func dataSourceBackup(backupName string) *backupv1alpha1.DataSource {
+	return &backupv1alpha1.DataSource{
+		Type: backupv1alpha1.DataSourceTypeBackup,
+		Backup: &backupv1alpha1.DataSourceBackup{
+			BackupRef: commonv1alpha1.ObjectRef{Name: backupName},
+		},
+	}
+}
 
 func TestValidatePSMDB(t *testing.T) {
 	validEngine := corev1alpha1.ComponentSpec{
@@ -54,9 +92,14 @@ func TestValidatePSMDB(t *testing.T) {
 			common.ComponentEngine: validEngine,
 		},
 	}
+
+	userSecretData := map[string]string{"username": "admin", "password": "secret"}
+
 	tests := []struct {
 		name      string
 		instance  *corev1alpha1.Instance
+		backup    *backupv1alpha1.Backup
+		secret    *corev1.Secret
 		expectErr string
 	}{
 		{
@@ -137,6 +180,7 @@ func TestValidatePSMDB(t *testing.T) {
 					},
 				},
 			},
+			backup: backupWithOrigin("my-backup", backupv1alpha1.BackupOriginTypeInstance),
 		},
 		{
 			name: "dataSource missing backup details",
@@ -549,14 +593,174 @@ func TestValidatePSMDB(t *testing.T) {
 			},
 			expectErr: "must be >= 3 for multi-node",
 		},
+		{
+			name: "no dataSource with valid userSecretRef",
+			instance: &corev1alpha1.Instance{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-instance"},
+				Spec: corev1alpha1.InstanceSpec{
+					UserSecretRef: &commonv1alpha1.SecretRef{Name: "user-secret"},
+					Components: map[string]corev1alpha1.ComponentSpec{
+						common.ComponentEngine: validEngine,
+					},
+				},
+			},
+			secret: userSecret("user-secret", userSecretData),
+		},
+		{
+			name: "userSecretRef missing secret",
+			instance: &corev1alpha1.Instance{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-instance"},
+				Spec: corev1alpha1.InstanceSpec{
+					UserSecretRef: &commonv1alpha1.SecretRef{Name: "user-secret"},
+					Components: map[string]corev1alpha1.ComponentSpec{
+						common.ComponentEngine: validEngine,
+					},
+				},
+			},
+			expectErr: "failed to get user secret",
+		},
+		{
+			name: "userSecret schema validation fails",
+			instance: &corev1alpha1.Instance{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-instance"},
+				Spec: corev1alpha1.InstanceSpec{
+					UserSecretRef: &commonv1alpha1.SecretRef{Name: "user-secret"},
+					Components: map[string]corev1alpha1.ComponentSpec{
+						common.ComponentEngine: validEngine,
+					},
+				},
+			},
+			secret:    userSecret("user-secret", map[string]string{"username": "admin"}),
+			expectErr: "validation failed",
+		},
+		{
+			name: "pointInTime with userSecretRef",
+			instance: &corev1alpha1.Instance{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-instance"},
+				Spec: corev1alpha1.InstanceSpec{
+					DataSource:    &backupv1alpha1.DataSource{Type: backupv1alpha1.DataSourceTypePointInTime},
+					UserSecretRef: &commonv1alpha1.SecretRef{Name: "user-secret"},
+					Components: map[string]corev1alpha1.ComponentSpec{
+						common.ComponentEngine: validEngine,
+					},
+				},
+			},
+			secret:    userSecret("user-secret", userSecretData),
+			expectErr: "must not be set when seeding from an Instance",
+		},
+		{
+			name: "instance backup forbids userSecretRef",
+			instance: &corev1alpha1.Instance{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-instance"},
+				Spec: corev1alpha1.InstanceSpec{
+					DataSource:    dataSourceBackup("live-backup"),
+					UserSecretRef: &commonv1alpha1.SecretRef{Name: "user-secret"},
+					Components: map[string]corev1alpha1.ComponentSpec{
+						common.ComponentEngine: validEngine,
+					},
+				},
+			},
+			backup:    backupWithOrigin("live-backup", backupv1alpha1.BackupOriginTypeInstance),
+			secret:    userSecret("user-secret", userSecretData),
+			expectErr: "must not be set when seeding from an Instance",
+		},
+		{
+			name: "instance backup without userSecretRef",
+			instance: &corev1alpha1.Instance{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-instance"},
+				Spec: corev1alpha1.InstanceSpec{
+					DataSource: dataSourceBackup("live-backup"),
+					Components: map[string]corev1alpha1.ComponentSpec{
+						common.ComponentEngine: validEngine,
+					},
+				},
+			},
+			backup: backupWithOrigin("live-backup", backupv1alpha1.BackupOriginTypeInstance),
+		},
+		{
+			name: "external backup without userSecretRef",
+			instance: &corev1alpha1.Instance{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-instance"},
+				Spec: corev1alpha1.InstanceSpec{
+					DataSource: dataSourceBackup("imported-backup"),
+					Components: map[string]corev1alpha1.ComponentSpec{
+						common.ComponentEngine: validEngine,
+					},
+				},
+			},
+			backup:    backupWithOrigin("imported-backup", backupv1alpha1.BackupOriginTypeExternal),
+			expectErr: "required when seeding from an external backup",
+		},
+		{
+			name: "external backup with userSecretRef",
+			instance: &corev1alpha1.Instance{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-instance"},
+				Spec: corev1alpha1.InstanceSpec{
+					DataSource:    dataSourceBackup("imported-backup"),
+					UserSecretRef: &commonv1alpha1.SecretRef{Name: "user-secret"},
+					Components: map[string]corev1alpha1.ComponentSpec{
+						common.ComponentEngine: validEngine,
+					},
+				},
+			},
+			backup: backupWithOrigin("imported-backup", backupv1alpha1.BackupOriginTypeExternal),
+			secret: userSecret("user-secret", userSecretData),
+		},
+		{
+			name: "backup not found",
+			instance: &corev1alpha1.Instance{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-instance"},
+				Spec: corev1alpha1.InstanceSpec{
+					DataSource:    dataSourceBackup("missing-backup"),
+					UserSecretRef: &commonv1alpha1.SecretRef{Name: "user-secret"},
+					Components: map[string]corev1alpha1.ComponentSpec{
+						common.ComponentEngine: validEngine,
+					},
+				},
+			},
+			secret:    userSecret("user-secret", userSecretData),
+			expectErr: `"missing-backup" not found`,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			scheme := runtime.NewScheme()
+			require.NoError(t, corev1.AddToScheme(scheme))
 			require.NoError(t, corev1alpha1.AddToScheme(scheme))
 			require.NoError(t, backupv1alpha1.AddToScheme(scheme))
-			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(tt.instance).Build()
+
+			provider := &corev1alpha1.Provider{
+				ObjectMeta: metav1.ObjectMeta{Name: "psmdb"},
+				Spec: corev1alpha1.ProviderSpec{
+					Secrets: map[string]corev1alpha1.SecretDefinition{
+						userSecretDefinition: {
+							ParametersSchema: &commonv1alpha1.ParametersSchema{
+								OpenAPIV3Schema: &apiextensionsv1.JSONSchemaProps{
+									Type: "object",
+									Properties: map[string]apiextensionsv1.JSONSchemaProps{
+										"username": {Type: "string"},
+										"password": {Type: "string"},
+									},
+									Required: []string{"username", "password"},
+								},
+							},
+						},
+					},
+				},
+			}
+
+			objects := []client.Object{provider, tt.instance}
+
+			if tt.backup != nil {
+				objects = append(objects, tt.backup)
+			}
+
+			if tt.secret != nil {
+				objects = append(objects, tt.secret)
+			}
+
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(objects...).Build()
 			ctx := controller.NewContext(context.Background(), fakeClient, tt.instance, "psmdb")
 			err := ValidatePSMDB(ctx)
 
