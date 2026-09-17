@@ -81,13 +81,12 @@ Stateful workloads additionally report:
 
 ## Installation
 
-The provider chart is published to the repository's Helm chart repository:
+The provider chart is published as an OCI artifact to GitHub Container Registry:
 
 ```bash
-helm repo add provider-percona-server-mongodb https://openeverest.github.io/provider-percona-server-mongodb/
-helm repo update
-helm install provider-percona-server-mongodb provider-percona-server-mongodb/provider-percona-server-mongodb \
-  --version 0.1.0 \
+helm install provider-percona-server-mongodb \
+  oci://ghcr.io/openeverest/charts/provider-percona-server-mongodb \
+  --version 0.3.0 \
   --namespace everest-system
 ```
 
@@ -97,8 +96,8 @@ helm install provider-percona-server-mongodb provider-percona-server-mongodb/pro
 Upgrade and uninstall:
 
 ```bash
-helm repo update
-helm upgrade provider-percona-server-mongodb provider-percona-server-mongodb/provider-percona-server-mongodb --version 0.1.0
+helm upgrade provider-percona-server-mongodb \
+  oci://ghcr.io/openeverest/charts/provider-percona-server-mongodb --version 0.3.0
 helm uninstall provider-percona-server-mongodb --namespace everest-system
 ```
 
