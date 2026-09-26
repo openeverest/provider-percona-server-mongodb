@@ -330,12 +330,12 @@ func (p *PSMDBProvider) SyncBackup(c *controller.Context, backup *backupv1alpha1
 			Kind:  "PerconaServerMongoDBBackup",
 			Name:  psmdbBackup.Name,
 		},
+		StartedAt: psmdbBackup.Status.StartAt,
 	}
 	switch psmdbBackup.Status.State {
 	case psmdbv1.BackupStateReady:
 		exec.State = backupv1alpha1.BackupStateSucceeded
-		now := metav1.Now()
-		exec.CompletedAt = &now
+		exec.CompletedAt = psmdbBackup.Status.CompletedAt
 	case psmdbv1.BackupStateError:
 		exec.State = backupv1alpha1.BackupStateFailed
 		exec.Message = psmdbBackup.Status.Error
@@ -451,12 +451,15 @@ func (p *PSMDBProvider) SyncRestore(c *controller.Context, restore *backupv1alph
 			Kind:  "PerconaServerMongoDBRestore",
 			Name:  psmdbRestore.Name,
 		},
+		// The operator's restore status has no start time of its own, so the
+		// PerconaServerMongoDBRestore object's own creation is the best
+		// available signal for when the operator was told to begin.
+		StartedAt: &psmdbRestore.CreationTimestamp,
 	}
 	switch psmdbRestore.Status.State {
 	case psmdbv1.RestoreStateReady:
 		out.State = backupv1alpha1.RestoreStateSucceeded
-		now := metav1.Now()
-		out.CompletedAt = &now
+		out.CompletedAt = psmdbRestore.Status.CompletedAt
 	case psmdbv1.RestoreStateError:
 		out.State = backupv1alpha1.RestoreStateFailed
 		out.Message = psmdbRestore.Status.Error
