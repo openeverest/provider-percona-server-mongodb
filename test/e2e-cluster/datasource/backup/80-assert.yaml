@@ -25,4 +25,4 @@ metadata:
 spec:
   clusterName: psmdb-dest
   backupSource:
-    storageName: minio-storage
+    storageName: seaweedfs-storage
