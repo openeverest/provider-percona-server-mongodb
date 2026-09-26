@@ -4,7 +4,7 @@ metadata:
   name: backup-datasource
 spec:
   description: |
-    Seed a new Instance from a Backup CR: deploy Minio and PMM, create a source
+    Seed a new Instance from a Backup CR: deploy SeaweedFS and PMM, create a source
     Instance with backups enabled, write data and take a Backup, then create a
     destination Instance with a Backup dataSource and monitoring, verify the datasource
     Restore is created and completes, and validate the seeded data via a
@@ -26,19 +26,19 @@ spec:
         - assert:
             file: 00-assert.yaml
 
-    - name: deploy-minio
+    - name: deploy-seaweedfs
       try:
         - script:
             content: |
-              kubectl apply -f ${OPERATOR_ROOT_PATH}/test/testdata/minio/deploy.yaml
+              kubectl apply -f ${OPERATOR_ROOT_PATH}/dev/resources/seaweedfs.yaml
         - script:
             content: |
-              kubectl wait pod/minio --for=condition=Ready -n minio --timeout=120s
+              kubectl wait deploy/seaweedfs --for=condition=Available -n seaweedfs --timeout=120s
       catch:
         - script:
-            content: kubectl get pods -n minio -o yaml
+            content: kubectl get pods -n seaweedfs -o yaml
         - script:
-            content: kubectl logs -n minio minio -c minio --tail=50
+            content: kubectl logs -n seaweedfs deploy/seaweedfs --tail=50
 
     - name: deploy-pmm
       try:
@@ -207,5 +207,5 @@ spec:
             content: |
               kubectl delete instance/psmdb-src -n $NAMESPACE --ignore-not-found || true
               kubectl delete instance/psmdb-dest -n $NAMESPACE --ignore-not-found || true
-              kubectl delete -f ${OPERATOR_ROOT_PATH}/test/testdata/minio/deploy.yaml --ignore-not-found || true
+              kubectl delete -f ${OPERATOR_ROOT_PATH}/dev/resources/seaweedfs.yaml --ignore-not-found || true
               kubectl delete -f ${OPERATOR_ROOT_PATH}/test/testdata/pmm/deploy.yaml --ignore-not-found || true
