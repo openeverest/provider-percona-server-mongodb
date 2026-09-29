@@ -52,7 +52,6 @@ spec:
         timeouts:
           startingStatus: 120
     enabled: false
-    pitr: {}
     resources:
       limits:
         cpu: 300m
@@ -62,7 +61,6 @@ spec:
   replsets:
     - arbiter:
         enabled: false
-        resources: {}
         size: 0
       expose:
         enabled: true
@@ -70,7 +68,6 @@ spec:
       name: rs0
       nonvoting:
         enabled: false
-        resources: {}
         size: 0
       podDisruptionBudget:
         maxUnavailable: 1
@@ -92,9 +89,7 @@ spec:
     sslInternal: test-psmdb-cluster-ssl-internal
     users: everest-secrets-test-psmdb-cluster
   sharding:
-    balancer: {}
     enabled: false
-  unsafeFlags: {}
   updateStrategy: SmartUpdate
   upgradeOptions:
     apply: disabled
