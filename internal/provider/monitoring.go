@@ -23,6 +23,7 @@ import (
 	goversion "github.com/hashicorp/go-version"
 	psmdbv1 "github.com/percona/percona-server-mongodb-operator/pkg/apis/psmdb/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/fields"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
@@ -76,7 +77,9 @@ func resolveMonitoringConfig(c *controller.Context) (*monitoringv1alpha1.Monitor
 // configureMonitoring builds the PMMSpec for the PSMDB resource based on the
 // instance's monitoring component configuration. The reconciliation handles:
 //
-//  1. Monitoring not configured (component absent) returns disabled PMMSpec.
+//  1. Monitoring not configured (component absent) returns disabled PMMSpec
+//     that keeps the live resources, which the operator ignores while PMM is
+//     disabled.
 //  2. Monitoring enabled: resolves the MonitoringConfig, copies the PMM API key
 //     to the users secret, and returns a configured PMMSpec with resource
 //     requirements calculated from the engine and requested resources.
@@ -93,7 +96,13 @@ func configureMonitoring(
 	}
 
 	if mc == nil {
-		return &psmdbv1.PMMSpec{Enabled: false}, nil
+		// Server-side apply turns a previously populated struct applied as {}
+		// into null, which the CRD rejects, so never empty pmm.resources.
+		current := &psmdbv1.PerconaServerMongoDB{}
+		if err := c.Get(current, c.Name()); err != nil && !apierrors.IsNotFound(err) {
+			return nil, fmt.Errorf("get PerconaServerMongoDB for PMM resources: %w", err)
+		}
+		return &psmdbv1.PMMSpec{Enabled: false, Resources: current.Spec.PMM.Resources}, nil
 	}
 
 	spec, err := c.ProviderSpec()
@@ -135,24 +144,16 @@ func copySecretData(c *controller.Context, source, dest, sourceKey, destKey stri
 		return fmt.Errorf("failed to get secret %s: %w", source, err)
 	}
 
-	destSecret := &corev1.Secret{}
-	if err := c.Get(destSecret, dest); err != nil {
-		// If the secret doesn't exist, create it
-		destSecret = &corev1.Secret{ObjectMeta: c.ObjectMeta(dest)}
-	}
-
 	apiKey, ok := sourceSecret.Data[sourceKey]
 	if !ok {
 		return fmt.Errorf("failed to get key %s from secret %s", sourceKey, source)
 	}
 
-	if destSecret.Data == nil {
-		destSecret.Data = make(map[string][]byte)
-	}
-
-	destSecret.Data[destKey] = apiKey
-
-	return c.Apply(destSecret)
+	// Server-side apply owns only destKey; the operator's user keys are left alone.
+	return c.Apply(&corev1.Secret{
+		ObjectMeta: c.ObjectMeta(dest),
+		Data:       map[string][]byte{destKey: apiKey},
+	})
 }
 
 // validateMonitoring validates that an explicitly set PMM client version exists
