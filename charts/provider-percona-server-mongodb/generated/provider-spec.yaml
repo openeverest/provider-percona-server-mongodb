@@ -92,6 +92,8 @@ spec:
               type: string
             MONGODB_USER_ADMIN_USER:
               type: string
+            PMM_SERVER_TOKEN:
+              type: string
           type: object
   topologies:
     replicaSet:

@@ -32,4 +32,5 @@ type UserSecretData struct {
 	MongoDBDatabaseAdminPassword  string `json:"MONGODB_DATABASE_ADMIN_PASSWORD"`
 	MongoDBUserAdminUser          string `json:"MONGODB_USER_ADMIN_USER"`
 	MongoDBUserAdminPassword      string `json:"MONGODB_USER_ADMIN_PASSWORD"`
+	PMMServerToken                string `json:"PMM_SERVER_TOKEN,omitempty"`
 }
