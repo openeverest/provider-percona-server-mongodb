@@ -78,16 +78,22 @@ func TestConfigureMonitoringDisabledKeepsLiveResources(t *testing.T) {
 	}
 
 	for name, tt := range map[string]struct {
-		objs []client.Object
-		want corev1.ResourceRequirements
+		withLive bool
+		want     corev1.ResourceRequirements
 	}{
-		"no cluster yet":      {objs: []client.Object{in}},
-		"was being monitored": {objs: []client.Object{in, live}, want: resources},
+		"no cluster yet":      {},
+		"was being monitored": {withLive: true, want: resources},
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(tt.objs...).Build()
-			c := controller.NewContext(context.Background(), cl, in, "psmdb")
+			// The fake client stamps resourceVersion on the objects it is given.
+			inst := in.DeepCopy()
+			objs := []client.Object{inst}
+			if tt.withLive {
+				objs = append(objs, live.DeepCopy())
+			}
+			cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(objs...).Build()
+			c := controller.NewContext(context.Background(), cl, inst, "psmdb")
 
 			got, err := configureMonitoring(c, "everest-secrets-my-mongo")
 			require.NoError(t, err)
