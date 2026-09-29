@@ -39,10 +39,11 @@ kind: PerconaServerMongoDB
 metadata:
   name: psmdb-mc
 spec:
-  # PMM must be disabled when monitoring is removed. pmm.resources is kept:
-  # the operator ignores it while PMM is disabled.
+  # PMM must be fully removed when monitoring is disabled.
   (pmm.enabled == null): true
   (pmm.serverHost == null): true
+  (pmm.resources.limits == null): true
+  (pmm.resources.requests == null): true
   secrets:
     users: everest-secrets-psmdb-mc
 ---
