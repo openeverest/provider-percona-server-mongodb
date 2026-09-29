@@ -23,6 +23,7 @@ import (
 	goversion "github.com/hashicorp/go-version"
 	psmdbv1 "github.com/percona/percona-server-mongodb-operator/pkg/apis/psmdb/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/fields"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
@@ -76,7 +77,9 @@ func resolveMonitoringConfig(c *controller.Context) (*monitoringv1alpha1.Monitor
 // configureMonitoring builds the PMMSpec for the PSMDB resource based on the
 // instance's monitoring component configuration. The reconciliation handles:
 //
-//  1. Monitoring not configured (component absent) returns disabled PMMSpec.
+//  1. Monitoring not configured (component absent) returns disabled PMMSpec
+//     that keeps the live resources, which the operator ignores while PMM is
+//     disabled.
 //  2. Monitoring enabled: resolves the MonitoringConfig, copies the PMM API key
 //     to the users secret, and returns a configured PMMSpec with resource
 //     requirements calculated from the engine and requested resources.
@@ -93,7 +96,13 @@ func configureMonitoring(
 	}
 
 	if mc == nil {
-		return &psmdbv1.PMMSpec{Enabled: false}, nil
+		// Server-side apply turns a previously populated struct applied as {}
+		// into null, which the CRD rejects, so never empty pmm.resources.
+		current := &psmdbv1.PerconaServerMongoDB{}
+		if err := c.Get(current, c.Name()); err != nil && !apierrors.IsNotFound(err) {
+			return nil, fmt.Errorf("get PerconaServerMongoDB for PMM resources: %w", err)
+		}
+		return &psmdbv1.PMMSpec{Enabled: false, Resources: current.Spec.PMM.Resources}, nil
 	}
 
 	spec, err := c.ProviderSpec()
