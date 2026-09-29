@@ -766,7 +766,34 @@ func TestValidatePSMDB(t *testing.T) {
 				"MONGODB_DATABASE_ADMIN_PASSWORD":  "database-admin-secret",
 				"MONGODB_USER_ADMIN_PASSWORD":      "user-admin-secret",
 			}),
-			expectErr: `user secret "user-secret" is missing key "MONGODB_USER_ADMIN_USER"`,
+			expectErr: `user secret "user-secret" is missing "MONGODB_USER_ADMIN_USER"`,
+		},
+		{
+			name: "external backup with userSecretRef empty MONGODB_USER_ADMIN_USER",
+			instance: &corev1alpha1.Instance{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-instance"},
+				Spec: corev1alpha1.InstanceSpec{
+					DataSource:    dataSourceBackup("imported-backup"),
+					UserSecretRef: &commonv1alpha1.SecretRef{Name: "user-secret"},
+					Components: map[string]corev1alpha1.ComponentSpec{
+						common.ComponentEngine: validEngine,
+					},
+				},
+			},
+			backup: backupWithOrigin("imported-backup", backupv1alpha1.BackupOriginTypeExternal),
+			secret: userSecret("user-secret", map[string]string{
+				"MONGODB_BACKUP_USER":              "backup",
+				"MONGODB_BACKUP_PASSWORD":          "backup-secret",
+				"MONGODB_CLUSTER_ADMIN_USER":       "clusterAdmin",
+				"MONGODB_CLUSTER_ADMIN_PASSWORD":   "cluster-admin-secret",
+				"MONGODB_CLUSTER_MONITOR_USER":     "clusterMonitor",
+				"MONGODB_CLUSTER_MONITOR_PASSWORD": "cluster-monitor-secret",
+				"MONGODB_DATABASE_ADMIN_USER":      "databaseAdmin",
+				"MONGODB_DATABASE_ADMIN_PASSWORD":  "database-admin-secret",
+				"MONGODB_USER_ADMIN_USER":          "",
+				"MONGODB_USER_ADMIN_PASSWORD":      "user-admin-secret",
+			}),
+			expectErr: `user secret "user-secret" is missing "MONGODB_USER_ADMIN_USER"`,
 		},
 		{
 			name: "backup not found",

@@ -229,14 +229,14 @@ func validateUserSecret(c *controller.Context) error {
 			// If any are missing, the operator generates missing keys causing
 			// the authentication to fail after restore.
 			for _, key := range userSecretKeys {
-				if _, ok := secret.Data[key]; ok {
+				if v, ok := secret.Data[key]; ok && string(v) != "" {
 					continue
 				}
-				if _, ok := secret.StringData[key]; ok {
+				if v, ok := secret.StringData[key]; ok && v != "" {
 					continue
 				}
 
-				return fmt.Errorf("user secret %q is missing key %q", secret.Name, key)
+				return fmt.Errorf("user secret %q is missing %q", secret.Name, key)
 			}
 
 		default:
