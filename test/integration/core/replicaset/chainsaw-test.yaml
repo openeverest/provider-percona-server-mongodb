@@ -6,7 +6,7 @@ metadata:
 spec:
   description: |
     Lifecycle of a replica-set Instance: create, scale, affinity and expose
-    updates, deletion, and a single-node cluster.
+    updates, deletion, seeding credentials, and a single-node cluster.
   catch:
     - script:
         content: kubectl -n $NAMESPACE get instance,psmdb -o yaml
@@ -108,6 +108,40 @@ spec:
             apiVersion: v1
             kind: Secret
             name: test-psmdb-cluster-conn
+            for:
+              deletion: {}
+
+    - name: create-cluster-with-user-secret
+      try:
+        - apply:
+            file: 30-create-cluster-user-secret.yaml
+        - assert:
+            file: 30-assert.yaml
+
+    - name: delete-cluster-with-user-secret
+      try:
+        - script:
+            content: |
+              kubectl -n $NAMESPACE delete in/test-psmdb-user-secret psmdb/test-psmdb-user-secret --wait=false && sleep 5
+              kubectl -n $NAMESPACE delete secret/everest-secrets-test-psmdb-user-secret secret/test-psmdb-user-credentials --ignore-not-found
+              # The PSMDB operator is scaled to 0, so nothing processes the psmdb finalizers.
+              kubectl -n $NAMESPACE patch psmdb/test-psmdb-user-secret -p '{"metadata":{"finalizers":null}}' --type merge
+        - wait:
+            apiVersion: core.openeverest.io/v1alpha1
+            kind: Instance
+            name: test-psmdb-user-secret
+            for:
+              deletion: {}
+        - wait:
+            apiVersion: psmdb.percona.com/v1
+            kind: PerconaServerMongoDB
+            name: test-psmdb-user-secret
+            for:
+              deletion: {}
+        - wait:
+            apiVersion: v1
+            kind: Secret
+            name: everest-secrets-test-psmdb-user-secret
             for:
               deletion: {}
 
