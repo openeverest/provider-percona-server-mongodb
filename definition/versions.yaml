@@ -1,9 +1,10 @@
 # Component type version catalog.
 # Add new versions here when upstream releases are available.
-# Mark exactly one version per type as `default: true`.
+# Name the default version per type via `defaultVersion`.
 
 componentTypes:
   mongod:
+    defaultVersion: "8.0.12-4"
     versions:
     - version: "6.0.19-16"
       image: percona/percona-server-mongodb:6.0.19-16-multi
@@ -17,26 +18,25 @@ componentTypes:
       image: percona/percona-server-mongodb:8.0.8-3
     - version: "8.0.12-4"
       image: percona/percona-server-mongodb:8.0.12-4
-      default: true
   backup:
+    defaultVersion: "2.12.0"
     versions:
     - version: "2.12.0"
       image: percona/percona-backup-mongodb:2.12.0
-      default: true
   pmm:
+    defaultVersion: "3.7.0"
     versions:
     - version: "2.44.1"
       image: percona/pmm-client:2.44.1
     - version: "3.7.0"
       image: percona/pmm-client:3.7.0
-      default: true
 
 # Version bundles — curated sets of component versions known to work together.
 # Users set spec.version on an Instance to select a bundle.
-# The bundle with default: true is used when spec.version is omitted.
+# The bundle named by defaultVersion is used when spec.version is omitted.
+defaultVersion: "8.0.12"
 versions:
 - name: "8.0.12"
-  default: true
   components:
     engine: "8.0.12-4"
     configServer: "8.0.12-4"

@@ -11,7 +11,7 @@ spec:
       name: percona-backup-mongodb
     storages:
       - storageRef:
-          name: minio-storage
+          name: seaweedfs-storage
   topology:
     type: replicaset
   components:

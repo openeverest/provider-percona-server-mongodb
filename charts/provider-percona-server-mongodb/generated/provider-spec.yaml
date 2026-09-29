@@ -3,11 +3,12 @@
 spec:
   componentTypes:
     backup:
+      defaultVersion: 2.12.0
       versions:
-        - default: true
-          image: percona/percona-backup-mongodb:2.12.0
+        - image: percona/percona-backup-mongodb:2.12.0
           version: 2.12.0
     mongod:
+      defaultVersion: 8.0.12-4
       versions:
         - image: percona/percona-server-mongodb:6.0.19-16-multi
           version: 6.0.19-16
@@ -19,15 +20,14 @@ spec:
           version: 8.0.4-1
         - image: percona/percona-server-mongodb:8.0.8-3
           version: 8.0.8-3
-        - default: true
-          image: percona/percona-server-mongodb:8.0.12-4
+        - image: percona/percona-server-mongodb:8.0.12-4
           version: 8.0.12-4
     pmm:
+      defaultVersion: 3.7.0
       versions:
         - image: percona/pmm-client:2.44.1
           version: 2.44.1
-        - default: true
-          image: percona/pmm-client:3.7.0
+        - image: percona/pmm-client:3.7.0
           version: 3.7.0
   components:
     backupAgent:
@@ -64,8 +64,9 @@ spec:
               type: string
           type: object
       type: mongod
+  defaultVersion: 8.0.12
   release:
-    version: 0.1.0
+    version: 0.3.0
   secrets:
     user:
       parametersSchema:
@@ -568,7 +569,6 @@ spec:
         engine: 8.0.12-4
         monitoring: 3.7.0
         proxy: 8.0.12-4
-      default: true
       name: 8.0.12
     - components:
         backupAgent: 2.12.0
