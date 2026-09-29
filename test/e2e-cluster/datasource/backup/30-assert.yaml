@@ -11,7 +11,7 @@ spec:
       name: percona-backup-mongodb
     storages:
       - storageRef:
-          name: minio-storage
+          name: seaweedfs-storage
   topology:
     type: replicaset
   components:
@@ -36,12 +36,12 @@ spec:
   backup:
     enabled: true
     storages:
-      minio-storage:
+      seaweedfs-storage:
         type: s3
         s3:
           bucket: everest-operator
-          credentialsSecret: minio-credentials
-          endpointUrl: https://minio.minio.svc
+          credentialsSecret: seaweedfs-credentials
+          endpointUrl: https://seaweedfs.seaweedfs.svc
           insecureSkipTLSVerify: true
           region: us-east-1
   pmm:

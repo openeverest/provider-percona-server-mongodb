@@ -141,6 +141,21 @@ func validateEngine(c *controller.Context) error {
 	return nil
 }
 
+// userSecretKeys are the credential keys required for restoring from
+// an external backup.
+var userSecretKeys = []string{
+	"MONGODB_BACKUP_USER",
+	"MONGODB_BACKUP_PASSWORD",
+	"MONGODB_CLUSTER_ADMIN_USER",
+	"MONGODB_CLUSTER_ADMIN_PASSWORD",
+	"MONGODB_CLUSTER_MONITOR_USER",
+	"MONGODB_CLUSTER_MONITOR_PASSWORD",
+	"MONGODB_DATABASE_ADMIN_USER",
+	"MONGODB_DATABASE_ADMIN_PASSWORD",
+	"MONGODB_USER_ADMIN_USER",
+	"MONGODB_USER_ADMIN_PASSWORD",
+}
+
 // validateUserSecret validates the Secret referenced by spec.userSecretRef
 // against the provider's secret schema, and enforces whether the field is
 // required or forbidden given the configured data source.
@@ -149,66 +164,107 @@ func validateUserSecret(c *controller.Context) error {
 
 	ds := c.Instance().Spec.DataSource
 
-	if ds != nil {
-		switch ds.Type {
-		case backupv1alpha1.DataSourceTypePointInTime:
-			// The credentials must come from live Instance.
-			if userSecretRef != nil {
-				return fmt.Errorf(
-					"spec.userSecretRef must not be set when seeding " +
-						"from an Instance; the credentials are inherited " +
-						"from the source Instance",
-				)
-			}
-		case backupv1alpha1.DataSourceTypeBackup:
-			srcBackup := &backupv1alpha1.Backup{}
-			if err := c.Get(srcBackup, ds.Backup.BackupRef.Name); err != nil {
-				return fmt.Errorf("get Backup %q: %w", ds.Backup.BackupRef.Name, err)
-			}
-
-			switch srcBackup.Spec.Origin.Type {
-			case backupv1alpha1.BackupOriginTypeInstance:
-				// The credentials must come from live Instance.
-				if userSecretRef != nil {
-					return fmt.Errorf(
-						"spec.userSecretRef must not be set when seeding " +
-							"from an Instance; the credentials are inherited " +
-							"from the source Instance",
-					)
-				}
-			case backupv1alpha1.BackupOriginTypeExternal:
-				// Backup from a BackupStorage: user must supply userSecretRef.
-				if userSecretRef == nil {
-					return fmt.Errorf(
-						"spec.userSecretRef is required when seeding " +
-							"from an external backup; it must match the credentials " +
-							"of the Instance that produced the backup",
-					)
-				}
-			}
+	if ds == nil {
+		// User secret is optional for fresh instances, but if supplied it must
+		// conform to the schema.
+		if userSecretRef == nil {
+			return nil
 		}
-	}
 
-	// Nothing to validate when no secret is referenced.
-	if userSecretRef == nil {
+		if _, err := validateUserSecretSchema(c, userSecretRef.Name); err != nil {
+			return err
+		}
+
 		return nil
 	}
 
+	switch ds.Type {
+	case backupv1alpha1.DataSourceTypePointInTime:
+		// The credentials must come from live Instance.
+		if userSecretRef == nil {
+			return nil
+		}
+
+		return fmt.Errorf(
+			"spec.userSecretRef must not be set when seeding " +
+				"from an Instance; the credentials are inherited " +
+				"from the source Instance",
+		)
+
+	case backupv1alpha1.DataSourceTypeBackup:
+		srcBackup := &backupv1alpha1.Backup{}
+		if err := c.Get(srcBackup, ds.Backup.BackupRef.Name); err != nil {
+			return fmt.Errorf("get Backup %q: %w", ds.Backup.BackupRef.Name, err)
+		}
+
+		switch srcBackup.Spec.Origin.Type {
+		case backupv1alpha1.BackupOriginTypeInstance:
+			// The credentials must come from live Instance.
+			if userSecretRef == nil {
+				return nil
+			}
+
+			return fmt.Errorf(
+				"spec.userSecretRef must not be set when seeding " +
+					"from an Instance; the credentials are inherited " +
+					"from the source Instance",
+			)
+
+		case backupv1alpha1.BackupOriginTypeExternal:
+			// Backup from a BackupStorage: user must supply userSecretRef.
+			if userSecretRef == nil {
+				return fmt.Errorf(
+					"spec.userSecretRef is required when seeding " +
+						"from an external backup; it must match the credentials " +
+						"of the Instance that produced the backup",
+				)
+			}
+
+			secret, err := validateUserSecretSchema(c, userSecretRef.Name)
+			if err != nil {
+				return err
+			}
+
+			// User secret must contain all MONGODB_* keys to be valid.
+			// If any are missing, the operator generates missing keys causing
+			// the authentication to fail after restore.
+			for _, key := range userSecretKeys {
+				if v, ok := secret.Data[key]; ok && string(v) != "" {
+					continue
+				}
+				if v, ok := secret.StringData[key]; ok && v != "" {
+					continue
+				}
+
+				return fmt.Errorf("user secret %q is missing %q", secret.Name, key)
+			}
+
+		default:
+			return fmt.Errorf("unknown origin type %q", srcBackup.Spec.Origin.Type)
+		}
+	}
+
+	return nil
+}
+
+// validateUserSecretSchema fetches the referenced Secret and validates it against
+// the provider's secret schema.
+func validateUserSecretSchema(c *controller.Context, secretName string) (*corev1.Secret, error) {
 	secret := &corev1.Secret{}
-	if err := c.Get(secret, userSecretRef.Name); err != nil {
-		return fmt.Errorf("failed to get user secret %q: %w", userSecretRef.Name, err)
+	if err := c.Get(secret, secretName); err != nil {
+		return nil, fmt.Errorf("get user secret %q: %w", secretName, err)
 	}
 
 	providerSpec, err := c.ProviderSpec()
 	if err != nil {
-		return fmt.Errorf("failed to get provider spec: %w", err)
+		return nil, fmt.Errorf("get provider spec: %w", err)
 	}
 
 	if err := controller.ValidateSecretSchema(secret, providerSpec); err != nil {
-		return fmt.Errorf("user secret %q validation failed: %w", userSecretRef.Name, err)
+		return nil, fmt.Errorf("user secret %q validation failed: %w", secretName, err)
 	}
 
-	return nil
+	return secret, nil
 }
 
 // validateDataSource validates the dataSource spec.

@@ -22,14 +22,15 @@ package user
 
 // UserSecretData describes the expected data keys for creating initial users.
 type UserSecretData struct {
-	MongoDBBackupUser             string `json:"MONGODB_BACKUP_USER"`
-	MongoDBBackupPassword         string `json:"MONGODB_BACKUP_PASSWORD"`
-	MongoDBClusterAdminUser       string `json:"MONGODB_CLUSTER_ADMIN_USER"`
-	MongoDBClusterAdminPassword   string `json:"MONGODB_CLUSTER_ADMIN_PASSWORD"`
-	MongoDBClusterMonitorUser     string `json:"MONGODB_CLUSTER_MONITOR_USER"`
-	MongoDBClusterMonitorPassword string `json:"MONGODB_CLUSTER_MONITOR_PASSWORD"`
-	MongoDBDatabaseAdminUser      string `json:"MONGODB_DATABASE_ADMIN_USER"`
-	MongoDBDatabaseAdminPassword  string `json:"MONGODB_DATABASE_ADMIN_PASSWORD"`
-	MongoDBUserAdminUser          string `json:"MONGODB_USER_ADMIN_USER"`
-	MongoDBUserAdminPassword      string `json:"MONGODB_USER_ADMIN_PASSWORD"`
+	MongoDBBackupUser             string `json:"MONGODB_BACKUP_USER,omitempty"`
+	MongoDBBackupPassword         string `json:"MONGODB_BACKUP_PASSWORD,omitempty"`
+	MongoDBClusterAdminUser       string `json:"MONGODB_CLUSTER_ADMIN_USER,omitempty"`
+	MongoDBClusterAdminPassword   string `json:"MONGODB_CLUSTER_ADMIN_PASSWORD,omitempty"`
+	MongoDBClusterMonitorUser     string `json:"MONGODB_CLUSTER_MONITOR_USER,omitempty"`
+	MongoDBClusterMonitorPassword string `json:"MONGODB_CLUSTER_MONITOR_PASSWORD,omitempty"`
+	MongoDBDatabaseAdminUser      string `json:"MONGODB_DATABASE_ADMIN_USER,omitempty"`
+	MongoDBDatabaseAdminPassword  string `json:"MONGODB_DATABASE_ADMIN_PASSWORD,omitempty"`
+	MongoDBUserAdminUser          string `json:"MONGODB_USER_ADMIN_USER,omitempty"`
+	MongoDBUserAdminPassword      string `json:"MONGODB_USER_ADMIN_PASSWORD,omitempty"`
+	PMMServerToken                string `json:"PMM_SERVER_TOKEN,omitempty"`
 }
