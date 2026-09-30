@@ -391,12 +391,18 @@ func (p *PSMDBProvider) SyncRestore(c *controller.Context, restore *backupv1alph
 		operatorBackupName = sourceBackup.Status.OperatorBackupRef.Name
 	}
 
-	// Imported backups reference data already sitting in a BackupStorage;
-	// there is no PerconaServerMongoDBBackup to resolve by name.
-	// Build the restore's BackupSource directly from the storage descriptor and external path.
-	external := sourceBackup.Spec.Origin.Type == backupv1alpha1.BackupOriginTypeExternal
 	var externalSource *psmdbv1.PerconaServerMongoDBBackupStatus
-	if external {
+	var sourceOpBackup *psmdbv1.PerconaServerMongoDBBackup
+	var crossCluster bool
+
+	external := sourceBackup.Spec.Origin.Type == backupv1alpha1.BackupOriginTypeExternal
+
+	switch sourceBackup.Spec.Origin.Type {
+	case backupv1alpha1.BackupOriginTypeExternal:
+		// External backups reference data already sitting in a BackupStorage;
+		// there is no PerconaServerMongoDBBackup to resolve by name.
+		// Build the restore's BackupSource directly from the storage
+		// descriptor and external path.
 		externalSource, exec, err = buildExternalBackupSource(c, sourceBackup)
 		if err != nil {
 			return controller.RestoreExecutionStatus{}, err
@@ -405,32 +411,34 @@ func (p *PSMDBProvider) SyncRestore(c *controller.Context, restore *backupv1alph
 		if externalSource == nil {
 			return exec, nil
 		}
-	}
 
-	// Detect cross-cluster restores. When the source Backup was produced by a
-	// different live Instance, fetch its PerconaServerMongoDBBackup so we can copy
-	// the destination/storage spec into Spec.BackupSource.
-	// Import is not cross-cluster: the source Instance is not live.
-	crossCluster := sourceBackup.Spec.Origin.InstanceRef != nil &&
-		sourceBackup.Spec.Origin.InstanceRef.Name != c.Name()
-	var sourceOpBackup *psmdbv1.PerconaServerMongoDBBackup
-	if crossCluster {
-		sourceOpBackup = &psmdbv1.PerconaServerMongoDBBackup{}
-		if err := c.Get(sourceOpBackup, operatorBackupName); err != nil {
-			if apierrors.IsNotFound(err) {
+	case backupv1alpha1.BackupOriginTypeInstance:
+		// Detect cross-cluster restores. When the source Backup was produced by a
+		// different live Instance, fetch its PerconaServerMongoDBBackup so we can copy
+		// the destination/storage spec into Spec.BackupSource.
+		crossCluster = sourceBackup.Spec.Origin.InstanceRef != nil &&
+			sourceBackup.Spec.Origin.InstanceRef.Name != c.Name()
+		if crossCluster {
+			sourceOpBackup = &psmdbv1.PerconaServerMongoDBBackup{}
+			if err := c.Get(sourceOpBackup, operatorBackupName); err != nil {
+				if apierrors.IsNotFound(err) {
+					return controller.RestoreExecutionStatus{
+						State:   backupv1alpha1.RestoreStatePending,
+						Message: fmt.Sprintf("waiting for source PerconaServerMongoDBBackup %q", operatorBackupName),
+					}, nil
+				}
+				return controller.RestoreExecutionStatus{}, fmt.Errorf("get source PSMDB backup %q: %w", operatorBackupName, err)
+			}
+			if sourceOpBackup.Status.Destination == "" {
 				return controller.RestoreExecutionStatus{
 					State:   backupv1alpha1.RestoreStatePending,
-					Message: fmt.Sprintf("waiting for source PerconaServerMongoDBBackup %q", operatorBackupName),
+					Message: fmt.Sprintf("source PerconaServerMongoDBBackup %q has no destination yet", operatorBackupName),
 				}, nil
 			}
-			return controller.RestoreExecutionStatus{}, fmt.Errorf("get source PSMDB backup %q: %w", operatorBackupName, err)
 		}
-		if sourceOpBackup.Status.Destination == "" {
-			return controller.RestoreExecutionStatus{
-				State:   backupv1alpha1.RestoreStatePending,
-				Message: fmt.Sprintf("source PerconaServerMongoDBBackup %q has no destination yet", operatorBackupName),
-			}, nil
-		}
+
+	default:
+		return controller.RestoreExecutionStatus{}, fmt.Errorf("unsupported restore source type %q", sourceBackup.Spec.Origin.Type)
 	}
 
 	psmdbRestore := &psmdbv1.PerconaServerMongoDBRestore{
@@ -444,13 +452,12 @@ func (p *PSMDBProvider) SyncRestore(c *controller.Context, restore *backupv1alph
 		psmdbRestore.Spec.ClusterName = c.Name()
 		switch {
 		case external:
-			// Restore from imported data: PSMDB reads the dump straight from
-			// the storage descriptor built from the Backup's storageRef and
-			// external path. StorageName is deliberately left empty: when set,
-			// the operator's getStorage resolves the cluster's registered
-			// storage (whose prefix is empty) instead of the backupSource S3
-			// spec, so its psmdb prefix would be lost and PBM would look for
-			// the backup metadata at the bucket root.
+			// PSMDB reads the dump straight from the storage descriptor built
+			// from the Backup's storageRef and external path. spec.storageName is
+			// deliberately left empty: when set, the operator resolves the
+			// cluster's registered storage (whose prefix is empty) instead
+			// of the spec.backupSource S3 spec, so its psmdb prefix would be
+			// lost and PBM would look for the backup metadata at the bucket root.
 			psmdbRestore.Spec.BackupSource = externalSource
 			psmdbRestore.Spec.StorageName = ""
 			psmdbRestore.Spec.BackupName = ""
@@ -510,7 +517,7 @@ func (p *PSMDBProvider) SyncRestore(c *controller.Context, restore *backupv1alph
 }
 
 // buildExternalBackupSource builds the PSMDB restore BackupSource for an
-// imported Backup (origin.type External). The data already lives in the
+// external Backup (origin.type External). The data already lives in the
 // referenced BackupStorage at origin.external.path, so the descriptor is
 // assembled directly from the storage's S3 spec.
 func buildExternalBackupSource(
@@ -533,12 +540,14 @@ func buildExternalBackupSource(
 				Message: fmt.Sprintf("Waiting for BackupStorage %q", sourceBackup.Spec.StorageRef.Name),
 			}, nil
 		}
-		return nil, controller.RestoreExecutionStatus{}, fmt.Errorf("get BackupStorage %q: %w", sourceBackup.Spec.StorageRef.Name, err)
+
+		return nil, controller.RestoreExecutionStatus{}, fmt.Errorf("get BackupStorage: %w", err)
 	}
+
 	if bs.Spec.S3 == nil {
 		return nil, controller.RestoreExecutionStatus{
 			State:   backupv1alpha1.RestoreStateFailed,
-			Message: fmt.Sprintf("BackupStorage %q is not an S3 storage; only S3 imports are supported", bs.Name),
+			Message: fmt.Sprintf("Only S3 storage is supported: %q", bs.Name),
 		}, nil
 	}
 
