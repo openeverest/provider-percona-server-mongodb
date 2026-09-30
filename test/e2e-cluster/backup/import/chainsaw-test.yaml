@@ -5,7 +5,7 @@ metadata:
 spec:
   description: |
     Import PBM backups from S3-compatible storage as Backup CRs, then restore
-    one into a new Instance: deploy Minio with pre-loaded backup data, create a
+    one into a new Instance. Deploy SeaweedFS with pre-loaded backup data, create a
     BackupImport CR and verify it discovers the backup and materializes an
     external Backup CR, create an Instance bootstrapped with the backup's
     credentials, create a Restore CR that seeds it from the imported Backup,
@@ -26,25 +26,29 @@ spec:
         - assert:
             file: 00-assert.yaml
 
-    - name: deploy-minio
+    - name: deploy-seaweedfs
+      timeouts:
+        exec: 4m
       try:
         - script:
             content: |
-              kubectl apply -f ${OPERATOR_ROOT_PATH}/test/testdata/minio/deploy.yaml
+              kubectl apply -f ${OPERATOR_ROOT_PATH}/dev/resources/seaweedfs.yaml
         - script:
             content: |
-              kubectl wait pod/minio --for=condition=Ready -n minio --timeout=120s
+              kubectl wait deploy/seaweedfs --for=condition=Available -n seaweedfs --timeout=120s
+        # Copy the files to S3 bucket using SeaweedFS's cli tool `weed filer.copy`.
         - script:
             content: |
-              # Upload PSMDB backup data to Minio
-              cat ${OPERATOR_ROOT_PATH}/test/testdata/backups/psmdb.tar | kubectl exec -i minio -n minio -c cp-helper -- tar xf - -C /shared
-              kubectl exec --quiet minio -n minio -c minio -- mc alias set s3 https://minio.minio.svc minioadmin minioadmin --insecure
-              kubectl exec --quiet minio -n minio -c minio -- mc cp --recursive /shared/psmdb s3/everest-operator --insecure
+              SEAWEEDFS_POD="$(kubectl get pod -n seaweedfs -l app=seaweedfs -o jsonpath='{.items[0].metadata.name}')"
+              cat ${OPERATOR_ROOT_PATH}/test/testdata/backups/psmdb.tar \
+                | kubectl exec -i "${SEAWEEDFS_POD}" -n seaweedfs -- tar xf - -C /tmp
+              kubectl exec "${SEAWEEDFS_POD}" -n seaweedfs -- \
+                weed filer.copy /tmp/psmdb http://localhost:8888/buckets/everest-operator/
       catch:
         - script:
-            content: kubectl get pods -n minio -o yaml
+            content: kubectl get pods -n seaweedfs -o yaml
         - script:
-            content: kubectl logs -n minio minio -c minio --tail=50
+            content: kubectl logs -n seaweedfs deploy/seaweedfs --tail=50
 
     - name: setup-storage-and-class
       try:
@@ -85,7 +89,7 @@ spec:
             timeout: 60s
             content: |
               IMAGE="$(kubectl get -n ${NAMESPACE} psmdb/psmdb-import-test -o jsonpath='{.spec.image}')"
-              kubectl run -n "${NAMESPACE}" psmdb-client --env="NO_COLOR=1" --image=${IMAGE} --restart=Never --command -- sleep infinity
+              kubectl run -n "${NAMESPACE}" psmdb-client --env="NO_COLOR=1" --image=${IMAGE} --restart=Never --command -- sleep 300
               kubectl wait --for=condition=Ready pod/psmdb-client --timeout=60s -n ${NAMESPACE}
       catch:
         - script:
@@ -119,14 +123,9 @@ spec:
 
     - name: cleanup
       try:
-        # Delete resources not managed by chainsaw's automatic cleanup
-        # (created via script, not apply).
         - script:
             content: |
-              kubectl delete -f ${OPERATOR_ROOT_PATH}/test/testdata/minio/deploy.yaml --wait=false || true
+              kubectl delete instance/psmdb-import-test -n $NAMESPACE --ignore-not-found || true
               kubectl delete pod/psmdb-client -n $NAMESPACE --wait=false || true
-              # The imported Backup CR is provider-created with deletionPolicy
-              # Retain, so chainsaw's automatic cleanup never removes it. Delete
-              # it here so the BackupStorage's in-use-protection finalizer releases
-              # before chainsaw deletes it.
               kubectl delete backup --all -n $NAMESPACE --wait=false || true
+              kubectl delete -f ${OPERATOR_ROOT_PATH}/dev/resources/seaweedfs.yaml --ignore-not-found || true

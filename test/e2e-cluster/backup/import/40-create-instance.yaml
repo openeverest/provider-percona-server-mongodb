@@ -38,12 +38,12 @@ spec:
       name: percona-backup-mongodb
     storages:
       - storageRef:
-          name: minio-storage
+          name: seaweedfs-storage
   dataSource:
     type: Backup
     backup:
       backupRef:
-        name: import-e34bbda7da13a277
+        name: import-f0c20f37c8b68e24
   topology:
     type: replicaset
   components:
