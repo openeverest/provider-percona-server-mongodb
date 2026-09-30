@@ -69,7 +69,6 @@ spec:
         timeouts:
           startingStatus: 120
     enabled: false
-    pitr: {}
     resources:
       limits:
         cpu: 300m
@@ -80,11 +79,9 @@ spec:
     enabled: false
   pmm:
     image: ""
-    resources: {}
   replsets:
   - arbiter:
       enabled: false
-      resources: {}
       size: 0
     configuration: |2
 
@@ -95,12 +92,10 @@ spec:
       type: ClusterIP
     hidden:
       enabled: false
-      resources: {}
       size: 0
     name: rs0
     nonvoting:
       enabled: false
-      resources: {}
       size: 0
     podDisruptionBudget:
       maxUnavailable: 1
@@ -119,7 +114,6 @@ spec:
             storage: 25Gi
   - arbiter:
       enabled: false
-      resources: {}
       size: 0
     configuration: |2
 
@@ -130,12 +124,10 @@ spec:
       type: ClusterIP
     hidden:
       enabled: false
-      resources: {}
       size: 0
     name: rs1
     nonvoting:
       enabled: false
-      resources: {}
       size: 0
     podDisruptionBudget:
       maxUnavailable: 1
@@ -154,7 +146,6 @@ spec:
             storage: 25Gi
   - arbiter:
       enabled: false
-      resources: {}
       size: 0
     configuration: |2
 
@@ -165,12 +156,10 @@ spec:
       type: ClusterIP
     hidden:
       enabled: false
-      resources: {}
       size: 0
     name: rs2
     nonvoting:
       enabled: false
-      resources: {}
       size: 0
     podDisruptionBudget:
       maxUnavailable: 1
@@ -192,23 +181,18 @@ spec:
     sslInternal: test-psmdb-cluster-ssl-internal
     users: everest-secrets-test-psmdb-cluster
   sharding:
-    balancer: {}
     configsvrReplSet:
       arbiter:
         enabled: false
-        resources: {}
         size: 0
       expose:
         enabled: false
       hidden:
         enabled: false
-        resources: {}
         size: 0
       nonvoting:
         enabled: false
-        resources: {}
         size: 0
-      resources: {}
       size: 3
       volumeSpec:
         persistentVolumeClaim:
@@ -219,9 +203,7 @@ spec:
     mongos:
       expose:
         type: ClusterIP
-      resources: {}
       size: 3
-  unsafeFlags: {}
   updateStrategy: SmartUpdate
   upgradeOptions:
     apply: disabled
