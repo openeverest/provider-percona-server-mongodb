@@ -1,0 +1,35 @@
+apiVersion: backup.openeverest.io/v1alpha1
+kind: BackupImport
+metadata:
+  name: seaweedfs-import
+spec:
+  classRef:
+    name: percona-backup-mongodb
+  storageRef:
+    name: seaweedfs-storage
+status:
+  state: Succeeded
+  discoveredCount: 1
+  createdCount: 1
+---
+apiVersion: backup.openeverest.io/v1alpha1
+kind: Backup
+metadata:
+  # The Backup CR name is a deterministic hash derived from the BackupStorage
+  # name and the backup path.
+  name: import-f0c20f37c8b68e24
+  labels:
+    backup.openeverest.io/backup-import: seaweedfs-import
+spec:
+  origin:
+    type: External
+    external:
+      # Discovered from the PBM backup name in testdata/backups/psmdb.tar.
+      path: psmdb/2025-11-03T09:34:50Z
+  classRef:
+    name: percona-backup-mongodb
+  storageRef:
+    name: seaweedfs-storage
+  deletionPolicy: Retain
+status:
+  state: Succeeded

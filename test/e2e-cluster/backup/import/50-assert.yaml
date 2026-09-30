@@ -1,0 +1,38 @@
+apiVersion: core.openeverest.io/v1alpha1
+kind: Instance
+metadata:
+  name: psmdb-import-test
+status:
+  phase: Restoring
+---
+# The explicit Restore CR seeds the running Instance from the imported
+# (external) Backup CR discovered by the BackupImport.
+apiVersion: backup.openeverest.io/v1alpha1
+kind: Restore
+metadata:
+  name: psmdb-import-test-datasource
+spec:
+  instanceRef:
+    name: psmdb-import-test
+  dataSource:
+    type: Backup
+    backup:
+      backupRef:
+        name: import-f0c20f37c8b68e24
+---
+apiVersion: psmdb.percona.com/v1
+kind: PerconaServerMongoDBRestore
+metadata:
+  name: psmdb-import-test-datasource
+spec:
+  clusterName: psmdb-import-test
+  backupSource:
+    destination: s3://everest-operator/psmdb/2025-11-03T09:34:50Z
+    s3:
+      bucket: everest-operator
+      credentialsSecret: seaweedfs-credentials
+      endpointUrl: https://seaweedfs.seaweedfs.svc
+      forcePathStyle: true
+      insecureSkipTLSVerify: true
+      prefix: psmdb
+      region: us-east-1
