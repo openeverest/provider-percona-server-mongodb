@@ -135,24 +135,16 @@ func copySecretData(c *controller.Context, source, dest, sourceKey, destKey stri
 		return fmt.Errorf("failed to get secret %s: %w", source, err)
 	}
 
-	destSecret := &corev1.Secret{}
-	if err := c.Get(destSecret, dest); err != nil {
-		// If the secret doesn't exist, create it
-		destSecret = &corev1.Secret{ObjectMeta: c.ObjectMeta(dest)}
-	}
-
 	apiKey, ok := sourceSecret.Data[sourceKey]
 	if !ok {
 		return fmt.Errorf("failed to get key %s from secret %s", sourceKey, source)
 	}
 
-	if destSecret.Data == nil {
-		destSecret.Data = make(map[string][]byte)
-	}
-
-	destSecret.Data[destKey] = apiKey
-
-	return c.Apply(destSecret)
+	// Server-side apply owns only destKey; the operator's user keys are left alone.
+	return c.Apply(&corev1.Secret{
+		ObjectMeta: c.ObjectMeta(dest),
+		Data:       map[string][]byte{destKey: apiKey},
+	})
 }
 
 // validateMonitoring validates that an explicitly set PMM client version exists

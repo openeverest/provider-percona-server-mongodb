@@ -269,7 +269,7 @@ func SyncPSMDB(c *controller.Context) error {
 		// When the user seeds initial credentials via spec.userSecretRef, copy
 		// them into the users secret because the secret name is assumed by
 		// connection details.
-		// The source secret is provided by the user, it kept untouched and
+		// The source secret is provided by the user; it is kept untouched and
 		// survives Instance deletion. This may be revised if we decide to
 		// restrict one Instance owns one user-supplied secret.
 		if err := ensureUserSecret(c, ref.Name, usersSecretName); err != nil {

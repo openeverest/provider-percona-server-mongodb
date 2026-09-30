@@ -104,9 +104,16 @@ func buildBackupSpec(c *controller.Context) (psmdbv1.BackupSpec, error) {
 			Message: err.Error(),
 		}
 	}
+	tasks, err := buildPSMDBTasks(backupCfg.Storages)
+	if err != nil {
+		return psmdbv1.BackupSpec{}, &controller.BackupConfigError{
+			Reason:  "RetentionTypeUnsupported",
+			Message: err.Error(),
+		}
+	}
 	bs.Enabled = true
 	bs.Storages = storages
-	bs.Tasks = buildPSMDBTasks(backupCfg.Storages)
+	bs.Tasks = tasks
 	bs.PITR = pitrSpec
 	return bs, nil
 }
@@ -154,8 +161,9 @@ func buildPSMDBPITRSpec(storages []corev1alpha1.InstanceBackupStorage) (psmdbv1.
 // operator's BackupTaskSpec list. Each task's StorageName is taken from the
 // parent storage entry. Disabled schedules are still recorded (the operator
 // honors the Enabled flag) so that toggling a schedule off does not lose its
-// definition. Retention=0 means "keep all".
-func buildPSMDBTasks(storages []corev1alpha1.InstanceBackupStorage) []psmdbv1.BackupTaskSpec {
+// definition. An unset Retention means "keep all". The PSMDB operator only
+// supports count-based retention, so time-based retention is rejected.
+func buildPSMDBTasks(storages []corev1alpha1.InstanceBackupStorage) ([]psmdbv1.BackupTaskSpec, error) {
 	var out []psmdbv1.BackupTaskSpec
 	for _, st := range storages {
 		for _, s := range st.Schedules {
@@ -165,17 +173,20 @@ func buildPSMDBTasks(storages []corev1alpha1.InstanceBackupStorage) []psmdbv1.Ba
 				Schedule:    s.Cron,
 				StorageName: st.StorageRef.Name,
 			}
-			if s.RetentionCopies > 0 {
+			if s.Retention != nil {
+				if s.Retention.Type != corev1alpha1.BackupScheduleRetentionTypeCount {
+					return nil, fmt.Errorf("schedule %q: %s retention is not supported by PSMDB, use count", s.Name, s.Retention.Type)
+				}
 				task.Retention = &psmdbv1.BackupTaskSpecRetention{
 					Type:              psmdbv1.BackupTaskSpecRetentionTypeCount,
-					Count:             int(s.RetentionCopies),
+					Count:             int(*s.Retention.Count),
 					DeleteFromStorage: true,
 				}
 			}
 			out = append(out, task)
 		}
 	}
-	return out
+	return out, nil
 }
 
 // Mirror implements controller.BackupMirror. The runtime invokes Mirror once

@@ -16,18 +16,20 @@ package provider
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/AlekSi/pointer"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
-	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/yaml"
 
 	backupv1alpha1 "github.com/openeverest/openeverest/v2/api/backup/v1alpha1"
 	commonv1alpha1 "github.com/openeverest/openeverest/v2/api/common/v1alpha1"
@@ -38,7 +40,27 @@ import (
 	"github.com/openeverest/provider-percona-server-mongodb/internal/common"
 )
 
-const userSecretDefinition = "database-credentials"
+// userSecretDefinition is the secret definition name the provider actually
+// ships in charts/provider-percona-server-mongodb/generated/provider-spec.yaml.
+const userSecretDefinition = "user"
+
+const providerSpecPath = "../../charts/provider-percona-server-mongodb/generated/provider-spec.yaml"
+
+// loadProviderSpec reads the shipped provider spec so user-secret
+// validation exercises the schema real users hit.
+func loadProviderSpec(t *testing.T) corev1alpha1.ProviderSpec {
+	t.Helper()
+
+	raw, err := os.ReadFile(filepath.Clean(providerSpecPath))
+	require.NoError(t, err)
+
+	var providerSpec struct {
+		Spec corev1alpha1.ProviderSpec `json:"spec"`
+	}
+	require.NoError(t, yaml.Unmarshal(raw, &providerSpec))
+
+	return providerSpec.Spec
+}
 
 func userSecret(name string, data map[string]string) *corev1.Secret {
 	return &corev1.Secret{
@@ -93,7 +115,10 @@ func TestValidatePSMDB(t *testing.T) {
 		},
 	}
 
-	userSecretData := map[string]string{"username": "admin", "password": "secret"}
+	userSecretData := map[string]string{
+		"MONGODB_DATABASE_ADMIN_USER":     "admin",
+		"MONGODB_DATABASE_ADMIN_PASSWORD": "secret",
+	}
 
 	tests := []struct {
 		name      string
@@ -617,7 +642,7 @@ func TestValidatePSMDB(t *testing.T) {
 					},
 				},
 			},
-			expectErr: "failed to get user secret",
+			expectErr: "get user secret",
 		},
 		{
 			name: "userSecret schema validation fails",
@@ -630,7 +655,7 @@ func TestValidatePSMDB(t *testing.T) {
 					},
 				},
 			},
-			secret:    userSecret("user-secret", map[string]string{"username": "admin"}),
+			secret:    userSecret("user-secret", map[string]string{"UNKNOWN_KEY": "value"}),
 			expectErr: "validation failed",
 		},
 		{
@@ -704,7 +729,71 @@ func TestValidatePSMDB(t *testing.T) {
 				},
 			},
 			backup: backupWithOrigin("imported-backup", backupv1alpha1.BackupOriginTypeExternal),
-			secret: userSecret("user-secret", userSecretData),
+			secret: userSecret("user-secret", map[string]string{
+				"MONGODB_BACKUP_USER":              "backup",
+				"MONGODB_BACKUP_PASSWORD":          "backup-secret",
+				"MONGODB_CLUSTER_ADMIN_USER":       "clusterAdmin",
+				"MONGODB_CLUSTER_ADMIN_PASSWORD":   "cluster-admin-secret",
+				"MONGODB_CLUSTER_MONITOR_USER":     "clusterMonitor",
+				"MONGODB_CLUSTER_MONITOR_PASSWORD": "cluster-monitor-secret",
+				"MONGODB_DATABASE_ADMIN_USER":      "databaseAdmin",
+				"MONGODB_DATABASE_ADMIN_PASSWORD":  "database-admin-secret",
+				"MONGODB_USER_ADMIN_USER":          "userAdmin",
+				"MONGODB_USER_ADMIN_PASSWORD":      "user-admin-secret",
+			}),
+		},
+		{
+			name: "external backup with userSecretRef missing MONGODB_USER_ADMIN_USER",
+			instance: &corev1alpha1.Instance{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-instance"},
+				Spec: corev1alpha1.InstanceSpec{
+					DataSource:    dataSourceBackup("imported-backup"),
+					UserSecretRef: &commonv1alpha1.SecretRef{Name: "user-secret"},
+					Components: map[string]corev1alpha1.ComponentSpec{
+						common.ComponentEngine: validEngine,
+					},
+				},
+			},
+			backup: backupWithOrigin("imported-backup", backupv1alpha1.BackupOriginTypeExternal),
+			secret: userSecret("user-secret", map[string]string{
+				"MONGODB_BACKUP_USER":              "backup",
+				"MONGODB_BACKUP_PASSWORD":          "backup-secret",
+				"MONGODB_CLUSTER_ADMIN_USER":       "clusterAdmin",
+				"MONGODB_CLUSTER_ADMIN_PASSWORD":   "cluster-admin-secret",
+				"MONGODB_CLUSTER_MONITOR_USER":     "clusterMonitor",
+				"MONGODB_CLUSTER_MONITOR_PASSWORD": "cluster-monitor-secret",
+				"MONGODB_DATABASE_ADMIN_USER":      "databaseAdmin",
+				"MONGODB_DATABASE_ADMIN_PASSWORD":  "database-admin-secret",
+				"MONGODB_USER_ADMIN_PASSWORD":      "user-admin-secret",
+			}),
+			expectErr: `user secret "user-secret" is missing "MONGODB_USER_ADMIN_USER"`,
+		},
+		{
+			name: "external backup with userSecretRef empty MONGODB_USER_ADMIN_USER",
+			instance: &corev1alpha1.Instance{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-instance"},
+				Spec: corev1alpha1.InstanceSpec{
+					DataSource:    dataSourceBackup("imported-backup"),
+					UserSecretRef: &commonv1alpha1.SecretRef{Name: "user-secret"},
+					Components: map[string]corev1alpha1.ComponentSpec{
+						common.ComponentEngine: validEngine,
+					},
+				},
+			},
+			backup: backupWithOrigin("imported-backup", backupv1alpha1.BackupOriginTypeExternal),
+			secret: userSecret("user-secret", map[string]string{
+				"MONGODB_BACKUP_USER":              "backup",
+				"MONGODB_BACKUP_PASSWORD":          "backup-secret",
+				"MONGODB_CLUSTER_ADMIN_USER":       "clusterAdmin",
+				"MONGODB_CLUSTER_ADMIN_PASSWORD":   "cluster-admin-secret",
+				"MONGODB_CLUSTER_MONITOR_USER":     "clusterMonitor",
+				"MONGODB_CLUSTER_MONITOR_PASSWORD": "cluster-monitor-secret",
+				"MONGODB_DATABASE_ADMIN_USER":      "databaseAdmin",
+				"MONGODB_DATABASE_ADMIN_PASSWORD":  "database-admin-secret",
+				"MONGODB_USER_ADMIN_USER":          "",
+				"MONGODB_USER_ADMIN_PASSWORD":      "user-admin-secret",
+			}),
+			expectErr: `user secret "user-secret" is missing "MONGODB_USER_ADMIN_USER"`,
 		},
 		{
 			name: "backup not found",
@@ -732,22 +821,7 @@ func TestValidatePSMDB(t *testing.T) {
 
 			provider := &corev1alpha1.Provider{
 				ObjectMeta: metav1.ObjectMeta{Name: "psmdb"},
-				Spec: corev1alpha1.ProviderSpec{
-					Secrets: map[string]corev1alpha1.SecretDefinition{
-						userSecretDefinition: {
-							ParametersSchema: &commonv1alpha1.ParametersSchema{
-								OpenAPIV3Schema: &apiextensionsv1.JSONSchemaProps{
-									Type: "object",
-									Properties: map[string]apiextensionsv1.JSONSchemaProps{
-										"username": {Type: "string"},
-										"password": {Type: "string"},
-									},
-									Required: []string{"username", "password"},
-								},
-							},
-						},
-					},
-				},
+				Spec:       loadProviderSpec(t),
 			}
 
 			objects := []client.Object{provider, tt.instance}

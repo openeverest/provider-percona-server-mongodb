@@ -151,6 +151,59 @@ func TestBuildPSMDBPITRSpec(t *testing.T) {
 	}
 }
 
+func TestBuildPSMDBTasksRetention(t *testing.T) {
+	tests := []struct {
+		name      string
+		retention *corev1alpha1.BackupScheduleRetention
+		want      *psmdbv1.BackupTaskSpecRetention
+		wantErr   string
+	}{
+		{
+			name: "unset retention keeps all backups",
+		},
+		{
+			name: "count retention maps to the operator's count retention",
+			retention: &corev1alpha1.BackupScheduleRetention{
+				Type:  corev1alpha1.BackupScheduleRetentionTypeCount,
+				Count: new(int32(7)),
+			},
+			want: &psmdbv1.BackupTaskSpecRetention{
+				Type:              psmdbv1.BackupTaskSpecRetentionTypeCount,
+				Count:             7,
+				DeleteFromStorage: true,
+			},
+		},
+		{
+			name: "time retention is rejected",
+			retention: &corev1alpha1.BackupScheduleRetention{
+				Type:     corev1alpha1.BackupScheduleRetentionTypeTime,
+				Duration: "30d",
+			},
+			wantErr: `schedule "daily": time retention is not supported by PSMDB`,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			storages := []corev1alpha1.InstanceBackupStorage{{
+				StorageRef: commonv1alpha1.ObjectRef{Name: "s3"},
+				Schedules: []corev1alpha1.InstanceBackupSchedule{
+					{Name: "daily", Enabled: true, Cron: "0 2 * * *", Retention: tc.retention},
+				},
+			}}
+
+			got, err := buildPSMDBTasks(storages)
+			if tc.wantErr != "" {
+				require.ErrorContains(t, err, tc.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			require.Len(t, got, 1)
+			assert.Equal(t, tc.want, got[0].Retention)
+		})
+	}
+}
+
 func TestBackupStorageStatuses(t *testing.T) {
 	mkTime := func(s string) *metav1.Time {
 		ts, err := time.Parse(time.RFC3339, s)
