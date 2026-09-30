@@ -26,3 +26,13 @@ metadata:
   name: psmdb-import-test-datasource
 spec:
   clusterName: psmdb-import-test
+  backupSource:
+    destination: s3://everest-operator/psmdb/2025-11-03T09:34:50Z
+    s3:
+      bucket: everest-operator
+      credentialsSecret: seaweedfs-credentials
+      endpointUrl: https://seaweedfs.seaweedfs.svc
+      forcePathStyle: true
+      insecureSkipTLSVerify: true
+      prefix: psmdb
+      region: us-east-1
