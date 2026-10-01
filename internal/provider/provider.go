@@ -88,7 +88,7 @@ func defaultSpec() psmdbv1.PerconaServerMongoDBSpec {
 		Sharding: psmdbv1.Sharding{
 			Enabled: false,
 		},
-		VolumeExpansionEnabled: true,
+		VolumeExpansionEnabled: true, //nolint:staticcheck // operator v1.22 still honours it; moving to StorageScaling is separate
 	}
 }
 
