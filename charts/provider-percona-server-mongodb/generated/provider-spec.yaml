@@ -113,6 +113,7 @@ spec:
                 schedulingPolicy:
                   properties:
                     affinity: {}
+                    topologySpreadConstraints: {}
                 service: {}
                 storage: {}
               required:
@@ -140,6 +141,7 @@ spec:
                 schedulingPolicy:
                   properties:
                     affinity: {}
+                    topologySpreadConstraints: {}
                 storage: {}
               required:
                 - storage
@@ -153,6 +155,7 @@ spec:
                 schedulingPolicy:
                   properties:
                     affinity: {}
+                    topologySpreadConstraints: {}
                 storage: {}
               required:
                 - storage
@@ -172,6 +175,7 @@ spec:
                 schedulingPolicy:
                   properties:
                     affinity: {}
+                    topologySpreadConstraints: {}
                 service: {}
       parametersSchema:
         openAPIV3Schema:

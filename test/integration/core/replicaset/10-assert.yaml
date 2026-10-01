@@ -81,6 +81,25 @@ spec:
         cpu: 500m
         memory: 2G
     size: 3
+    affinity:
+      antiAffinityTopologyKey: none
+    topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: kubernetes.io/hostname
+      whenUnsatisfiable: ScheduleAnyway
+      labelSelector:
+        matchLabels:
+          app.kubernetes.io/instance: test-psmdb-cluster
+          app.kubernetes.io/component: mongod
+          app.kubernetes.io/replset: rs0
+    - maxSkew: 1
+      topologyKey: topology.kubernetes.io/zone
+      whenUnsatisfiable: ScheduleAnyway
+      labelSelector:
+        matchLabels:
+          app.kubernetes.io/instance: test-psmdb-cluster
+          app.kubernetes.io/component: mongod
+          app.kubernetes.io/replset: rs0
     volumeSpec:
       persistentVolumeClaim:
         storageClassName: standard

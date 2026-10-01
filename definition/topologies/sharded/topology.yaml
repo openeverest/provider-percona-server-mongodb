@@ -18,9 +18,10 @@ config:
           resources: {}
           replicas: {minimum: 1}
           schedulingPolicy:
-            # Only affinity: the provider reads nothing else off the policy.
+            # The provider reads only these two off the policy.
             properties:
               affinity: {}
+              topologySpreadConstraints: {}
     proxy:
       # mongos routes; it holds no data, so no storage.
       supportedFields:
@@ -28,9 +29,10 @@ config:
           resources: {}
           replicas: {minimum: 1}
           schedulingPolicy:
-            # Only affinity: the provider reads nothing else off the policy.
+            # The provider reads only these two off the policy.
             properties:
               affinity: {}
+              topologySpreadConstraints: {}
           service: {}
     configServer:
       # Internal to the cluster, so no service.
@@ -41,9 +43,10 @@ config:
           resources: {}
           replicas: {minimum: 1}
           schedulingPolicy:
-            # Only affinity: the provider reads nothing else off the policy.
+            # The provider reads only these two off the policy.
             properties:
               affinity: {}
+              topologySpreadConstraints: {}
     backupAgent:
       optional: true
       # Nothing is configurable: the provider hardcodes the PBM sidecar's

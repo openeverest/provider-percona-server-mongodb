@@ -130,6 +130,19 @@ spec:
         cpu: 500m
         memory: 2G
     size: 3
+    affinity:
+      antiAffinityTopologyKey: none
+    topologySpreadConstraints:
+    - topologyKey: kubernetes.io/hostname
+      labelSelector:
+        matchLabels:
+          app.kubernetes.io/component: mongod
+          app.kubernetes.io/replset: rs1
+    - topologyKey: topology.kubernetes.io/zone
+      labelSelector:
+        matchLabels:
+          app.kubernetes.io/component: mongod
+          app.kubernetes.io/replset: rs1
     volumeSpec:
       persistentVolumeClaim:
         resources:
@@ -153,6 +166,19 @@ spec:
         enabled: false
         size: 0
       size: 3
+      affinity:
+        antiAffinityTopologyKey: none
+      topologySpreadConstraints:
+      - topologyKey: kubernetes.io/hostname
+        labelSelector:
+          matchLabels:
+            app.kubernetes.io/component: mongod
+            app.kubernetes.io/replset: cfg
+      - topologyKey: topology.kubernetes.io/zone
+        labelSelector:
+          matchLabels:
+            app.kubernetes.io/component: mongod
+            app.kubernetes.io/replset: cfg
       volumeSpec:
         persistentVolumeClaim:
           resources:
@@ -163,6 +189,17 @@ spec:
       expose:
         type: ClusterIP
       size: 3
+      affinity:
+        antiAffinityTopologyKey: none
+      topologySpreadConstraints:
+      - topologyKey: kubernetes.io/hostname
+        labelSelector:
+          matchLabels:
+            app.kubernetes.io/component: mongos
+      - topologyKey: topology.kubernetes.io/zone
+        labelSelector:
+          matchLabels:
+            app.kubernetes.io/component: mongos
   updateStrategy: SmartUpdate
   upgradeOptions:
     apply: disabled

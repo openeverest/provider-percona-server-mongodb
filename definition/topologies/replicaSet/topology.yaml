@@ -19,9 +19,10 @@ config:
           resources: {}
           replicas: {minimum: 1}
           schedulingPolicy:
-            # Only affinity: the provider reads nothing else off the policy.
+            # The provider reads only these two off the policy.
             properties:
               affinity: {}
+              topologySpreadConstraints: {}
           service: {}
     backupAgent:
       optional: true
