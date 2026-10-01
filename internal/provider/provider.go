@@ -251,6 +251,7 @@ func SyncPSMDB(c *controller.Context) error {
 		}
 		psmdb.Spec.Sharding.Mongos = mongos
 	}
+	applyScheduling(c, psmdb)
 
 	backupSpec, err := buildBackupSpec(c)
 	if err != nil {

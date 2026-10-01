@@ -34,36 +34,12 @@ func configureMongos(c *controller.Context) (*psmdbv1.MongosSpec, error) {
 	_ = c.TryDecodeComponentParameters(proxy, &proxyParams)
 	config := proxyParams.Configuration
 
-	// Set default affinity if none is provided
-	podAffinity := &psmdbv1.PodAffinity{
-		Advanced: &corev1.Affinity{
-			PodAntiAffinity: &corev1.PodAntiAffinity{
-				PreferredDuringSchedulingIgnoredDuringExecution: []corev1.WeightedPodAffinityTerm{
-					{
-						Weight: 1,
-						PodAffinityTerm: corev1.PodAffinityTerm{
-							TopologyKey: "kubernetes.io/hostname",
-						},
-					},
-				},
-			},
-		},
-	}
-
-	// Override with user-provided affinity if specified
-	if proxy.SchedulingPolicy != nil && proxy.SchedulingPolicy.Affinity != nil {
-		podAffinity = &psmdbv1.PodAffinity{
-			Advanced: proxy.SchedulingPolicy.Affinity,
-		}
-	}
-
 	mongosSpec := &psmdbv1.MongosSpec{
 		Size: 3,
 		MultiAZ: psmdbv1.MultiAZ{
 			Resources: corev1.ResourceRequirements{
 				Limits: corev1.ResourceList{},
 			},
-			Affinity: podAffinity,
 		},
 	}
 
