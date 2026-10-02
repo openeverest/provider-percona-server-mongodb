@@ -33,6 +33,7 @@ spec:
 status:
   # status: ready
   phase: Ready
+  (conditions[?type == 'PodsScheduled'] | [0].status): "True"
 ---
 apiVersion: psmdb.percona.com/v1
 kind: PerconaServerMongoDB
