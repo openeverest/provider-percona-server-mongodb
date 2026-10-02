@@ -15,9 +15,13 @@
 package provider
 
 import (
+	"maps"
+
 	psmdbv1 "github.com/percona/percona-server-mongodb-operator/pkg/apis/psmdb/v1"
 	"github.com/percona/percona-server-mongodb-operator/pkg/naming"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 
 	commonv1alpha1 "github.com/openeverest/openeverest/v2/api/common/v1alpha1"
 	"github.com/openeverest/openeverest/v2/provider-runtime/controller"
@@ -51,4 +55,22 @@ func scheduleMultiAZ(az *psmdbv1.MultiAZ, policy *commonv1alpha1.SchedulingPolic
 		az.Affinity = &psmdbv1.PodAffinity{Advanced: policy.Affinity}
 	}
 	az.TopologySpreadConstraints = controller.TopologySpreadConstraints(policy, podLabels)
+}
+
+// PodSelectors matches each component's pods by the labels the operator puts
+// on them, so the runtime can report pods the scheduler cannot place.
+func (p *PSMDBProvider) PodSelectors(c *controller.Context) map[string]labels.Selector {
+	cluster := naming.ClusterLabels(&psmdbv1.PerconaServerMongoDB{ObjectMeta: metav1.ObjectMeta{Name: c.Name()}})
+	ofComponent := func(component string) labels.Selector {
+		l := maps.Clone(cluster)
+		l[naming.LabelKubernetesComponent] = component
+		return labels.SelectorFromSet(l)
+	}
+
+	selectors := map[string]labels.Selector{common.ComponentEngine: ofComponent(naming.ComponentMongod)}
+	if topology := c.Instance().Spec.Topology; topology != nil && topology.Type == "sharded" {
+		selectors[common.ComponentConfigServer] = ofComponent(psmdbv1.ConfigReplSetName)
+		selectors[common.ComponentProxy] = ofComponent(naming.ComponentMongos)
+	}
+	return selectors
 }
