@@ -56,6 +56,10 @@ spec:
                       operator: In
                       values:
                         - another-node-label-value
+        topologySpreadConstraints:
+          - maxSkew: 1
+            topologyKey: kubernetes.io/hostname
+            whenUnsatisfiable: ScheduleAnyway
 status:
   phase: Ready
 ---
@@ -129,6 +133,12 @@ spec:
                       operator: In
                       values:
                         - another-node-label-value
+      topologySpreadConstraints:
+        - topologyKey: kubernetes.io/hostname
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/component: cfg
+              app.kubernetes.io/replset: cfg
     mongos:
       affinity:
         advanced:
