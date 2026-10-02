@@ -82,7 +82,7 @@ spec:
         memory: 2G
     size: 3
     affinity:
-      antiAffinityTopologyKey: none
+      antiAffinityTopologyKey: kubernetes.io/hostname
     (topologySpreadConstraints == null): true
     volumeSpec:
       persistentVolumeClaim:
