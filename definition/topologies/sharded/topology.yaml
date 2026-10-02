@@ -285,9 +285,21 @@ ui:
             multiline: true
             minRows: 3
             maxRows: 8
+        podSchedulingPolicy:
+          uiType: group
+          groupType: toggleable
+          label: "Pod scheduling policy"
+          description: "Control how database pods are scheduled onto nodes using affinity rules."
+          components:
+            policy:
+              uiType: widget
+              widgetType: podSchedulingPolicy
+          componentsOrder:
+            - policy
       componentsOrder:
         - storageClass
         - configuration
+        - podSchedulingPolicy
   sectionsOrder:
     - databaseVersion
     - resources
