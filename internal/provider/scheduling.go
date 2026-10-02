@@ -33,9 +33,10 @@ func applyScheduling(c *controller.Context, psmdb *psmdbv1.PerconaServerMongoDB)
 	if !psmdb.Spec.Sharding.Enabled {
 		return
 	}
-	// The operator always names the config server replset "cfg".
-	cfg := &psmdbv1.ReplsetSpec{Name: psmdbv1.ConfigReplSetName}
-	scheduleMultiAZ(&psmdb.Spec.Sharding.ConfigsvrReplSet.MultiAZ, components[common.ComponentConfigServer].SchedulingPolicy, naming.MongodLabels(psmdb, cfg))
+	// The operator uses "cfg" as both the replset name and the component label of config server pods.
+	cfgLabels := naming.RSLabels(psmdb, &psmdbv1.ReplsetSpec{Name: psmdbv1.ConfigReplSetName})
+	cfgLabels[naming.LabelKubernetesComponent] = psmdbv1.ConfigReplSetName
+	scheduleMultiAZ(&psmdb.Spec.Sharding.ConfigsvrReplSet.MultiAZ, components[common.ComponentConfigServer].SchedulingPolicy, cfgLabels)
 	scheduleMultiAZ(&psmdb.Spec.Sharding.Mongos.MultiAZ, components[common.ComponentProxy].SchedulingPolicy, naming.MongosLabels(psmdb))
 }
 

@@ -172,12 +172,12 @@ spec:
       - topologyKey: kubernetes.io/hostname
         labelSelector:
           matchLabels:
-            app.kubernetes.io/component: mongod
+            app.kubernetes.io/component: cfg
             app.kubernetes.io/replset: cfg
       - topologyKey: topology.kubernetes.io/zone
         labelSelector:
           matchLabels:
-            app.kubernetes.io/component: mongod
+            app.kubernetes.io/component: cfg
             app.kubernetes.io/replset: cfg
       volumeSpec:
         persistentVolumeClaim:
