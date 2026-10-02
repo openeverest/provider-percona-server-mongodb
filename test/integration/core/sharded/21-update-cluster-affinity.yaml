@@ -56,3 +56,7 @@ spec:
                       operator: In
                       values:
                         - another-node-label-value
+        topologySpreadConstraints:
+          - maxSkew: 1
+            topologyKey: kubernetes.io/hostname
+            whenUnsatisfiable: ScheduleAnyway
