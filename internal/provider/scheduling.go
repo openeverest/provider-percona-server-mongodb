@@ -52,3 +52,17 @@ func scheduleMultiAZ(az *psmdbv1.MultiAZ, policy *commonv1alpha1.SchedulingPolic
 	}
 	az.TopologySpreadConstraints = controller.TopologySpreadConstraints(policy, podLabels)
 }
+
+// labelPods labels every component's pods so the runtime counts them into
+// the Instance's status.components. The operator adds them to the pod
+// templates only, never to the StatefulSet selectors.
+func labelPods(c *controller.Context, psmdb *psmdbv1.PerconaServerMongoDB) {
+	for _, rs := range psmdb.Spec.Replsets {
+		rs.Labels = c.PodLabels(common.ComponentEngine)
+	}
+	if !psmdb.Spec.Sharding.Enabled {
+		return
+	}
+	psmdb.Spec.Sharding.ConfigsvrReplSet.Labels = c.PodLabels(common.ComponentConfigServer)
+	psmdb.Spec.Sharding.Mongos.Labels = c.PodLabels(common.ComponentProxy)
+}
