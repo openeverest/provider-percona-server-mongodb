@@ -33,6 +33,12 @@ spec:
 status:
   # status: ready
   phase: Ready
+  # The PSMDB operator is scaled to 0, so the component has no pods.
+  components:
+    - name: engine
+      selector: core.openeverest.io/component=engine,core.openeverest.io/instance=test-psmdb-cluster
+      replicas: 0
+      readyReplicas: 0
 ---
 apiVersion: psmdb.percona.com/v1
 kind: PerconaServerMongoDB

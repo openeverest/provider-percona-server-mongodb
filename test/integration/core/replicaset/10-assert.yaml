@@ -84,6 +84,10 @@ spec:
     affinity:
       antiAffinityTopologyKey: kubernetes.io/hostname
     (topologySpreadConstraints == null): true
+    labels:
+      core.openeverest.io/component: engine
+      core.openeverest.io/instance: test-psmdb-cluster
+      core.openeverest.io/provider: percona-server-mongodb
     volumeSpec:
       persistentVolumeClaim:
         storageClassName: standard

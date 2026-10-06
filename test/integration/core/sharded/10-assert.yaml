@@ -133,6 +133,10 @@ spec:
     affinity:
       antiAffinityTopologyKey: kubernetes.io/hostname
     (topologySpreadConstraints == null): true
+    labels:
+      core.openeverest.io/component: engine
+      core.openeverest.io/instance: test-psmdb-cluster
+      core.openeverest.io/provider: percona-server-mongodb
     volumeSpec:
       persistentVolumeClaim:
         resources:
@@ -159,6 +163,10 @@ spec:
       affinity:
         antiAffinityTopologyKey: kubernetes.io/hostname
       (topologySpreadConstraints == null): true
+      labels:
+        core.openeverest.io/component: configServer
+        core.openeverest.io/instance: test-psmdb-cluster
+        core.openeverest.io/provider: percona-server-mongodb
       volumeSpec:
         persistentVolumeClaim:
           resources:
@@ -172,6 +180,10 @@ spec:
       affinity:
         antiAffinityTopologyKey: none
       (topologySpreadConstraints == null): true
+      labels:
+        core.openeverest.io/component: proxy
+        core.openeverest.io/instance: test-psmdb-cluster
+        core.openeverest.io/provider: percona-server-mongodb
   updateStrategy: SmartUpdate
   upgradeOptions:
     apply: disabled
