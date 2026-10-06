@@ -17,6 +17,7 @@ package provider
 import (
 	psmdbv1 "github.com/percona/percona-server-mongodb-operator/pkg/apis/psmdb/v1"
 	"github.com/percona/percona-server-mongodb-operator/pkg/naming"
+	corev1 "k8s.io/api/core/v1"
 
 	commonv1alpha1 "github.com/openeverest/openeverest/v2/api/common/v1alpha1"
 	"github.com/openeverest/openeverest/v2/provider-runtime/controller"
@@ -28,22 +29,24 @@ import (
 func applyScheduling(c *controller.Context, psmdb *psmdbv1.PerconaServerMongoDB) {
 	components := c.Instance().Spec.Components
 	for _, rs := range psmdb.Spec.Replsets {
-		scheduleMultiAZ(&rs.MultiAZ, components[common.ComponentEngine].SchedulingPolicy, naming.MongodLabels(psmdb, rs))
+		scheduleMultiAZ(&rs.MultiAZ, components[common.ComponentEngine].SchedulingPolicy, naming.MongodLabels(psmdb, rs), corev1.LabelHostname)
 	}
 	if !psmdb.Spec.Sharding.Enabled {
 		return
 	}
-	// The operator always names the config server replset "cfg".
-	cfg := &psmdbv1.ReplsetSpec{Name: psmdbv1.ConfigReplSetName}
-	scheduleMultiAZ(&psmdb.Spec.Sharding.ConfigsvrReplSet.MultiAZ, components[common.ComponentConfigServer].SchedulingPolicy, naming.MongodLabels(psmdb, cfg))
-	scheduleMultiAZ(&psmdb.Spec.Sharding.Mongos.MultiAZ, components[common.ComponentProxy].SchedulingPolicy, naming.MongosLabels(psmdb))
+	// The operator uses "cfg" as both the replset name and the component label of config server pods.
+	cfgLabels := naming.RSLabels(psmdb, &psmdbv1.ReplsetSpec{Name: psmdbv1.ConfigReplSetName})
+	cfgLabels[naming.LabelKubernetesComponent] = psmdbv1.ConfigReplSetName
+	scheduleMultiAZ(&psmdb.Spec.Sharding.ConfigsvrReplSet.MultiAZ, components[common.ComponentConfigServer].SchedulingPolicy, cfgLabels, corev1.LabelHostname)
+	// mongos holds no data, so its replicas may share a node.
+	scheduleMultiAZ(&psmdb.Spec.Sharding.Mongos.MultiAZ, components[common.ComponentProxy].SchedulingPolicy, naming.MongosLabels(psmdb), psmdbv1.AffinityOff)
 }
 
-// scheduleMultiAZ places one component's pods. Spreading comes from topology
-// spread constraints, so the operator's required hostname anti-affinity is
-// switched off unless the user brings their own affinity.
-func scheduleMultiAZ(az *psmdbv1.MultiAZ, policy *commonv1alpha1.SchedulingPolicy, podLabels map[string]string) {
-	az.Affinity = &psmdbv1.PodAffinity{TopologyKey: new(psmdbv1.AffinityOff)}
+// scheduleMultiAZ places one component's pods. Unless the user brings their
+// own affinity, the operator's required anti-affinity keeps the pods in
+// separate antiAffinityKey domains; psmdbv1.AffinityOff disables it.
+func scheduleMultiAZ(az *psmdbv1.MultiAZ, policy *commonv1alpha1.SchedulingPolicy, podLabels map[string]string, antiAffinityKey string) {
+	az.Affinity = &psmdbv1.PodAffinity{TopologyKey: new(antiAffinityKey)}
 	if policy != nil && policy.Affinity != nil {
 		az.Affinity = &psmdbv1.PodAffinity{Advanced: policy.Affinity}
 	}

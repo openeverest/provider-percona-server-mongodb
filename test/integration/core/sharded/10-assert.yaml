@@ -131,18 +131,8 @@ spec:
         memory: 2G
     size: 3
     affinity:
-      antiAffinityTopologyKey: none
-    topologySpreadConstraints:
-    - topologyKey: kubernetes.io/hostname
-      labelSelector:
-        matchLabels:
-          app.kubernetes.io/component: mongod
-          app.kubernetes.io/replset: rs1
-    - topologyKey: topology.kubernetes.io/zone
-      labelSelector:
-        matchLabels:
-          app.kubernetes.io/component: mongod
-          app.kubernetes.io/replset: rs1
+      antiAffinityTopologyKey: kubernetes.io/hostname
+    (topologySpreadConstraints == null): true
     volumeSpec:
       persistentVolumeClaim:
         resources:
@@ -167,18 +157,8 @@ spec:
         size: 0
       size: 3
       affinity:
-        antiAffinityTopologyKey: none
-      topologySpreadConstraints:
-      - topologyKey: kubernetes.io/hostname
-        labelSelector:
-          matchLabels:
-            app.kubernetes.io/component: mongod
-            app.kubernetes.io/replset: cfg
-      - topologyKey: topology.kubernetes.io/zone
-        labelSelector:
-          matchLabels:
-            app.kubernetes.io/component: mongod
-            app.kubernetes.io/replset: cfg
+        antiAffinityTopologyKey: kubernetes.io/hostname
+      (topologySpreadConstraints == null): true
       volumeSpec:
         persistentVolumeClaim:
           resources:
@@ -191,15 +171,7 @@ spec:
       size: 3
       affinity:
         antiAffinityTopologyKey: none
-      topologySpreadConstraints:
-      - topologyKey: kubernetes.io/hostname
-        labelSelector:
-          matchLabels:
-            app.kubernetes.io/component: mongos
-      - topologyKey: topology.kubernetes.io/zone
-        labelSelector:
-          matchLabels:
-            app.kubernetes.io/component: mongos
+      (topologySpreadConstraints == null): true
   updateStrategy: SmartUpdate
   upgradeOptions:
     apply: disabled
