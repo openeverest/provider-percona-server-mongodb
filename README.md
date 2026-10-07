@@ -49,6 +49,7 @@ manages pods directly — all lifecycle work is delegated to the operator.
 
 | provider-percona-server-mongodb | OpenEverest | Percona Operator for MongoDB | Kubernetes |
 |---|---|---|---|
+| `0.4.x` | `2.0.0-dev.4` | `1.22.x` | `1.30` – `1.34` |
 | `0.3.x` | `2.0.0-dev.3` | `1.22.x` | `1.30` – `1.34` |
 | `0.2.x` | `2.0.0-dev.2` | `1.22.x` | `1.30` – `1.34` |
 | `0.1.x` | `2.0.0-dev.1` | `1.22.x` | `1.30` – `1.34` |
@@ -86,7 +87,7 @@ The provider chart is published as an OCI artifact to GitHub Container Registry:
 ```bash
 helm install provider-percona-server-mongodb \
   oci://ghcr.io/openeverest/charts/provider-percona-server-mongodb \
-  --version 0.3.0 \
+  --version 0.4.0 \
   --namespace everest-system
 ```
 
@@ -97,7 +98,7 @@ Upgrade and uninstall:
 
 ```bash
 helm upgrade provider-percona-server-mongodb \
-  oci://ghcr.io/openeverest/charts/provider-percona-server-mongodb --version 0.3.0
+  oci://ghcr.io/openeverest/charts/provider-percona-server-mongodb --version 0.4.0
 helm uninstall provider-percona-server-mongodb --namespace everest-system
 ```
 
