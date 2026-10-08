@@ -32,3 +32,4 @@ spec:
       type: object
   supportedProviders:
     - percona-server-mongodb
+  supportsImport: true

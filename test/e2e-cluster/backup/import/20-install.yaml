@@ -29,6 +29,7 @@ metadata:
 spec:
   displayName: Percona Backup for MongoDB
   executionMode: ProviderManaged
+  supportsImport: true
   supportedProviders:
     - percona-server-mongodb
   providerManaged:
