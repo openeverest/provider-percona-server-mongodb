@@ -5,6 +5,7 @@
 #   displayName/description: human-readable metadata.
 #   supportedProviders: providers this class can be used with.
 #   executionMode: "ProviderManaged" (operator-native) or "Job".
+#   supportsImport: advertise backup import capability to BackupImport validation.
 #   providerManaged.supportsPITR: advertise PITR capability to Restore validation.
 #   providerManaged.limits: caps the runtime enforces against Instance.spec.backup.
 #     maxStorages, maxPITREnabledStorages, maxSchedulesPerStorage — unset means unlimited.
@@ -23,6 +24,7 @@ description: |
 supportedProviders:
   - percona-server-mongodb
 executionMode: ProviderManaged
+supportsImport: true
 
 providerManaged:
   supportsPITR: true
