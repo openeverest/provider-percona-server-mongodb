@@ -167,6 +167,15 @@ jobs:
       suite: sharded
     secrets: inherit
 
+  test-integration-core-admission:
+    name: Integration / core admission
+    needs: [lint, build, verify]
+    uses: ./.github/workflows/integration-test.yaml
+    with:
+      make_target: test-integration-core-admission
+      suite: admission
+    secrets: inherit
+
   test-integration-monitoring-pmm:
     name: Integration / monitoring PMM
     needs: [lint, build, verify]

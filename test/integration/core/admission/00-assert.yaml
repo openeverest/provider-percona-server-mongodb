@@ -1,0 +1,15 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: provider-percona-server-mongodb
+  namespace: provider-system
+status:
+  readyReplicas: 1
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: provider-percona-server-mongodb.openeverest.io
+webhooks:
+  - name: instances.percona-server-mongodb.openeverest.io
+    failurePolicy: Ignore
