@@ -69,17 +69,13 @@ spec:
 
     - name: odd-hidden-rejected
       try:
-        - patch:
-            resource:
-              apiVersion: core.openeverest.io/v1alpha1
-              kind: Instance
-              metadata:
-                name: test-psmdb-hidden
-              spec:
-                components:
-                  hidden:
-                    type: mongod
-                    replicas: 1
+        - script:
+            content: >-
+              kubectl -n $NAMESPACE patch in/test-psmdb-hidden --type merge
+              -p '{"spec":{"components":{"hidden":{"type":"mongod","replicas":1}}}}'
+            check:
+              ($error != null): true
+              (contains($stderr, 'spec.components[hidden].replicas')): true
         - assert:
             file: 50-assert.yaml
 
