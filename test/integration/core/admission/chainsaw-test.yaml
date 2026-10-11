@@ -1,0 +1,111 @@
+---
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: core-admission
+spec:
+  description: |
+    The provider's admission webhook: it rejects an invalid Instance with the
+    field path, admits it while the provider is down, and blocks an update
+    only on errors the stored Instance did not already have.
+  # Scales the provider down, which every other test depends on.
+  concurrent: false
+  catch:
+    - script:
+        content: kubectl -n $NAMESPACE get instance,psmdb -o yaml
+    - podLogs:
+        namespace: provider-system
+        selector: app.kubernetes.io/name=provider-percona-server-mongodb
+        tail: 100
+  steps:
+    - name: provider-ready
+      try:
+        - assert:
+            file: 00-assert.yaml
+
+    - name: reject-invalid
+      try:
+        - script:
+            content: kubectl apply --dry-run=server -n $NAMESPACE -f 10-invalid-cluster.yaml
+            check:
+              ($error != null): true
+              (contains($stderr, 'spec.components[configServer].replicas')): true
+        - script:
+            content: kubectl apply -n $NAMESPACE -f 10-invalid-cluster.yaml
+            check:
+              ($error != null): true
+              (contains($stderr, 'spec.components[configServer].replicas')): true
+        - error:
+            file: 10-error.yaml
+
+    - name: admit-while-provider-down
+      try:
+        - script:
+            timeout: 1m
+            content: |
+              kubectl -n provider-system scale deployment/provider-percona-server-mongodb --replicas=0
+              while kubectl -n provider-system get pods -o name \
+                -l app.kubernetes.io/name=provider-percona-server-mongodb | grep -q .; do
+                sleep 1
+              done
+        - apply:
+            file: 10-invalid-cluster.yaml
+      finally:
+        - script:
+            timeout: 2m
+            content: |
+              kubectl -n provider-system scale deployment/provider-percona-server-mongodb --replicas=1
+              kubectl -n provider-system rollout status deployment/provider-percona-server-mongodb --timeout=110s
+
+    - name: report-once-back
+      try:
+        - assert:
+            file: 20-assert.yaml
+
+    - name: block-new-errors-only
+      try:
+        - script:
+            timeout: 1m
+            content: |
+              # Writes are admitted until the webhook serves again.
+              for i in $(seq 1 25); do
+                kubectl apply --dry-run=server -n $NAMESPACE -f 30-new-error.yaml >/dev/null 2>&1 || break
+                sleep 2
+              done
+              kubectl apply -n $NAMESPACE -f 30-new-error.yaml
+            check:
+              ($error != null): true
+              (contains($stderr, 'spec.components[engine].replicas')): true
+              (contains($stderr, 'spec.components[configServer].replicas')): false
+        - script:
+            content: kubectl apply -n $NAMESPACE -f 31-unrelated-change.yaml
+        - assert:
+            file: 31-assert.yaml
+
+    - name: fix
+      try:
+        - apply:
+            file: 40-fixed-cluster.yaml
+        - assert:
+            file: 40-assert.yaml
+
+    - name: delete-cluster
+      try:
+        - script:
+            content: |
+              kubectl -n $NAMESPACE delete in/test-psmdb-admission psmdb/test-psmdb-admission --wait=false && sleep 5
+              kubectl -n $NAMESPACE delete secret/everest-secrets-test-psmdb-admission --ignore-not-found
+              # The PSMDB operator is scaled to 0, so nothing processes the psmdb finalizers.
+              kubectl -n $NAMESPACE patch psmdb/test-psmdb-admission -p '{"metadata":{"finalizers":null}}' --type merge
+        - wait:
+            apiVersion: core.openeverest.io/v1alpha1
+            kind: Instance
+            name: test-psmdb-admission
+            for:
+              deletion: {}
+        - wait:
+            apiVersion: psmdb.percona.com/v1
+            kind: PerconaServerMongoDB
+            name: test-psmdb-admission
+            for:
+              deletion: {}
