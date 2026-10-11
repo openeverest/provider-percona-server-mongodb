@@ -15,6 +15,9 @@ config:
       supportedFields:
         required: [storage]
         properties:
+          # The engine image comes from image, else version, else the bundle.
+          version: {}
+          image: {}
           storage: {}
           resources: {}
           replicas: {minimum: 1}
@@ -35,6 +38,7 @@ config:
       optional: true
       supportedFields:
         properties:
+          version: {}
           resources: {}
 
 # UI schema: rendering hints for the frontend form.

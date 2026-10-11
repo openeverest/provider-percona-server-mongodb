@@ -147,8 +147,8 @@ func copySecretData(c *controller.Context, source, dest, sourceKey, destKey stri
 	})
 }
 
-// validateMonitoring validates that an explicitly set PMM client version exists
-// in the provider spec and is compatible with the PMM server's major version.
+// validateMonitoring validates that an explicitly set PMM client version is
+// compatible with the PMM server's major version.
 // See: https://docs.percona.com/percona-operator-for-mongodb/monitoring-tutorial.html#considerations
 func validateMonitoring(c *controller.Context) error {
 	mc, err := resolveMonitoringConfig(c)
@@ -170,15 +170,6 @@ func validateMonitoring(c *controller.Context) error {
 	// version is not configured, nothing to validate
 	if monitoring.Version == "" {
 		return nil
-	}
-
-	spec, err := c.ProviderSpec()
-	if err != nil {
-		return fmt.Errorf("get provider spec: %w", err)
-	}
-
-	if controller.GetImageForVersion(spec, common.ComponentMonitoring, monitoring.Version) == "" {
-		return fmt.Errorf("monitoring version %q not found in provider spec", monitoring.Version)
 	}
 
 	serverVersion, err := goversion.NewVersion(string(mc.Status.PMM.ServerVersion))
