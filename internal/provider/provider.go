@@ -156,39 +156,6 @@ func versionLessThan(a, b string) bool {
 	return va.LessThan(vb)
 }
 
-// ValidatePSMDB validates the Instance spec for PSMDB.
-func ValidatePSMDB(c *controller.Context) error {
-	l := log.FromContext(c.Context())
-	l.Info("Validating PSMDB cluster", "cluster", c.Name())
-
-	if err := validateMetadata(c); err != nil {
-		l.Error(err, "Metadata validation failed", "cluster", c.Name())
-		return fmt.Errorf("metadata validation failed: %w", err)
-	}
-
-	if err := validateDataSource(c); err != nil {
-		l.Error(err, "DataSource validation failed", "cluster", c.Name())
-		return fmt.Errorf("dataSource validation failed: %w", err)
-	}
-
-	if err := validateTLS(c); err != nil {
-		l.Error(err, "TLS validation failed", "cluster", c.Name())
-		return fmt.Errorf("tls validation failed: %w", err)
-	}
-
-	if err := validateUserSecret(c); err != nil {
-		l.Error(err, "UserSecret validation failed", "cluster", c.Name())
-		return fmt.Errorf("userSecret validation failed: %w", err)
-	}
-
-	if err := validateComponents(c); err != nil {
-		l.Error(err, "Components validation failed", "cluster", c.Name())
-		return fmt.Errorf("components validation failed: %w", err)
-	}
-
-	return nil
-}
-
 // SyncPSMDB creates or updates the PerconaServerMongoDB resource based on the Instance spec.
 func SyncPSMDB(c *controller.Context) error {
 	l := log.FromContext(c.Context())
@@ -733,11 +700,6 @@ func NewPSMDBProviderInterface() *PSMDBProvider {
 	return p
 }
 
-// Validate validates the Instance spec.
-func (p *PSMDBProvider) Validate(c *controller.Context) error {
-	return ValidatePSMDB(c)
-}
-
 // Sync ensures all resources exist and are configured correctly.
 func (p *PSMDBProvider) Sync(c *controller.Context) error {
 	return SyncPSMDB(c)
@@ -776,6 +738,7 @@ func (p *PSMDBProvider) RestoreWatches() []controller.WatchConfig {
 
 // Compile-time interface checks
 var _ controller.ProviderInterface = (*PSMDBProvider)(nil)
+var _ controller.ReferenceValidator = (*PSMDBProvider)(nil)
 var _ controller.WatchProvider = (*PSMDBProvider)(nil)
 var _ controller.BackupProvider = (*PSMDBProvider)(nil)
 var _ controller.BackupWatcher = (*PSMDBProvider)(nil)

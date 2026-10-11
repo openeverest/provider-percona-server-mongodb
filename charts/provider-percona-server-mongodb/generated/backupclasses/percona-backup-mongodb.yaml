@@ -13,13 +13,31 @@ spec:
   executionMode: ProviderManaged
   parametersSchema:
     openAPIV3Schema:
+      description: |-
+        PerconaBackupParameters describes the parameters accepted by Backup CRs
+        that target this class (spec.parameters). Mirrors the fields surfaced by
+        ui.yaml's `backup` section.
       properties:
         compressionLevel:
+          description: CompressionLevel is the algorithm-specific compression level.
           format: int32
+          maximum: 22
+          minimum: 0
           type: integer
         compressionType:
+          description: CompressionType selects the PBM compression algorithm.
+          enum:
+            - none
+            - gzip
+            - snappy
+            - lz4
+            - zstd
           type: string
         type:
+          description: Type selects between logical and physical PBM backups.
+          enum:
+            - logical
+            - physical
           type: string
       type: object
   providerManaged:
@@ -29,6 +47,11 @@ spec:
     supportsPITR: true
   restoreParametersSchema:
     openAPIV3Schema:
+      description: |-
+        PerconaRestoreParameters describes the parameters accepted by Restore CRs
+        that target this class (spec.parameters). PSMDB does not currently expose
+        restore-time options through OpenEverest; the struct is intentionally
+        empty and ships an empty schema until requirements crystallize.
       type: object
   supportedProviders:
     - percona-server-mongodb

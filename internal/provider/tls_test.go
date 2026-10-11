@@ -333,7 +333,7 @@ func TestAcceptClientsWithoutCertificates(t *testing.T) {
 	})
 }
 
-func TestValidateTLS(t *testing.T) {
+func TestValidateTLSReferences(t *testing.T) {
 	t.Parallel()
 
 	userCertificates := runningPSMDB(func(p *psmdbv1.PerconaServerMongoDB) {
@@ -348,42 +348,17 @@ func TestValidateTLS(t *testing.T) {
 		expectErr string
 	}{
 		{name: "defaults"},
-		{name: "required", tls: &definition.TLSParameters{Mode: definition.TLSModeRequire}},
 		{name: "disabled at creation", tls: &definition.TLSParameters{Mode: definition.TLSModeDisabled}},
-		{name: "unknown mode", tls: &definition.TLSParameters{Mode: "allowTLS"}, expectErr: "mode must be one of"},
-		{
-			name:      "unknown issuer kind",
-			tls:       &definition.TLSParameters{Issuer: &definition.IssuerReference{Name: "ca", Kind: "Vault"}},
-			expectErr: "issuer.kind must be",
-		},
-		{
-			name:      "certificates without TLS",
-			tls:       &definition.TLSParameters{Mode: definition.TLSModeDisabled, CertificateSecretName: "mine"},
-			expectErr: "apply only with TLS enabled",
-		},
-		{
-			name:      "internal certificate alone",
-			tls:       &definition.TLSParameters{InternalCertificateSecretName: "mine"},
-			expectErr: "requires certificateSecretName",
-		},
-		{
-			name: "certificates and issuer",
-			tls: &definition.TLSParameters{
-				CertificateSecretName: "mine",
-				Issuer:                &definition.IssuerReference{Name: "ca"},
-			},
-			expectErr: "either certificate secrets or an issuer",
-		},
 		{
 			name:      "missing certificate secret",
 			tls:       &definition.TLSParameters{CertificateSecretName: "mine"},
-			expectErr: `get certificate secret "mine"`,
+			expectErr: `spec.parameters.tls.certificateSecretName: Not found: "mine"`,
 		},
 		{
 			name:      "incomplete certificate secret",
 			tls:       &definition.TLSParameters{CertificateSecretName: "mine"},
 			objs:      []client.Object{certificateSecret("mine", "tls.crt", "tls.key")},
-			expectErr: `certificate secret "mine" is missing "ca.crt"`,
+			expectErr: `spec.parameters.tls.certificateSecretName: Invalid value: "mine": missing "ca.crt"`,
 		},
 		{
 			name: "complete certificate secret",
@@ -439,13 +414,15 @@ func TestValidateTLS(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			err := validateTLS(tlsContext(t, tt.tls, "", tt.objs...))
+			errs, err := validateTLSReferences(tlsContext(t, tt.tls, "", tt.objs...))
+			require.NoError(t, err)
 
 			if tt.expectErr == "" {
-				require.NoError(t, err)
+				assert.Empty(t, errs)
 				return
 			}
-			require.ErrorContains(t, err, tt.expectErr)
+			require.Len(t, errs, 1)
+			assert.Contains(t, errs[0].Error(), tt.expectErr)
 		})
 	}
 }

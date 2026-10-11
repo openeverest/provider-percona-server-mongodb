@@ -32,8 +32,6 @@ spec:
     # Optional: backup agent
     backupAgent:
       type: backup
-      # version: 2.9.1
-      replicas: 1
 
 # status:
 #   phase: Ready

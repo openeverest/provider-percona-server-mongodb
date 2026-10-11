@@ -1,0 +1,26 @@
+apiVersion: core.openeverest.io/v1alpha1
+kind: Instance
+metadata:
+  name: orders
+spec:
+  providerRef:
+    name: percona-server-mongodb
+  topology:
+    type: sharded
+    parameters:
+      numShards: 2
+  components:
+    engine:
+      replicas: 3
+      storage:
+        size: 1Gi
+      resources:
+        limits:
+          cpu: 600m
+          memory: 512Mi
+    configServer:
+      replicas: 3
+      storage:
+        size: 1Gi
+    proxy:
+      replicas: 2
