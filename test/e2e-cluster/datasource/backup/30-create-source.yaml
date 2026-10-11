@@ -13,7 +13,7 @@ spec:
       - storageRef:
           name: seaweedfs-storage
   topology:
-    type: replicaset
+    type: replicaSet
   components:
     engine:
       type: mongod

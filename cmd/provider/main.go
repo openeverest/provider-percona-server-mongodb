@@ -58,11 +58,8 @@ func main() {
 	}
 
 	opts := []reconciler.ReconcilerOption{
-		// Enable HTTP server for validation endpoint
-		reconciler.WithServer(reconciler.ServerConfig{
-			Port:           serverPort,
-			ValidationPath: "/validate",
-		}),
+		// Serve the health and readiness probes.
+		reconciler.WithServer(reconciler.ServerConfig{Port: serverPort}),
 	}
 
 	if metricsBindAddress != "0" {

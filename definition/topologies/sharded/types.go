@@ -24,7 +24,7 @@ package sharded
 // cluster topology.
 type ShardedTopologyParameters struct {
 	// NumShards specifies the initial number of shards.
-	// +k8s:validation:minimum=1
+	// +kubebuilder:validation:Minimum=1
 	// +default=2
 	// +optional
 	NumShards int32 `json:"numShards,omitempty"`

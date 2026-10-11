@@ -35,32 +35,55 @@ spec:
     configServer:
       parametersSchema:
         openAPIV3Schema:
+          description: MongodParameters defines structured parameters for mongod components.
           properties:
             configuration:
+              description: |-
+                Configuration is the mongod configuration file content (YAML).
+                `configuration` is the conventional property name for the engine
+                configuration file inside a component's parameters (mirrors the
+                upstream Percona `configuration` field).
               type: string
           type: object
       type: mongod
     engine:
       parametersSchema:
         openAPIV3Schema:
+          description: MongodParameters defines structured parameters for mongod components.
           properties:
             configuration:
+              description: |-
+                Configuration is the mongod configuration file content (YAML).
+                `configuration` is the conventional property name for the engine
+                configuration file inside a component's parameters (mirrors the
+                upstream Percona `configuration` field).
               type: string
           type: object
       type: mongod
     monitoring:
       parametersSchema:
         openAPIV3Schema:
+          description: PMMParameters defines structured parameters for PMM monitoring.
           properties:
             monitoringConfigName:
+              description: |-
+                MonitoringConfigName specifies the name of the MonitoringConfig resource
+                to use for configuring PMM monitoring.
+                If not specified, monitoring will not be configured.
               type: string
           type: object
       type: pmm
     proxy:
       parametersSchema:
         openAPIV3Schema:
+          description: MongosParameters defines structured parameters for mongos (proxy) components.
           properties:
             configuration:
+              description: |-
+                Configuration is the mongos configuration file content (YAML).
+                `configuration` is the conventional property name for the engine
+                configuration file inside a component's parameters (mirrors the
+                upstream Percona `configuration` field).
               type: string
           type: object
       type: mongod
@@ -71,6 +94,7 @@ spec:
     user:
       parametersSchema:
         openAPIV3Schema:
+          description: UserSecretData describes the expected data keys for creating initial users.
           properties:
             MONGODB_BACKUP_PASSWORD:
               type: string
@@ -107,6 +131,7 @@ spec:
           supportedFields:
             openAPIV3Schema:
               properties:
+                image: {}
                 replicas:
                   minimum: 1
                 resources: {}
@@ -116,6 +141,7 @@ spec:
                     topologySpreadConstraints: {}
                 service: {}
                 storage: {}
+                version: {}
               required:
                 - storage
         monitoring:
@@ -124,6 +150,7 @@ spec:
             openAPIV3Schema:
               properties:
                 resources: {}
+                version: {}
     sharded:
       components:
         backupAgent:
@@ -149,6 +176,7 @@ spec:
           supportedFields:
             openAPIV3Schema:
               properties:
+                image: {}
                 replicas:
                   minimum: 1
                 resources: {}
@@ -157,6 +185,7 @@ spec:
                     affinity: {}
                     topologySpreadConstraints: {}
                 storage: {}
+                version: {}
               required:
                 - storage
         monitoring:
@@ -165,6 +194,7 @@ spec:
             openAPIV3Schema:
               properties:
                 resources: {}
+                version: {}
         proxy:
           supportedFields:
             openAPIV3Schema:
@@ -179,9 +209,15 @@ spec:
                 service: {}
       parametersSchema:
         openAPIV3Schema:
+          description: |-
+            ShardedTopologyParameters defines structured parameters for the sharded
+            cluster topology.
           properties:
             numShards:
+              default: 2
+              description: NumShards specifies the initial number of shards.
               format: int32
+              minimum: 1
               type: integer
           type: object
   uiSchema:

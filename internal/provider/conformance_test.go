@@ -29,5 +29,8 @@ func TestUISchemaIsReconciled(t *testing.T) {
 func TestSupportedFieldsAreReconciled(t *testing.T) {
 	conformance.SupportedFieldsAreReconciled(t, conformance.Config{
 		Provider: NewPSMDBProviderInterface(),
+		Unverifiable: map[string]string{
+			"spec.components.monitoring.version": "monitoring syncs only against a MonitoringConfig, which an offline render has none of",
+		},
 	})
 }
