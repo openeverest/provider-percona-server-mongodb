@@ -46,9 +46,19 @@ func TestParsePBM(t *testing.T) {
 		want    *backupv1alpha1.Backup
 	}{
 		{
-			name: "backup is discovered",
+			name: "replica-set",
 			key:  "2026-09-01T05:55:39Z.pbm.json",
-			data: `{"name":"2026-09-01T05:55:39Z","type":"logical","status":"done","start_ts":1756705000,"last_transition_ts":1756705060}`,
+			data: `{
+				"name":"2026-09-01T05:55:39Z",
+				"type":"logical",
+				"status":"done",
+				"start_ts":1756705000,
+				"last_transition_ts":1756705060,
+				"mongodb_version":"8.0.19-7",
+				"replsets":[
+					{"name":"rs0"}
+				]
+			}`,
 			want: &backupv1alpha1.Backup{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "import-d973d28935d6e0ab",
@@ -61,6 +71,51 @@ func TestParsePBM(t *testing.T) {
 							Path:        "2026-09-01T05:55:39Z",
 							StartedAt:   metav1.Unix(1756705000, 0),
 							CompletedAt: metav1.Unix(1756705060, 0),
+							SourceMetadata: &backupv1alpha1.BackupSourceMetadata{
+								EngineVersion: "8.0.19-7",
+								BackupType:    "logical",
+								Topology:      "replicaSet",
+							},
+						},
+					},
+					ClassRef:       commonv1alpha1.ObjectRef{Name: "percona-backup-mongodb"},
+					StorageRef:     commonv1alpha1.ObjectRef{Name: "my-s3"},
+					DeletionPolicy: backupv1alpha1.BackupDeletionPolicyRetain,
+				},
+			},
+		},
+		{
+			name: "sharded",
+			key:  "2026-10-08T01:52:10Z.pbm.json",
+			data: `{
+				"name":"2026-10-08T01:52:10Z",
+				"type":"logical",
+				"status":"done",
+				"start_ts":1791424330,
+				"last_transition_ts":1791424356,
+				"mongodb_version":"8.0.12-4",
+				"replsets":[
+					{"name":"rs0"},
+					{"name":"cfg","iscs":true}
+				]
+			}`,
+			want: &backupv1alpha1.Backup{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "import-fc82dae5135a00cc",
+					Namespace: "team-a",
+				},
+				Spec: backupv1alpha1.BackupSpec{
+					Origin: backupv1alpha1.BackupOrigin{
+						Type: backupv1alpha1.BackupOriginTypeExternal,
+						External: &backupv1alpha1.BackupOriginExternal{
+							Path:        "2026-10-08T01:52:10Z",
+							StartedAt:   metav1.Unix(1791424330, 0),
+							CompletedAt: metav1.Unix(1791424356, 0),
+							SourceMetadata: &backupv1alpha1.BackupSourceMetadata{
+								EngineVersion: "8.0.12-4",
+								BackupType:    "logical",
+								Topology:      "sharded",
+							},
 						},
 					},
 					ClassRef:       commonv1alpha1.ObjectRef{Name: "percona-backup-mongodb"},
@@ -72,7 +127,17 @@ func TestParsePBM(t *testing.T) {
 		{
 			name: "path preserves bucket-relative prefix from the key",
 			key:  "mongodb-lz4/458f1ae5-140f-4867-ab92-4c36e6f007f8/2026-08-20T02:02:50Z.pbm.json",
-			data: `{"name":"22026-08-20T02:02:50Z","type":"logical","status":"done","start_ts":1787191371,"last_transition_ts":1787191377}`,
+			data: `{
+				"name":"2026-08-20T02:02:50Z",
+				"type":"logical",
+				"status":"done",
+				"start_ts":1787191371,
+				"last_transition_ts":1787191377,
+				"mongodb_version":"8.0.19-7",
+				"replsets":[
+					{"name":"rs0"}
+				]
+			}`,
 			want: &backupv1alpha1.Backup{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "import-962afc4ee8c08997",
@@ -85,6 +150,11 @@ func TestParsePBM(t *testing.T) {
 							Path:        "mongodb-lz4/458f1ae5-140f-4867-ab92-4c36e6f007f8/2026-08-20T02:02:50Z",
 							StartedAt:   metav1.Unix(1787191371, 0),
 							CompletedAt: metav1.Unix(1787191377, 0),
+							SourceMetadata: &backupv1alpha1.BackupSourceMetadata{
+								EngineVersion: "8.0.19-7",
+								BackupType:    "logical",
+								Topology:      "replicaSet",
+							},
 						},
 					},
 					ClassRef:       commonv1alpha1.ObjectRef{Name: "percona-backup-mongodb"},
