@@ -29,6 +29,8 @@ import (
 
 	backupv1alpha1 "github.com/openeverest/openeverest/v2/api/backup/v1alpha1"
 	"github.com/openeverest/openeverest/v2/provider-runtime/controller"
+
+	"github.com/openeverest/provider-percona-server-mongodb/definition"
 )
 
 // pbmMetadataSuffix is the object-key suffix of the per-backup metadata
@@ -53,6 +55,35 @@ type pbmBackupMeta struct {
 	// LastTransitionTS is the Unix-seconds time of the last status transition;
 	// for a "done" backup this is its completion time.
 	LastTransitionTS int64 `json:"last_transition_ts"`
+	// MongoDBVersion is the source server version (e.g. "8.0.12-4").
+	MongoDBVersion string `json:"mongodb_version"`
+	// Type is the PBM backup method ("logical" or "physical").
+	Type string `json:"type"`
+	// Replsets describes the backed-up replica sets. A config-server replset
+	// (iscs=true) is only present when the source was a sharded cluster, so it
+	// is what distinguishes a sharded source from a plain replica set.
+	Replsets []pbmReplset `json:"replsets"`
+}
+
+// pbmReplset is a single replica-set entry in a PBM backup's metadata.
+type pbmReplset struct {
+	// IsConfigServer marks the sharded cluster's config-server replset; it is
+	// absent/false for every replset in a plain replica-set backup.
+	IsConfigServer bool `json:"iscs"`
+}
+
+// topologyFromReplsets infers the source deployment topology from a PBM
+// backup's replsets: a config-server replset is only ever present in a sharded
+// cluster, so its presence means "sharded" and its absence means a plain
+// replica set.
+func topologyFromReplsets(replsets []pbmReplset) string {
+	for _, rs := range replsets {
+		if rs.IsConfigServer {
+			return string(definition.TopologyTypeSharded)
+		}
+	}
+
+	return string(definition.TopologyTypeReplicaSet)
 }
 
 // ImportBackups implements controller.BackupImporter for PSMDB. It lists the
@@ -158,6 +189,11 @@ func parsePBM(imp *backupv1alpha1.BackupImport, key string, data []byte) (*backu
 					Path:        path,
 					StartedAt:   metav1.Unix(meta.StartTS, 0),
 					CompletedAt: metav1.Unix(meta.LastTransitionTS, 0),
+					SourceMetadata: &backupv1alpha1.BackupSourceMetadata{
+						EngineVersion: meta.MongoDBVersion,
+						BackupType:    meta.Type,
+						Topology:      topologyFromReplsets(meta.Replsets),
+					},
 				},
 			},
 			ClassRef:       imp.Spec.ClassRef,
