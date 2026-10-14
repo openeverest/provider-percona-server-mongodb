@@ -26,6 +26,8 @@ spec:
     external:
       # Discovered from the PBM backup name in testdata/backups/psmdb.tar.
       path: psmdb/2025-11-03T09:34:50Z
+      startedAt: "2025-11-03T09:34:50Z"
+      completedAt: "2025-11-03T09:34:55Z"
       sourceMetadata:
         engineVersion: 8.0.12-4
         backupType: logical
@@ -37,3 +39,9 @@ spec:
   deletionPolicy: Retain
 status:
   state: Succeeded
+  startedAt: "2025-11-03T09:34:50Z"
+  completedAt: "2025-11-03T09:34:55Z"
+  sourceMetadata:
+    engineVersion: 8.0.12-4
+    backupType: logical
+    topology: replicaSet
