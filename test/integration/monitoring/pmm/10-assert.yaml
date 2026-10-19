@@ -73,6 +73,9 @@ spec:
       requests:
         memory: 99604Ki
         cpu: 95m
+    # Labels that tie the instance's metrics in PMM back to the Instance.
+    mongodParams: (join('', ['--custom-labels=namespace=', $namespace, ',core_openeverest_io_instance=psmdb-mc']))
+    mongosParams: (join('', ['--custom-labels=namespace=', $namespace, ',core_openeverest_io_instance=psmdb-mc,core_openeverest_io_component=proxy']))
   secrets:
     users: everest-secrets-psmdb-mc
 ---
