@@ -19,6 +19,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"regexp"
+	"strings"
 
 	goversion "github.com/hashicorp/go-version"
 	psmdbv1 "github.com/percona/percona-server-mongodb-operator/pkg/apis/psmdb/v1"
@@ -124,7 +126,35 @@ func configureMonitoring(
 		ServerHost: u.Host,
 		Image:      pmmImage,
 		Resources:  getPMMResources(c),
+		// mongodParams covers both shard and config server replica sets, so
+		// only mongos can be labelled with its component.
+		MongodParams: pmmAdminParams(c, ""),
+		MongosParams: pmmAdminParams(c, common.ComponentProxy),
 	}, nil
+}
+
+// pmmAdminParams returns the pmm-admin flags that label the instance's metrics
+// in PMM, so consumers can scope queries to one instance. Label names follow
+// the Prometheus form of the pod labels (core_openeverest_io_instance), and
+// namespace matches the label on Kubernetes metrics in PMM. The operator runs
+// pmm-admin through a shell; Kubernetes names need no quoting.
+func pmmAdminParams(c *controller.Context, component string) string {
+	labels := []string{
+		"namespace=" + c.Namespace(),
+		prometheusLabelName(controller.InstanceLabel) + "=" + c.Name(),
+	}
+	if component != "" {
+		labels = append(labels, prometheusLabelName(controller.ComponentLabel)+"="+component)
+	}
+	return "--custom-labels=" + strings.Join(labels, ",")
+}
+
+var invalidPrometheusLabelChars = regexp.MustCompile(`[^a-zA-Z0-9_]`)
+
+// prometheusLabelName converts a Kubernetes label key to a valid Prometheus
+// label name the way Prometheus does for Kubernetes service discovery.
+func prometheusLabelName(key string) string {
+	return invalidPrometheusLabelChars.ReplaceAllString(key, "_")
 }
 
 // copySecretData copies the value of a source key from the secret

@@ -29,6 +29,20 @@ import (
 	"github.com/openeverest/openeverest/v2/provider-runtime/controller"
 )
 
+func TestPMMAdminParamsLabelTheInstance(t *testing.T) {
+	t.Parallel()
+
+	in := &corev1alpha1.Instance{ObjectMeta: metav1.ObjectMeta{Name: "my-mongo", Namespace: "db"}}
+	c := controller.NewContext(context.Background(), nil, in, "psmdb")
+
+	assert.Equal(t,
+		"--custom-labels=namespace=db,core_openeverest_io_instance=my-mongo",
+		pmmAdminParams(c, ""))
+	assert.Equal(t,
+		"--custom-labels=namespace=db,core_openeverest_io_instance=my-mongo,core_openeverest_io_component=proxy",
+		pmmAdminParams(c, "proxy"))
+}
+
 func TestCopySecretDataKeepsExistingKeys(t *testing.T) {
 	t.Parallel()
 
