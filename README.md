@@ -192,6 +192,10 @@ The technology-specific knobs worth knowing about:
 | `monitoringConfigName` | `monitoring` | PMM configuration to attach the instance to |
 | `numShards` | `sharded` topology | Number of shards to provision |
 
+With `monitoring` enabled, the instance's metrics in PMM carry `namespace` and
+`core_openeverest_io_instance` labels, plus `core_openeverest_io_component=proxy` on mongos,
+so they can be queried per instance.
+
 ## Development
 
 Requires Go (see [go.mod](go.mod)), Docker, Helm, kubectl, and a Kubernetes cluster you can
