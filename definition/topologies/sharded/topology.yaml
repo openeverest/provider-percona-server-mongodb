@@ -89,145 +89,272 @@ ui:
       description: "Configure the resources your new database will have access to."
       components:
         shards:
-          uiType: number
-          path: "spec.topology.parameters.numShards"
-          fieldParams:
-            label: "Nº of shards"
-            defaultValue: 1
-          validation:
-            required: true
-            min: 1
-            int: true
-            modes:
-              edit:
-                celExpressions:
-                  - celExpr: "spec.topology.parameters.numShards >= original.spec.topology.parameters.numShards"
-                    message: "Number of shards cannot be decreased"
-        numberOfnodes:
-          path: "spec.components.engine.replicas"
-          uiType: number
-          fieldParams:
-            label: "Number of nodes"
-            defaultValue: 3
-          validation:
-            required: true
-            min: 1
-            int: true
-            celExpressions:
-              - celExpr: "spec.components.engine.replicas % 2 == 1"
-                message: "The number of nodes must be odd"
-            modes:
-              edit:
-                celExpressions:
-                  - celExpr: "!(spec.components.engine.replicas == 1 && original.spec.components.engine.replicas > 1)"
-                    message: "Cannot scale down to a single node"
-        nodesResources:
           uiType: group
-          groupType: line
+          groupType: accordion
+          label: "Shards"
           components:
-            cpu:
-              path: "spec.components.engine.resources.limits.cpu"
-              uiType: number
-              fieldParams:
-                label: "CPU"
-                defaultValue: 1
-                step: 1
-              validation:
-                min: 0.6
-                required: true
-            memory:
-              path: "spec.components.engine.resources.limits.memory"
-              uiType: number
-              fieldParams:
-                label: "Memory"
-                defaultValue: 4
-                step: 0.1
-                badge: "Gi"
-                badgeToApi: true
-              validation:
-                min: 0.512
-                required: true
-            disk:
-              path: "spec.components.engine.storage.size"
-              uiType: number
-              fieldParams:
-                label: "Disk"
-                defaultValue: 25
-                badge: "Gi"
-                badgeToApi: true
-              validation:
-                min: 1
-                int: true
-                required: true
-                modes:
-                  edit:
+            # The accordion body does not space its children; a plain group
+            # stacks them with the same spacing as elsewhere in the form.
+            shardsFields:
+              uiType: group
+              components:
+                numberOfShards:
+                  uiType: number
+                  path: "spec.topology.parameters.numShards"
+                  fieldParams:
+                    label: "Nº of shards"
+                    defaultValue: 1
+                  validation:
+                    required: true
+                    min: 1
+                    int: true
+                    modes:
+                      edit:
+                        celExpressions:
+                          - celExpr: "spec.topology.parameters.numShards >= original.spec.topology.parameters.numShards"
+                            message: "Number of shards cannot be decreased"
+                numberOfNodes:
+                  path: "spec.components.engine.replicas"
+                  uiType: number
+                  fieldParams:
+                    label: "Nº of nodes per shard"
+                    defaultValue: 3
+                  validation:
+                    required: true
+                    min: 1
+                    int: true
                     celExpressions:
-                      - celExpr: "spec.components.engine.storage.size >= original.spec.components.engine.storage.size"
-                        message: "Disk size cannot be decreased"
-        numberOfRouters:
-          path: "spec.components.proxy.replicas"
-          uiType: number
-          fieldParams:
-            label: "Number of routers"
-            defaultValue: 3
-          validation:
-            required: true
-            min: 1
-            int: true
-            celExpressions:
-              - celExpr: "spec.components.proxy.replicas % 2 == 1"
-                message: "The number of routers must be odd"
-              - celExpr: "spec.components.engine.replicas > 1 ? spec.components.proxy.replicas > 1 : true"
-                message: "Number of routers must be more than 1 if number of nodes is greater than 1"
-        routersResources:
+                      - celExpr: "spec.components.engine.replicas % 2 == 1"
+                        message: "The number of nodes must be odd"
+                    modes:
+                      edit:
+                        celExpressions:
+                          - celExpr: "!(spec.components.engine.replicas == 1 && original.spec.components.engine.replicas > 1)"
+                            message: "Cannot scale down to a single node"
+                nodesResources:
+                  uiType: group
+                  groupType: line
+                  components:
+                    cpu:
+                      path: "spec.components.engine.resources.limits.cpu"
+                      uiType: number
+                      fieldParams:
+                        label: "CPU"
+                        defaultValue: 1
+                        step: 1
+                      validation:
+                        min: 0.6
+                        required: true
+                    memory:
+                      path: "spec.components.engine.resources.limits.memory"
+                      uiType: number
+                      fieldParams:
+                        label: "Memory"
+                        defaultValue: 4
+                        step: 0.1
+                        badge: "Gi"
+                        badgeToApi: true
+                      validation:
+                        min: 0.512
+                        required: true
+                    disk:
+                      path: "spec.components.engine.storage.size"
+                      uiType: number
+                      fieldParams:
+                        label: "Disk"
+                        defaultValue: 25
+                        badge: "Gi"
+                        badgeToApi: true
+                      validation:
+                        min: 1
+                        int: true
+                        required: true
+                        modes:
+                          edit:
+                            celExpressions:
+                              - celExpr: "spec.components.engine.storage.size >= original.spec.components.engine.storage.size"
+                                message: "Disk size cannot be decreased"
+                  componentsOrder:
+                    - cpu
+                    - memory
+                    - disk
+                storageClass:
+                  uiType: select
+                  path: spec.components.engine.storage.storageClass
+                  fieldParams:
+                    label: "Storage class"
+                    modes:
+                      edit:
+                        disabled: true
+                      restore:
+                        disabled: true
+                  validation:
+                    required: true
+                  dataSource:
+                    provider: storageClasses
+              componentsOrder:
+                - numberOfShards
+                - numberOfNodes
+                - nodesResources
+                - storageClass
+          componentsOrder:
+            - shardsFields
+        configServers:
           uiType: group
-          groupType: line
+          groupType: accordion
+          label: "Config servers"
           components:
-            cpu:
-              path: "spec.components.proxy.resources.limits.cpu"
-              uiType: number
-              fieldParams:
-                label: "CPU"
-                defaultValue: 1
-                step: 1
-              validation:
-                min: 0
-                required: true
-            memory:
-              path: "spec.components.proxy.resources.limits.memory"
-              uiType: number
-              fieldParams:
-                label: "Memory"
-                defaultValue: 2
-                step: 0.1
-                badge: "Gi"
-                badgeToApi: true
-              validation:
-                min: 0
-                required: true
-        numberOfConfigServers:
-          uiType: number
-          path: "spec.components.configServer.replicas"
-          fieldParams:
-            label: "Nº of configuration servers"
-            defaultValue: 3
-          validation:
-            required: true
-            min: 1
-            int: true
-            max: 7
-            celExpressions:
-              - celExpr: "spec.components.configServer.replicas % 2 == 1"
-                message: "The number of configuration servers must be odd"
-              - celExpr: "!(spec.components.engine.replicas > 1 && spec.components.configServer.replicas == 1)"
-                message: "The number of configuration servers cannot be 1 if the number of database nodes is greater than 1"
+            configServersFields:
+              uiType: group
+              components:
+                numberOfConfigServers:
+                  uiType: number
+                  path: "spec.components.configServer.replicas"
+                  fieldParams:
+                    label: "Nº of config servers"
+                    defaultValue: 3
+                  validation:
+                    required: true
+                    min: 1
+                    int: true
+                    max: 7
+                    celExpressions:
+                      - celExpr: "spec.components.configServer.replicas % 2 == 1"
+                        message: "The number of config servers must be odd"
+                      - celExpr: "!(spec.components.engine.replicas > 1 && spec.components.configServer.replicas == 1)"
+                        message: "The number of config servers cannot be 1 if the number of database nodes is greater than 1"
+                configServersResources:
+                  uiType: group
+                  groupType: line
+                  components:
+                    cpu:
+                      path: "spec.components.configServer.resources.limits.cpu"
+                      uiType: number
+                      fieldParams:
+                        label: "CPU"
+                        defaultValue: 1
+                        step: 1
+                      validation:
+                        min: 0.6
+                        required: true
+                    memory:
+                      path: "spec.components.configServer.resources.limits.memory"
+                      uiType: number
+                      fieldParams:
+                        label: "Memory"
+                        defaultValue: 2
+                        step: 0.1
+                        badge: "Gi"
+                        badgeToApi: true
+                      validation:
+                        min: 0.512
+                        required: true
+                    disk:
+                      path: "spec.components.configServer.storage.size"
+                      uiType: number
+                      fieldParams:
+                        label: "Disk"
+                        # Matches the size the provider falls back to when none is
+                        # set, so instances created without it keep their volumes.
+                        defaultValue: 10
+                        badge: "Gi"
+                        badgeToApi: true
+                      validation:
+                        min: 1
+                        int: true
+                        required: true
+                        modes:
+                          edit:
+                            celExpressions:
+                              # Instances created before config server disk was
+                              # configurable have no original value to compare.
+                              - celExpr: "!has(original.spec.components.configServer.storage.size) || spec.components.configServer.storage.size >= original.spec.components.configServer.storage.size"
+                                message: "Disk size cannot be decreased"
+                  componentsOrder:
+                    - cpu
+                    - memory
+                    - disk
+                storageClass:
+                  uiType: select
+                  path: spec.components.configServer.storage.storageClass
+                  fieldParams:
+                    label: "Storage class"
+                    modes:
+                      edit:
+                        disabled: true
+                      restore:
+                        disabled: true
+                  validation:
+                    required: true
+                  dataSource:
+                    provider: storageClasses
+              componentsOrder:
+                - numberOfConfigServers
+                - configServersResources
+                - storageClass
+          componentsOrder:
+            - configServersFields
+        routers:
+          uiType: group
+          groupType: accordion
+          label: "Routers"
+          components:
+            routersFields:
+              uiType: group
+              components:
+                numberOfRouters:
+                  path: "spec.components.proxy.replicas"
+                  uiType: number
+                  fieldParams:
+                    label: "Nº of routers"
+                    defaultValue: 3
+                  validation:
+                    required: true
+                    min: 1
+                    int: true
+                    celExpressions:
+                      - celExpr: "spec.components.proxy.replicas % 2 == 1"
+                        message: "The number of routers must be odd"
+                      - celExpr: "spec.components.engine.replicas > 1 ? spec.components.proxy.replicas > 1 : true"
+                        message: "Number of routers must be more than 1 if number of nodes is greater than 1"
+                routersResources:
+                  uiType: group
+                  groupType: line
+                  components:
+                    cpu:
+                      path: "spec.components.proxy.resources.limits.cpu"
+                      uiType: number
+                      fieldParams:
+                        label: "CPU"
+                        defaultValue: 1
+                        step: 1
+                      validation:
+                        min: 0
+                        required: true
+                    memory:
+                      path: "spec.components.proxy.resources.limits.memory"
+                      uiType: number
+                      fieldParams:
+                        label: "Memory"
+                        defaultValue: 2
+                        step: 0.1
+                        badge: "Gi"
+                        badgeToApi: true
+                      validation:
+                        min: 0
+                        required: true
+                  componentsOrder:
+                    - cpu
+                    - memory
+              componentsOrder:
+                - numberOfRouters
+                - routersResources
+          componentsOrder:
+            - routersFields
       componentsOrder:
         - shards
-        - numberOfnodes
-        - nodesResources
-        - numberOfRouters
-        - routersResources
-        - numberOfConfigServers
+        - configServers
+        - routers
     monitoring:
       label: "Monitoring"
       description: "Monitor the health of your database to detect issues quickly and improve its performance."
@@ -243,20 +370,6 @@ ui:
       label: "Advanced configuration"
       description: "Configure advanced settings for your database"
       components:
-        storageClass:
-          uiType: select
-          path: spec.components.engine.storage.storageClass
-          fieldParams:
-            label: "Storage class"
-            modes:
-              edit:
-                disabled: true
-              restore:
-                disabled: true
-          validation:
-            required: true
-          dataSource:
-            provider: storageClasses
         externalAccess:
           uiType: select
           path: spec.components.proxy.service.serviceType
@@ -286,7 +399,6 @@ ui:
             minRows: 3
             maxRows: 8
       componentsOrder:
-        - storageClass
         - configuration
   sectionsOrder:
     - databaseVersion

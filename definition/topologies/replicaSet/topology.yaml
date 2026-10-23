@@ -133,6 +133,23 @@ ui:
           componentsOrder:
             - numberOfnodes
             - resources
+        storageClass:
+          uiType: select
+          path: spec.components.engine.storage.storageClass
+          fieldParams:
+            label: "Storage class"
+            modes:
+              edit:
+                disabled: true
+              restore:
+                disabled: true
+          validation:
+            required: true
+          dataSource:
+            provider: storageClasses
+      componentsOrder:
+        - nodes
+        - storageClass
     monitoring:
       label: "Monitoring"
       description: "Monitor the health of your database to detect issues quickly and improve its performance."
@@ -148,20 +165,6 @@ ui:
       label: "Advanced configuration"
       description: "Configure advanced settings for your database"
       components:
-        storageClass:
-          uiType: select
-          path: spec.components.engine.storage.storageClass
-          fieldParams:
-            label: "Storage class"
-            modes:
-              edit:
-                disabled: true
-              restore:
-                disabled: true
-          validation:
-            required: true
-          dataSource:
-            provider: storageClasses
         externalAccess:
           uiType: select
           path: spec.components.engine.service.serviceType
@@ -191,7 +194,6 @@ ui:
             minRows: 3
             maxRows: 8
       componentsOrder:
-        - storageClass
         - configuration
   sectionsOrder:
     - databaseVersion
