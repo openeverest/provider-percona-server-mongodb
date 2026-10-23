@@ -49,22 +49,36 @@ const (
 	credentialsSecretPath = ".spec.pmm.credentialsSecretRef.name"
 )
 
-// resolveMonitoringConfig looks up the MonitoringConfig referenced by the
-// instance's monitoring component custom spec. It returns nil without error when
-// the monitoring component is absent.
-func resolveMonitoringConfig(c *controller.Context) (*monitoringv1alpha1.MonitoringConfig, error) {
+// monitoringParameters decodes the monitoring component's parameters. It
+// returns nil without error when the monitoring component is absent.
+func monitoringParameters(c *controller.Context) (*components.MonitoringParameters, error) {
 	monitoring, ok := c.Instance().Spec.Components[common.ComponentMonitoring]
 	if !ok {
 		return nil, nil
 	}
 
-	var params components.PMMParameters
-	if err := c.DecodeComponentParameters(monitoring, &params); err != nil {
+	params := &components.MonitoringParameters{}
+	if monitoring.Parameters == nil || len(monitoring.Parameters.Raw) == 0 {
+		return params, nil
+	}
+	if err := c.DecodeComponentParameters(monitoring, params); err != nil {
 		return nil, fmt.Errorf("decode monitoring parameters: %w", err)
 	}
 
-	if params.MonitoringConfigName == nil || *params.MonitoringConfigName == "" {
-		return nil, fmt.Errorf("monitoringConfigName is required when monitoring component is set")
+	return params, nil
+}
+
+// resolveMonitoringConfig looks up the MonitoringConfig of the PMM server
+// referenced by the instance's monitoring component. It returns nil without
+// error when PMM is not configured.
+func resolveMonitoringConfig(c *controller.Context) (*monitoringv1alpha1.MonitoringConfig, error) {
+	params, err := monitoringParameters(c)
+	if err != nil {
+		return nil, err
+	}
+
+	if params == nil || params.MonitoringConfigName == nil || *params.MonitoringConfigName == "" {
+		return nil, nil
 	}
 
 	mc := &monitoringv1alpha1.MonitoringConfig{}
@@ -78,8 +92,9 @@ func resolveMonitoringConfig(c *controller.Context) (*monitoringv1alpha1.Monitor
 // configureMonitoring builds the PMMSpec for the PSMDB resource based on the
 // instance's monitoring component configuration. The reconciliation handles:
 //
-//  1. Monitoring not configured (component absent) returns disabled PMMSpec.
-//  2. Monitoring enabled: resolves the MonitoringConfig, copies the PMM API key
+//  1. PMM not configured (component absent or no monitoringConfigName)
+//     returns disabled PMMSpec.
+//  2. PMM enabled: resolves the MonitoringConfig, copies the PMM API key
 //     to the users secret, and returns a configured PMMSpec with resource
 //     requirements calculated from the engine and requested resources.
 //     Resources are never preserved from a previous PMM configuration.
@@ -316,7 +331,7 @@ func extractMonitoringConfigName(obj client.Object) []string {
 		return nil
 	}
 
-	var params components.PMMParameters
+	var params components.MonitoringParameters
 	if err := json.Unmarshal(monitoring.Parameters.Raw, &params); err != nil {
 		return nil
 	}
