@@ -1,0 +1,16 @@
+apiVersion: core.openeverest.io/v1alpha1
+kind: Instance
+metadata:
+  name: psmdb-metrics
+spec:
+  (components.monitoring == null): true
+---
+apiVersion: psmdb.percona.com/v1
+kind: PerconaServerMongoDB
+metadata:
+  name: psmdb-metrics
+spec:
+  # The exporter sidecars go away with the metrics.
+  replsets:
+    - name: rs0
+      (sidecars == null): true

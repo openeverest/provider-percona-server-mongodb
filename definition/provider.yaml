@@ -25,4 +25,4 @@ components:
     type: backup
   monitoring:
     type: pmm
-    parametersSchema: PMMParameters
+    parametersSchema: MonitoringParameters

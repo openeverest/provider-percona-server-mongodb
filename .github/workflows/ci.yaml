@@ -176,6 +176,15 @@ jobs:
       suite: monitoring
     secrets: inherit
 
+  test-integration-monitoring-metrics:
+    name: Integration / monitoring metrics
+    needs: [lint, build, verify]
+    uses: ./.github/workflows/integration-test.yaml
+    with:
+      make_target: test-integration-monitoring-metrics
+      suite: metrics
+    secrets: inherit
+
   test-integration-backup-datasource:
     name: Integration / backup datasource
     needs: [lint, build, verify]
