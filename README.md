@@ -66,7 +66,7 @@ provider itself is covered under [Installation](#installation).
 | Vertical scaling (CPU / memory) | ✅ | `spec.components.<name>.resources` |
 | Version upgrades | ✅ | of the deployed MongoDB version — change `spec.version`; see [Versions](#versions) |
 | Custom configuration | ✅ | `mongod` / `mongos` config via the component's `configuration` parameter |
-| Monitoring | ✅ | PMM, via the optional `monitoring` component |
+| Monitoring | ✅ | PMM, and Prometheus / VictoriaMetrics through mongodb_exporter, via the optional `monitoring` component |
 | TLS | ✅ | operator-managed certificates; unsafe TLS is never enabled |
 
 Stateful workloads additionally report:
@@ -189,12 +189,47 @@ The technology-specific knobs worth knowing about:
 | Parameter | Applies to | Purpose |
 |---|---|---|
 | `configuration` | `engine`, `configServer`, `proxy` | Raw `mongod` / `mongos` configuration passed to the operator |
-| `monitoringConfigName` | `monitoring` | PMM configuration to attach the instance to |
+| `monitoringConfigName` | `monitoring` | PMM configuration to attach the instance to; omit to run without PMM |
+| `metrics` | `monitoring` | Expose metrics through a mongodb_exporter sidecar; omit to run no exporter |
+| `metrics.prometheus.enabled` | `monitoring` | Create a `PodMonitor` for the Prometheus Operator |
+| `metrics.victoriaMetrics.enabled` | `monitoring` | Create a `VMPodScrape` for the VictoriaMetrics Operator |
 | `numShards` | `sharded` topology | Number of shards to provision |
 
-With `monitoring` enabled, the instance's metrics in PMM carry `namespace` and
+With PMM enabled, the instance's metrics in PMM carry `namespace` and
 `core_openeverest_io_instance` labels, plus `core_openeverest_io_component=proxy` on mongos,
 so they can be queried per instance.
+
+### Metrics for Prometheus and VictoriaMetrics
+
+```yaml
+spec:
+  components:
+    monitoring:
+      parameters:
+        metrics:
+          prometheus:
+            enabled: true
+          victoriaMetrics:
+            enabled: false
+```
+
+Setting `metrics` runs a `mongodb_exporter` sidecar next to every mongod and mongos, serving
+metrics on the `metrics` port (9216). It logs in as the operator's cluster monitor user. The
+exporter image is pinned by the `mongodbExporter` component type in
+[definition/versions.yaml](definition/versions.yaml). Adding or removing the sidecar restarts
+the pods one at a time.
+
+The scrape resources are named `<instance>-prometheus` (`PodMonitor`) and
+`<instance>-victoriametrics` (`VMPodScrape`), live next to the Instance, and are removed with
+it. Every series carries the `core_openeverest_io_instance` and
+`core_openeverest_io_component` labels. Keep in mind:
+
+- The matching operator must be installed; otherwise the Instance fails validation.
+- Prometheus must select the `PodMonitor`. kube-prometheus-stack, for example, selects only
+  `PodMonitor`s labelled with its release unless
+  `prometheus.prometheusSpec.podMonitorSelectorNilUsesHelmValues=false` is set.
+- The VictoriaMetrics Operator converts `PodMonitor`s into `VMPodScrape`s by default, so with
+  both systems enabled VictoriaMetrics scrapes the instance twice.
 
 ## Development
 

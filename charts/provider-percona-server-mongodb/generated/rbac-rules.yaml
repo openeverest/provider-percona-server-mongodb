@@ -122,6 +122,15 @@
     - list
     - watch
 - apiGroups:
+    - monitoring.coreos.com
+  resources:
+    - podmonitors
+  verbs:
+    - create
+    - delete
+    - get
+    - patch
+- apiGroups:
     - monitoring.openeverest.io
   resources:
     - monitoringconfigs
@@ -129,6 +138,15 @@
     - get
     - list
     - watch
+- apiGroups:
+    - operator.victoriametrics.com
+  resources:
+    - vmpodscrapes
+  verbs:
+    - create
+    - delete
+    - get
+    - patch
 - apiGroups:
     - psmdb.percona.com
   resources:
