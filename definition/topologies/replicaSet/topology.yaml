@@ -17,7 +17,7 @@ config:
         properties:
           storage: {}
           resources: {}
-          replicas: {minimum: 1}
+          replicas: { minimum: 1 }
           schedulingPolicy:
             # The provider reads only these two off the policy.
             properties:
@@ -42,8 +42,8 @@ config:
 ui:
   sections:
     databaseVersion:
-      label: "Database Version"
-      description: "Provide the information about the database version you want to use."
+      label: "Database"
+      description: "Choose the database version and the credentials of its users."
       components:
         version:
           uiType: select
@@ -61,6 +61,30 @@ ui:
                 disabled: true
           validation:
             required: true
+        userSecret:
+          uiType: secret
+          path: spec.userSecretRef.name
+          fieldParams:
+            label: "Database users"
+            definition: user
+            helperText: "Leave empty to generate the credentials."
+            modes:
+              edit:
+                readOnly: true
+                helperText: "Set when the database is created."
+              import:
+                helperText: "Use the credentials of the database the backup was taken from."
+          # A restore inherits the source instance's credentials.
+          modes:
+            restore:
+              uiType: hidden
+          validation:
+            modes:
+              import:
+                required: true
+      componentsOrder:
+        - version
+        - userSecret
     resources:
       label: "Resources"
       description: "Configure the resources your new database will have access to."

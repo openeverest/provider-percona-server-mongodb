@@ -95,6 +95,151 @@ spec:
             PMM_SERVER_TOKEN:
               type: string
           type: object
+      uiSchema:
+        components:
+          backup:
+            components:
+              password:
+                fieldParams:
+                  label: Backup password
+                  type: password
+                path: MONGODB_BACKUP_PASSWORD
+                uiType: text
+                validation:
+                  modes:
+                    import:
+                      required: true
+              user:
+                fieldParams:
+                  defaultValue: backup
+                  label: Backup username
+                path: MONGODB_BACKUP_USER
+                uiType: text
+                validation:
+                  modes:
+                    import:
+                      required: true
+            componentsOrder:
+              - user
+              - password
+            groupType: line
+            uiType: group
+          clusterAdmin:
+            components:
+              password:
+                fieldParams:
+                  label: Cluster admin password
+                  type: password
+                path: MONGODB_CLUSTER_ADMIN_PASSWORD
+                uiType: text
+                validation:
+                  modes:
+                    import:
+                      required: true
+              user:
+                fieldParams:
+                  defaultValue: clusterAdmin
+                  label: Cluster admin username
+                path: MONGODB_CLUSTER_ADMIN_USER
+                uiType: text
+                validation:
+                  modes:
+                    import:
+                      required: true
+            componentsOrder:
+              - user
+              - password
+            groupType: line
+            uiType: group
+          clusterMonitor:
+            components:
+              password:
+                fieldParams:
+                  label: Cluster monitor password
+                  type: password
+                path: MONGODB_CLUSTER_MONITOR_PASSWORD
+                uiType: text
+                validation:
+                  modes:
+                    import:
+                      required: true
+              user:
+                fieldParams:
+                  defaultValue: clusterMonitor
+                  label: Cluster monitor username
+                path: MONGODB_CLUSTER_MONITOR_USER
+                uiType: text
+                validation:
+                  modes:
+                    import:
+                      required: true
+            componentsOrder:
+              - user
+              - password
+            groupType: line
+            uiType: group
+          databaseAdmin:
+            components:
+              password:
+                fieldParams:
+                  label: Database admin password
+                  type: password
+                path: MONGODB_DATABASE_ADMIN_PASSWORD
+                uiType: text
+                validation:
+                  modes:
+                    import:
+                      required: true
+              user:
+                fieldParams:
+                  defaultValue: databaseAdmin
+                  label: Database admin username
+                path: MONGODB_DATABASE_ADMIN_USER
+                uiType: text
+                validation:
+                  modes:
+                    import:
+                      required: true
+            componentsOrder:
+              - user
+              - password
+            groupType: line
+            uiType: group
+          userAdmin:
+            components:
+              password:
+                fieldParams:
+                  label: User admin password
+                  type: password
+                path: MONGODB_USER_ADMIN_PASSWORD
+                uiType: text
+                validation:
+                  modes:
+                    import:
+                      required: true
+              user:
+                fieldParams:
+                  defaultValue: userAdmin
+                  label: User admin username
+                path: MONGODB_USER_ADMIN_USER
+                uiType: text
+                validation:
+                  modes:
+                    import:
+                      required: true
+            componentsOrder:
+              - user
+              - password
+            groupType: line
+            uiType: group
+        componentsOrder:
+          - databaseAdmin
+          - userAdmin
+          - clusterAdmin
+          - clusterMonitor
+          - backup
+        description: Credentials of the system users the operator creates.
+        label: Database users
   topologies:
     replicaSet:
       components:
@@ -235,6 +380,26 @@ spec:
           label: Advanced configuration
         databaseVersion:
           components:
+            userSecret:
+              fieldParams:
+                definition: user
+                helperText: Leave empty to generate the credentials.
+                label: Database users
+                modes:
+                  edit:
+                    helperText: Set when the database is created.
+                    readOnly: true
+                  import:
+                    helperText: Use the credentials of the database the backup was taken from.
+              modes:
+                restore:
+                  uiType: hidden
+              path: spec.userSecretRef.name
+              uiType: secret
+              validation:
+                modes:
+                  import:
+                    required: true
             version:
               fieldParams:
                 label: Database Version
@@ -252,8 +417,11 @@ spec:
               uiType: select
               validation:
                 required: true
-          description: Provide the information about the database version you want to use.
-          label: Database Version
+          componentsOrder:
+            - version
+            - userSecret
+          description: Choose the database version and the credentials of its users.
+          label: Database
         monitoring:
           components:
             monitoring:
@@ -391,6 +559,26 @@ spec:
           label: Advanced configuration
         databaseVersion:
           components:
+            userSecret:
+              fieldParams:
+                definition: user
+                helperText: Leave empty to generate the credentials.
+                label: Database users
+                modes:
+                  edit:
+                    helperText: Set when the database is created.
+                    readOnly: true
+                  import:
+                    helperText: Use the credentials of the database the backup was taken from.
+              modes:
+                restore:
+                  uiType: hidden
+              path: spec.userSecretRef.name
+              uiType: secret
+              validation:
+                modes:
+                  import:
+                    required: true
             version:
               fieldParams:
                 label: Database Version
@@ -408,8 +596,11 @@ spec:
               uiType: select
               validation:
                 required: true
-          description: Provide the information about the database version you want to use.
-          label: Database Version
+          componentsOrder:
+            - version
+            - userSecret
+          description: Choose the database version and the credentials of its users.
+          label: Database
         monitoring:
           components:
             monitoring:
