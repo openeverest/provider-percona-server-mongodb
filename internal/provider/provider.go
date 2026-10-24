@@ -172,6 +172,11 @@ func ValidatePSMDB(c *controller.Context) error {
 		return fmt.Errorf("dataSource validation failed: %w", err)
 	}
 
+	if err := validateTLS(c); err != nil {
+		l.Error(err, "TLS validation failed", "cluster", c.Name())
+		return fmt.Errorf("tls validation failed: %w", err)
+	}
+
 	if err := validateUserSecret(c); err != nil {
 		l.Error(err, "UserSecret validation failed", "cluster", c.Name())
 		return fmt.Errorf("userSecret validation failed: %w", err)
@@ -264,6 +269,20 @@ func SyncPSMDB(c *controller.Context) error {
 
 	usersSecretName := "everest-secrets-" + c.Name()
 
+	tls, err := tlsParameters(c)
+	if err != nil {
+		return err
+	}
+	keep, err := keepCertificates(c, tls)
+	if err != nil {
+		return err
+	}
+	configureTLS(psmdb, tls, keep)
+	psmdb.Spec.Unsafe.TLS = !tlsEnabled(tls.Mode)
+	if err := acceptClientsWithoutCertificates(c, psmdb, tls); err != nil {
+		return fmt.Errorf("configure TLS: %w", err)
+	}
+
 	if err := configureMetricsExporter(c, psmdb, usersSecretName); err != nil {
 		return fmt.Errorf("configure metrics exporter: %w", err)
 	}
@@ -307,7 +326,9 @@ func SyncPSMDB(c *controller.Context) error {
 	psmdb.Spec.Secrets = &psmdbv1.SecretsSpec{
 		Users:         usersSecretName,
 		EncryptionKey: c.Name() + "-mongodb-encryption-key",
-		SSLInternal:   c.Name() + "-ssl-internal",
+		// Left empty, the operator names the secret it generates itself.
+		SSL:         tls.CertificateSecretName,
+		SSLInternal: internalCertificateSecretName(c, tls),
 	}
 
 	if err := c.Apply(psmdb); err != nil {
@@ -434,15 +455,27 @@ func buildConnectionDetails(c *controller.Context, psmdb *psmdbv1.PerconaServerM
 	username := string(secret.Data[psmdbv1.EnvMongoDBDatabaseAdminUser])
 	password := string(secret.Data[psmdbv1.EnvMongoDBDatabaseAdminPassword])
 
-	return controller.ConnectionDetails{
+	ca, tlsRequired, err := tlsConnection(c)
+	if err != nil {
+		return controller.ConnectionDetails{}, err
+	}
+
+	details := controller.ConnectionDetails{
 		Type:     "mongodb",
 		Provider: "percona-server-mongodb",
 		Host:     host,
 		Port:     port,
 		Username: username,
 		Password: password,
-		URI:      fmt.Sprintf("mongodb://%s:%s@%s/admin?ssl=false", username, password, host),
-	}, nil
+		URI:      fmt.Sprintf("mongodb://%s:%s@%s/admin?tls=%t", username, password, host, tlsRequired),
+	}
+	if len(ca) > 0 {
+		// Clients verify the instance's certificate against this CA
+		// (tlsCAFile); the operator's own CA is not publicly trusted.
+		details.AdditionalProperties = map[string]string{caKey: string(ca)}
+	}
+
+	return details, nil
 }
 
 // ensureUserSecret copies the user-supplied credentials secret

@@ -18,6 +18,7 @@ import (
 	"fmt"
 
 	psmdbv1 "github.com/percona/percona-server-mongodb-operator/pkg/apis/psmdb/v1"
+	psmdbconfig "github.com/percona/percona-server-mongodb-operator/pkg/psmdb/config"
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -42,6 +43,10 @@ const (
 	metricsPortName              = "metrics"
 	metricsPort                  = 9216
 	metricsPath                  = "/metrics"
+
+	// sslVolumeName is the operator's pod volume holding the certificate
+	// clients connect to, mounted at psmdbconfig.SSLDir.
+	sslVolumeName = "ssl"
 
 	// The exporter authenticates as the cluster monitor user the operator
 	// keeps in the users secret.
@@ -113,8 +118,13 @@ func configureMetricsExporter(c *controller.Context, psmdb *psmdbv1.PerconaServe
 		return fmt.Errorf("provider spec has no image for component type %q", metricsExporterComponentType)
 	}
 
+	useTLS := psmdb.Spec.TLS == nil || psmdb.Spec.TLS.Mode != psmdbv1.TLSModeDisabled
+	sidecar := func(port int32, collectors []string) corev1.Container {
+		return metricsExporterSidecar(image, usersSecretName, port, useTLS, collectors)
+	}
+
 	for _, rs := range psmdb.Spec.Replsets {
-		rs.Sidecars = append(rs.Sidecars, metricsExporterSidecar(image, usersSecretName, rs.GetPort(), mongodExporterCollectors))
+		rs.Sidecars = append(rs.Sidecars, sidecar(rs.GetPort(), mongodExporterCollectors))
 	}
 
 	if !psmdb.Spec.Sharding.Enabled {
@@ -122,17 +132,17 @@ func configureMetricsExporter(c *controller.Context, psmdb *psmdbv1.PerconaServe
 	}
 
 	cfg := psmdb.Spec.Sharding.ConfigsvrReplSet
-	cfg.Sidecars = append(cfg.Sidecars, metricsExporterSidecar(image, usersSecretName, cfg.GetPort(), mongodExporterCollectors))
+	cfg.Sidecars = append(cfg.Sidecars, sidecar(cfg.GetPort(), mongodExporterCollectors))
 
 	mongos := psmdb.Spec.Sharding.Mongos
-	mongos.Sidecars = append(mongos.Sidecars, metricsExporterSidecar(image, usersSecretName, mongos.GetPort(), mongosExporterCollectors))
+	mongos.Sidecars = append(mongos.Sidecars, sidecar(mongos.GetPort(), mongosExporterCollectors))
 
 	return nil
 }
 
 // metricsExporterSidecar builds a mongodb_exporter container that scrapes the
 // MongoDB process in its own pod.
-func metricsExporterSidecar(image, usersSecretName string, mongoPort int32, collectors []string) corev1.Container {
+func metricsExporterSidecar(image, usersSecretName string, mongoPort int32, useTLS bool, collectors []string) corev1.Container {
 	secretEnv := func(name, key string) corev1.EnvVar {
 		return corev1.EnvVar{
 			Name: name,
@@ -145,8 +155,20 @@ func metricsExporterSidecar(image, usersSecretName string, mongoPort int32, coll
 		}
 	}
 
+	uri := fmt.Sprintf("mongodb://127.0.0.1:%d", mongoPort)
+	var mounts []corev1.VolumeMount
+	if useTLS {
+		// Connect as the operator's PMM client does: present the instance's
+		// certificate, so this works whether or not mongod accepts clients
+		// without one, and skip verifying the server's, which need not name
+		// the loopback address. The connection never leaves the pod.
+		uri += fmt.Sprintf("/?tls=true&tlsInsecure=true&tlsCertificateFile=%[1]s/tls.crt&tlsPrivateKeyFile=%[1]s/tls.key",
+			psmdbconfig.SSLDir)
+		mounts = []corev1.VolumeMount{{Name: sslVolumeName, MountPath: psmdbconfig.SSLDir, ReadOnly: true}}
+	}
+
 	args := []string{
-		fmt.Sprintf("--mongodb.uri=mongodb://127.0.0.1:%d", mongoPort),
+		"--mongodb.uri=" + uri,
 		"--mongodb.direct-connect",
 		// Keeps the metric names the community Grafana dashboards query.
 		"--compatible-mode",
@@ -168,7 +190,8 @@ func metricsExporterSidecar(image, usersSecretName string, mongoPort int32, coll
 			ContainerPort: metricsPort,
 			Protocol:      corev1.ProtocolTCP,
 		}},
-		Resources: metricsExporterResources,
+		VolumeMounts: mounts,
+		Resources:    metricsExporterResources,
 	}
 }
 

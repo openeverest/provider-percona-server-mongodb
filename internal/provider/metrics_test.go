@@ -18,6 +18,7 @@ import (
 	"context"
 	"encoding/json"
 	"slices"
+	"strings"
 	"testing"
 
 	psmdbv1 "github.com/percona/percona-server-mongodb-operator/pkg/apis/psmdb/v1"
@@ -160,7 +161,9 @@ func TestConfigureMetricsExporter(t *testing.T) {
 		for _, rs := range psmdb.Spec.Replsets {
 			sidecar := exporterSidecar(t, rs.Sidecars)
 			assert.Equal(t, "percona/mongodb_exporter:0.53.0", sidecar.Image)
-			assert.Contains(t, sidecar.Args, "--mongodb.uri=mongodb://127.0.0.1:27017")
+			assert.Contains(t, sidecar.Args, "--mongodb.uri=mongodb://127.0.0.1:27017/?tls=true&tlsInsecure=true&tlsCertificateFile=/etc/mongodb-ssl/tls.crt&tlsPrivateKeyFile=/etc/mongodb-ssl/tls.key",
+				"TLS is on by default, so the exporter connects as the operator's tools do")
+			assert.Equal(t, []corev1.VolumeMount{{Name: "ssl", MountPath: "/etc/mongodb-ssl", ReadOnly: true}}, sidecar.VolumeMounts)
 			assert.Contains(t, sidecar.Args, "--collector.replicasetstatus")
 			assert.Equal(t, []corev1.ContainerPort{{Name: "metrics", ContainerPort: 9216, Protocol: corev1.ProtocolTCP}}, sidecar.Ports)
 
@@ -182,9 +185,23 @@ func TestConfigureMetricsExporter(t *testing.T) {
 		exporterSidecar(t, psmdb.Spec.Sharding.ConfigsvrReplSet.Sidecars)
 
 		mongos := exporterSidecar(t, psmdb.Spec.Sharding.Mongos.Sidecars)
-		assert.Contains(t, mongos.Args, "--mongodb.uri=mongodb://127.0.0.1:27018", "the exporter follows the mongos port")
+		assert.True(t, strings.HasPrefix(mongos.Args[0], "--mongodb.uri=mongodb://127.0.0.1:27018/"), "the exporter follows the mongos port")
 		assert.Contains(t, mongos.Args, "--collector.shards")
 		assert.NotContains(t, mongos.Args, "--collector.replicasetstatus", "mongos has no replica set status")
+	})
+
+	t.Run("connects without TLS when TLS is disabled", func(t *testing.T) {
+		t.Parallel()
+
+		c, _ := metricsContext(t, metricsOnly(false, false), true)
+		psmdb := shardedPSMDB()
+		psmdb.Spec.TLS = &psmdbv1.TLSSpec{Mode: psmdbv1.TLSModeDisabled}
+
+		require.NoError(t, configureMetricsExporter(c, psmdb, metricsTestUsersSecret))
+
+		sidecar := exporterSidecar(t, psmdb.Spec.Replsets[0].Sidecars)
+		assert.Contains(t, sidecar.Args, "--mongodb.uri=mongodb://127.0.0.1:27017")
+		assert.Empty(t, sidecar.VolumeMounts)
 	})
 
 	t.Run("leaves pods alone when metrics are not exposed", func(t *testing.T) {
