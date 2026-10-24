@@ -6,6 +6,7 @@ require (
 	github.com/AlekSi/pointer v1.2.0
 	github.com/aws/aws-sdk-go-v2 v1.47.1
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.113.4
+	github.com/cert-manager/cert-manager v1.21.0
 	github.com/hashicorp/go-version v1.9.0
 	github.com/openeverest/openeverest/v2 v2.0.0-dev.2.0.20261022032111-e14048788b76
 	github.com/percona/percona-server-mongodb-operator v1.23.1
@@ -79,7 +80,6 @@ require (
 	github.com/butuzov/mirror v1.3.3 // indirect
 	github.com/catenacyber/perfsprint v0.10.1 // indirect
 	github.com/ccojocar/zxcvbn-go v1.0.4 // indirect
-	github.com/cert-manager/cert-manager v1.21.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/charithe/durationcheck v0.0.11 // indirect
 	github.com/charmbracelet/bubbles v1.0.0 // indirect
