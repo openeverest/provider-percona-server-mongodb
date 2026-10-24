@@ -148,6 +148,15 @@ jobs:
           grep -A1 'name: TARGET_OPERATOR_VERSION' /tmp/hook.yaml | grep -qE 'value: "[0-9]+\.[0-9]+' \
             || { echo 'TARGET_OPERATOR_VERSION rendered empty'; exit 1; }
           grep -q 'release:' /tmp/hook.yaml || { echo 'provider-spec release block missing from hook ConfigMap'; exit 1; }
+          grep -q -- '--apply-operator-crds' /tmp/hook.yaml || { echo 'preflight hook does not upgrade the operator CRDs'; exit 1; }
+
+      # The hook upgrades the operator CRDs from the copy embedded in the
+      # provider; it must match the CRDs of the operator the chart bundles.
+      - name: Verify embedded operator CRDs match the bundled operator chart
+        run: |
+          tar -xzOf charts/provider-percona-server-mongodb/charts/psmdb-operator-*.tgz psmdb-operator/crds/crd.yaml \
+            | diff -q - internal/operatorcrds/crd.yaml \
+            || { echo '::error::internal/operatorcrds/crd.yaml differs from the bundled psmdb-operator chart CRDs. Align the operator version in go.mod with the chart dependency and run make generate.'; exit 1; }
 
   test-integration-core-replicaset:
     name: Integration / core replicaset
