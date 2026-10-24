@@ -40,7 +40,7 @@ CHART_DIR ?= charts/provider-percona-server-mongodb
 K3D_CLUSTER_NAME ?= provider-psmdb-test
 
 # PSMDB operator version used for CRD installation in CI
-PSMDB_OPERATOR_VERSION ?= 1.22.0
+PSMDB_OPERATOR_VERSION ?= 1.23.1
 
 .PHONY: help
 help: ## Display this help.
@@ -62,6 +62,10 @@ run: generate ## Run the provider locally.
 manifests: controller-gen ## Generate RBAC manifests using controller-gen from kubebuilder markers.
 	$(CONTROLLER_GEN) rbac:roleName=manager-role paths="./..." output:rbac:dir=config/rbac
 
+.PHONY: operator-crds
+operator-crds: ## Copy the CRDs of the Percona Operator for MongoDB version pinned in go.mod.
+	@install -m 0644 "$$(go list -m -f '{{.Dir}}' github.com/percona/percona-server-mongodb-operator)/deploy/crd.yaml" internal/operatorcrds/crd.yaml
+
 .PHONY: helm-sync-rbac
 helm-sync-rbac: yq ## Sync generated RBAC rules into the Helm chart.
 	@echo "Syncing RBAC rules from config/rbac/role.yaml to Helm chart..."
@@ -69,18 +73,19 @@ helm-sync-rbac: yq ## Sync generated RBAC rules into the Helm chart.
 	@echo "Done."
 
 .PHONY: generate
-generate: manifests helm-sync-rbac ## Run all code generation (RBAC + Helm sync + provider spec from definition/).
+generate: manifests operator-crds helm-sync-rbac ## Run all code generation (RBAC + operator CRDs + Helm sync + provider spec from definition/).
 	go generate ./...
 	@echo "All generation complete."
 
 .PHONY: verify
 verify: ## Verify that generated files are up-to-date (for CI).
 	@$(MAKE) generate
-	@if git diff --quiet -- config/ $(CHART_DIR)/generated/; then \
+	@if git diff --quiet -- config/ internal/operatorcrds/ $(CHART_DIR)/generated/; then \
 		echo "Generated files are up-to-date."; \
 	else \
 		echo "ERROR: Generated files are out of date. Run 'make generate' and commit the changes."; \
 		git diff -- config/ $(CHART_DIR)/generated/; \
+		git diff --stat -- internal/operatorcrds/; \
 		exit 1; \
 	fi
 
