@@ -1,8 +1,9 @@
 # Upgrade preflight: a pre-upgrade hook Job that runs the new provider image
 # in preflight mode against the target catalog (delivered via the ConfigMap
 # below — the same generated provider-spec.yaml this release applies) and the
-# live Instances. A non-zero exit aborts the upgrade before any resource is
-# applied. Runs only on `helm upgrade`, never on install.
+# live Instances, then applies the bundled operator's CRDs. A non-zero exit
+# aborts the upgrade before any resource is applied. Runs only on
+# `helm upgrade`, never on install (Helm installs the CRDs then).
 {{- $operatorVersion := "" }}
 {{- range .Chart.Dependencies }}
 {{- /* Helm rewrites a dependency's Name to its alias; psmdb-operator is aliased to "operator" */}}
@@ -36,8 +37,10 @@ metadata:
     helm.sh/hook-weight: "-5"
     helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
 ---
-# Read-only, hook-scoped RBAC: the preflight reads the installed Provider,
-# the Instances it manages, and the engine CRs (for provider-specific checks).
+# Hook-scoped RBAC: the preflight reads the installed Provider, the Instances
+# it manages, and the engine CRs (for provider-specific checks). Once it
+# passes, the job applies the bundled operator's CRDs, which Helm does not
+# upgrade for a chart dependency.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -55,6 +58,17 @@ rules:
   - apiGroups: ["psmdb.percona.com"]
     resources: ["perconaservermongodbs"]
     verbs: ["get", "list"]
+  - apiGroups: ["apiextensions.k8s.io"]
+    resources: ["customresourcedefinitions"]
+    verbs: ["create"]
+  - apiGroups: ["apiextensions.k8s.io"]
+    resources: ["customresourcedefinitions"]
+    resourceNames:
+      - perconaservermongodbs.psmdb.percona.com
+      - perconaservermongodbbackups.psmdb.percona.com
+      - perconaservermongodbrestores.psmdb.percona.com
+      - perconaservermongodbclustersyncs.psmdb.percona.com
+    verbs: ["get", "patch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -116,6 +130,7 @@ spec:
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           args:
             - --preflight-spec=/preflight/provider-spec.yaml
+            - --apply-operator-crds
           env:
             # The bundled operator version this release would install; consumed
             # by provider-specific upgrade checks (e.g. the skew-window check).
