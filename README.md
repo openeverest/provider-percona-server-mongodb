@@ -66,8 +66,8 @@ provider itself is covered under [Installation](#installation).
 | Vertical scaling (CPU / memory) | ✅ | `spec.components.<name>.resources` |
 | Version upgrades | ✅ | of the deployed MongoDB version — change `spec.version`; see [Versions](#versions) |
 | Custom configuration | ✅ | `mongod` / `mongos` config via the component's `configuration` parameter |
-| Monitoring | ✅ | PMM, via the optional `monitoring` component |
-| TLS | ✅ | operator-managed certificates; unsafe TLS is never enabled |
+| Monitoring | ✅ | PMM, and Prometheus / VictoriaMetrics through mongodb_exporter, via the optional `monitoring` component |
+| TLS | ✅ | on by default; generated, cert-manager or your own certificates — see [TLS](#tls) |
 
 Stateful workloads additionally report:
 
@@ -102,6 +102,8 @@ helm upgrade provider-percona-server-mongodb \
 helm uninstall provider-percona-server-mongodb --namespace everest-system
 ```
 
+A pre-upgrade hook checks that every Instance can follow the new bundled operator, then
+upgrades the operator's CRDs — Helm itself installs the CRDs of a chart dependency only once.
 Uninstalling the chart does **not** delete running `Instance` resources or their data.
 
 ## Usage
@@ -189,12 +191,89 @@ The technology-specific knobs worth knowing about:
 | Parameter | Applies to | Purpose |
 |---|---|---|
 | `configuration` | `engine`, `configServer`, `proxy` | Raw `mongod` / `mongos` configuration passed to the operator |
-| `monitoringConfigName` | `monitoring` | PMM configuration to attach the instance to |
+| `monitoringConfigName` | `monitoring` | PMM configuration to attach the instance to; omit to run without PMM |
+| `metrics` | `monitoring` | Expose metrics through a mongodb_exporter sidecar; omit to run no exporter |
+| `metrics.prometheus.enabled` | `monitoring` | Create a `PodMonitor` for the Prometheus Operator |
+| `metrics.victoriaMetrics.enabled` | `monitoring` | Create a `VMPodScrape` for the VictoriaMetrics Operator |
 | `numShards` | `sharded` topology | Number of shards to provision |
 
-With `monitoring` enabled, the instance's metrics in PMM carry `namespace` and
+With PMM enabled, the instance's metrics in PMM carry `namespace` and
 `core_openeverest_io_instance` labels, plus `core_openeverest_io_component=proxy` on mongos,
 so they can be queried per instance.
+
+### Metrics for Prometheus and VictoriaMetrics
+
+```yaml
+spec:
+  components:
+    monitoring:
+      parameters:
+        metrics:
+          prometheus:
+            enabled: true
+          victoriaMetrics:
+            enabled: false
+```
+
+Setting `metrics` runs a `mongodb_exporter` sidecar next to every mongod and mongos, serving
+metrics on the `metrics` port (9216). It logs in as the operator's cluster monitor user. The
+exporter image is pinned by the `mongodbExporter` component type in
+[definition/versions.yaml](definition/versions.yaml). Adding or removing the sidecar restarts
+the pods one at a time.
+
+The scrape resources are named `<instance>-prometheus` (`PodMonitor`) and
+`<instance>-victoriametrics` (`VMPodScrape`), live next to the Instance, and are removed with
+it. Every series carries the `core_openeverest_io_instance` and
+`core_openeverest_io_component` labels. Keep in mind:
+
+- The matching operator must be installed; otherwise the Instance fails validation.
+- Prometheus must select the `PodMonitor`. kube-prometheus-stack, for example, selects only
+  `PodMonitor`s labelled with its release unless
+  `prometheus.prometheusSpec.podMonitorSelectorNilUsesHelmValues=false` is set.
+- The VictoriaMetrics Operator converts `PodMonitor`s into `VMPodScrape`s by default, so with
+  both systems enabled VictoriaMetrics scrapes the instance twice.
+
+### TLS
+
+TLS is on by default. Configure it with the instance-wide `tls` parameter:
+
+```yaml
+spec:
+  parameters:
+    tls:
+      mode: requireTLS                 # preferTLS (default) | requireTLS | disabled
+      # Pick one certificate source, or neither to have certificates issued:
+      certificateSecretName: my-tls    # tls.crt, tls.key and ca.crt
+      internalCertificateSecretName: my-tls-internal  # optional; members only
+      issuer:                          # cert-manager
+        name: corp-ca
+        kind: ClusterIssuer            # Issuer (default) | ClusterIssuer
+```
+
+- **`preferTLS`** encrypts traffic between members and lets clients choose; **`requireTLS`**
+  rejects clients without TLS. The two can be switched on a running instance (a rolling
+  restart). **`disabled`** turns TLS off and can only be chosen at creation: turning TLS on
+  or off changes how members authenticate each other.
+- **Certificates** are, in order of precedence:
+  1. your secrets: `certificateSecretName` (and optionally `internalCertificateSecretName`).
+     Their subject alternative names must cover `localhost` and the instance's service and
+     pod names (`<instance>-rs0`, `*.<instance>-rs0.<namespace>.svc.cluster.local`, plus the
+     `-cfg` and `-mongos` names when sharded). A cert-manager `Certificate` writing such a
+     secret works, and renewals roll out automatically; the operator never replaces the
+     secrets with its own;
+  2. a cert-manager `issuer` — a `ClusterIssuer` requires cert-manager in the
+     `cert-manager` namespace;
+  3. otherwise the operator issues them: through cert-manager with a CA of its own when
+     cert-manager is installed (renewed automatically), or else from a CA it generates once,
+     valid without expiry. Such an instance keeps its certificates if cert-manager is
+     installed later: the operator's migration to cert-manager does not complete.
+
+  The certificate source can't be changed after creation.
+- **Clients** authenticate with their password and need only the CA to verify the instance:
+  the connection secret (`<instance>-conn`) carries it as `ca.crt`, and its `uri` sets `tls`
+  to match the mode. TLS clients don't need a client certificate; on instances created
+  before this was supported, accepting them waits for the
+  `tls-clients-without-certificates` maintenance approval (a rolling restart).
 
 ## Development
 

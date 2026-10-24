@@ -40,7 +40,7 @@ CHART_DIR ?= charts/provider-percona-server-mongodb
 K3D_CLUSTER_NAME ?= provider-psmdb-test
 
 # PSMDB operator version used for CRD installation in CI
-PSMDB_OPERATOR_VERSION ?= 1.22.0
+PSMDB_OPERATOR_VERSION ?= 1.23.1
 
 .PHONY: help
 help: ## Display this help.
@@ -62,6 +62,14 @@ run: generate ## Run the provider locally.
 manifests: controller-gen ## Generate RBAC manifests using controller-gen from kubebuilder markers.
 	$(CONTROLLER_GEN) rbac:roleName=manager-role paths="./..." output:rbac:dir=config/rbac
 
+.PHONY: deepcopy
+deepcopy: controller-gen ## Generate DeepCopy methods for the provider's own API types.
+	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./internal/apis/..."
+
+.PHONY: operator-crds
+operator-crds: ## Copy the CRDs of the Percona Operator for MongoDB version pinned in go.mod.
+	@install -m 0644 "$$(go list -m -f '{{.Dir}}' github.com/percona/percona-server-mongodb-operator)/deploy/crd.yaml" internal/operatorcrds/crd.yaml
+
 .PHONY: helm-sync-rbac
 helm-sync-rbac: yq ## Sync generated RBAC rules into the Helm chart.
 	@echo "Syncing RBAC rules from config/rbac/role.yaml to Helm chart..."
@@ -69,18 +77,19 @@ helm-sync-rbac: yq ## Sync generated RBAC rules into the Helm chart.
 	@echo "Done."
 
 .PHONY: generate
-generate: manifests helm-sync-rbac ## Run all code generation (RBAC + Helm sync + provider spec from definition/).
+generate: manifests deepcopy operator-crds helm-sync-rbac ## Run all code generation (RBAC + DeepCopy + operator CRDs + Helm sync + provider spec from definition/).
 	go generate ./...
 	@echo "All generation complete."
 
 .PHONY: verify
 verify: ## Verify that generated files are up-to-date (for CI).
 	@$(MAKE) generate
-	@if git diff --quiet -- config/ $(CHART_DIR)/generated/; then \
+	@if git diff --quiet -- config/ internal/apis/ internal/operatorcrds/ $(CHART_DIR)/generated/; then \
 		echo "Generated files are up-to-date."; \
 	else \
 		echo "ERROR: Generated files are out of date. Run 'make generate' and commit the changes."; \
-		git diff -- config/ $(CHART_DIR)/generated/; \
+		git diff -- config/ internal/apis/ $(CHART_DIR)/generated/; \
+		git diff --stat -- internal/operatorcrds/; \
 		exit 1; \
 	fi
 
@@ -106,6 +115,10 @@ test-integration-core-replicaset: ## Run core replicaset integration tests.
 test-integration-core-sharded: ## Run core sharded integration tests.
 	. ./test/vars.sh && chainsaw test --config ./test/integration/.chainsaw.yaml ./test/integration/core/sharded
 
+.PHONY: test-integration-core-tls
+test-integration-core-tls: ## Run core TLS integration tests.
+	. ./test/vars.sh && chainsaw test --config ./test/integration/.chainsaw.yaml ./test/integration/core/tls
+
 .PHONY: test-integration-core-maintenance
 test-integration-core-maintenance: ## Run maintenance (crVersion convergence) integration tests.
 	. ./test/vars.sh && chainsaw test --config ./test/integration/.chainsaw.yaml ./test/integration/core/maintenance
@@ -113,6 +126,10 @@ test-integration-core-maintenance: ## Run maintenance (crVersion convergence) in
 .PHONY: test-integration-monitoring-pmm
 test-integration-monitoring-pmm: ## Run PMM integration tests.
 	. ./test/vars.sh && chainsaw test --config ./test/integration/.chainsaw.yaml ./test/integration/monitoring/pmm
+
+.PHONY: test-integration-monitoring-metrics
+test-integration-monitoring-metrics: ## Run metrics exporter integration tests.
+	. ./test/vars.sh && chainsaw test --config ./test/integration/.chainsaw.yaml ./test/integration/monitoring/metrics
 
 .PHONY: test-integration-backup
 test-integration-backup: ## Run backup integration tests.

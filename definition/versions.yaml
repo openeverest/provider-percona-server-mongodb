@@ -30,6 +30,13 @@ componentTypes:
       image: percona/pmm-client:2.44.1
     - version: "3.7.0"
       image: percona/pmm-client:3.7.0
+  # Sidecar that exposes metrics when the monitoring component enables
+  # metrics. Not a component of its own, so bundles do not pin it.
+  mongodbExporter:
+    defaultVersion: "0.53.0"
+    versions:
+    - version: "0.53.0"
+      image: percona/mongodb_exporter:0.53.0
 
 # Version bundles — curated sets of component versions known to work together.
 # Users set spec.version on an Instance to select a bundle.
