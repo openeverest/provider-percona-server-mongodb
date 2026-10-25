@@ -295,13 +295,20 @@ func SyncPSMDB(c *controller.Context) error {
 
 	// Configure monitoring after ensuring data source user credentials.
 	// Configure monitoring adds PMM_SERVER_TOKEN to the users secret
-	// or creates user secret if none exists.
-	pmmSpec, err := configureMonitoring(c, usersSecretName)
+	// or creates user secret if none exists. A ProviderManaged pmm
+	// MonitoringBinding wins over the legacy monitoring component.
+	pmmBound, err := applyPMMBindings(c, psmdb, usersSecretName)
 	if err != nil {
 		return err
 	}
-	if pmmSpec != nil {
-		psmdb.Spec.PMM = *pmmSpec
+	if !pmmBound {
+		pmmSpec, err := configureMonitoring(c, usersSecretName)
+		if err != nil {
+			return err
+		}
+		if pmmSpec != nil {
+			psmdb.Spec.PMM = *pmmSpec
+		}
 	}
 
 	psmdb.Spec.Secrets = &psmdbv1.SecretsSpec{
