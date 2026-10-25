@@ -21,6 +21,8 @@ import (
 
 	psmdbv1 "github.com/percona/percona-server-mongodb-operator/pkg/apis/psmdb/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	corev1alpha1 "github.com/openeverest/openeverest/v2/api/core/v1alpha1"
@@ -66,7 +68,7 @@ func (p *PSMDBProvider) MonitoringSources(c *controller.Context) (*corev1alpha1.
 				controller.InstanceLabel:  c.Name(),
 				controller.ComponentLabel: component,
 			},
-			Port:   corev1alpha1.MetricsEndpointPort{Name: metricsPortName},
+			Port:   intstr.FromString(metricsPortName),
 			Path:   metricsPath,
 			Scheme: "http",
 		})
@@ -88,11 +90,20 @@ func hasMetricsExporter(psmdb *psmdbv1.PerconaServerMongoDB) bool {
 	return false
 }
 
+// liveEngine returns the engine CR as it is now, empty before it exists.
+func liveEngine(c *controller.Context) (*psmdbv1.PerconaServerMongoDB, error) {
+	live := &psmdbv1.PerconaServerMongoDB{}
+	if err := c.Get(live, c.Name()); err != nil && !apierrors.IsNotFound(err) {
+		return nil, fmt.Errorf("get live PerconaServerMongoDB: %w", err)
+	}
+	return live, nil
+}
+
 // metricsExporterDemanded says whether the exporter sidecars go on the engine
-// pods this pass: when the legacy monitoring component exposes metrics, when an
-// ExtensionManaged binding's class requires metrics, or, while bindings are
-// still being materialised, when the live CR already carries them (hold rule:
-// removing and re-adding a sidecar would roll the pods twice for nothing).
+// pods this pass: when the legacy monitoring component exposes metrics, when a
+// bound class requires metrics, or, while that is unresolved, when the live CR
+// already carries them (removing and re-adding a sidecar would roll the pods
+// twice for nothing).
 func metricsExporterDemanded(c *controller.Context) (bool, error) {
 	legacy, err := metricsParameters(c)
 	if err != nil {
@@ -101,21 +112,15 @@ func metricsExporterDemanded(c *controller.Context) (bool, error) {
 	if legacy != nil {
 		return true, nil
 	}
-	demand, err := c.MonitoringDemand()
+	req, err := c.RequiredSources()
 	if err != nil {
 		return false, err
 	}
-	if demand.Metrics {
-		return true, nil
+	live, err := liveEngine(c)
+	if err != nil {
+		return false, err
 	}
-	if demand.Settled {
-		return false, nil
-	}
-	live := &psmdbv1.PerconaServerMongoDB{}
-	if err := c.Get(live, c.Name()); err != nil {
-		return false, nil //nolint:nilerr // nothing live to hold
-	}
-	return hasMetricsExporter(live), nil
+	return req.Metrics.Else(hasMetricsExporter(live)), nil
 }
 
 // pmmDestinationParameters is the shape of MonitoringDestination.spec.parameters
@@ -132,45 +137,44 @@ type pmmInstanceParameters struct {
 }
 
 // applyPMMBindings renders spec.pmm from the Instance's ProviderManaged pmm
-// binding (a spec.monitoring.destinations[] entry), if any. It reports whether
-// a binding claimed spec.pmm so the caller can fall back to the legacy
-// monitoring component otherwise.
+// binding while the pmm integration is required, and keeps the live spec.pmm
+// while that is unresolved. It reports false when no binding needs pmm, so the
+// caller can fall back to the legacy monitoring component.
 //
-// Hold rule: a binding that exists but is not Accepted keeps whatever the
-// live engine CR carries. A binding that fails to render is reported through
-// SetMonitoringBindingResult and likewise keeps the live rendering; it never
-// fails Sync.
+// A binding that fails to render is reported through
+// SetMonitoringBindingResult and keeps the live rendering; it never fails
+// Sync.
 func applyPMMBindings(c *controller.Context, psmdb *psmdbv1.PerconaServerMongoDB, usersSecretName string) (bool, error) {
-	bindings, err := c.MonitoringBindings()
+	req, err := c.RequiredSources()
 	if err != nil {
 		return false, err
 	}
-	for _, rb := range bindings {
-		if rb.Mode() != corev1alpha1.MonitoringExecutionModeProviderManaged || rb.Entry == nil {
-			continue
-		}
-		if rb.Class != nil && rb.Integration() != pmmIntegration {
-			continue
-		}
-		if !rb.Apply {
-			keepLivePMM(c, psmdb)
-			return true, nil
-		}
-		if err := renderPMMBinding(c, psmdb, usersSecretName, rb); err != nil {
-			log.FromContext(c.Context()).Error(err, "PMM binding could not be rendered", "binding", rb.Binding.Name)
-			c.SetMonitoringBindingResult(rb.Binding.Name, monitoringv1alpha1.ReasonRenderFailed, err.Error())
-			keepLivePMM(c, psmdb)
-		}
-		return true, nil
+	live, err := liveEngine(c)
+	if err != nil {
+		return false, err
 	}
-	return false, nil
-}
-
-func keepLivePMM(c *controller.Context, psmdb *psmdbv1.PerconaServerMongoDB) {
-	live := &psmdbv1.PerconaServerMongoDB{}
-	if err := c.Get(live, c.Name()); err == nil {
+	switch pmm := req.Integrations[pmmIntegration]; {
+	case pmm == controller.Required:
+		bindings, err := c.MonitoringBindings()
+		if err != nil {
+			return false, err
+		}
+		for _, rb := range bindings {
+			if !rb.Apply || rb.Integration() != pmmIntegration {
+				continue
+			}
+			if err := renderPMMBinding(c, psmdb, usersSecretName, rb); err != nil {
+				log.FromContext(c.Context()).Error(err, "PMM binding could not be rendered", "binding", rb.Binding.Name)
+				c.SetMonitoringBindingResult(rb.Binding.Name, monitoringv1alpha1.ReasonRenderFailed, err.Error())
+				psmdb.Spec.PMM = *live.Spec.PMM.DeepCopy()
+			}
+		}
+	case !pmm.Else(live.Spec.PMM.Enabled):
+		return false, nil
+	default:
 		psmdb.Spec.PMM = *live.Spec.PMM.DeepCopy()
 	}
+	return true, nil
 }
 
 func renderPMMBinding(c *controller.Context, psmdb *psmdbv1.PerconaServerMongoDB, usersSecretName string, rb controller.ResolvedBinding) error {

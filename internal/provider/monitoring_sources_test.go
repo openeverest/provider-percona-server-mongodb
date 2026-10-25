@@ -25,6 +25,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
@@ -76,13 +77,16 @@ func bindingContext(t *testing.T, entries []corev1alpha1.InstanceMonitoringDesti
 		WithScheme(scheme).
 		WithObjects(append(objs, in, provider)...).
 		Build()
-	return controller.NewContext(context.Background(), cl, in, "psmdb"), cl
+	c := controller.NewContext(context.Background(), cl, in, "psmdb")
+	// The runtime records the provider's integrations before every Sync.
+	c.SetMonitoringIntegrations((&PSMDBProvider{}).MonitoringIntegrations()...)
+	return c, cl
 }
 
 func entry(name, destination string) corev1alpha1.InstanceMonitoringDestination {
 	return corev1alpha1.InstanceMonitoringDestination{
 		Name:           name,
-		DestinationRef: corev1alpha1.MonitoringDestinationRef{Name: destination},
+		DestinationRef: commonv1alpha1.MonitoringDestinationRef{Name: destination},
 	}
 }
 
@@ -98,10 +102,17 @@ func acceptedBinding(entryName, destination, class string, mode corev1alpha1.Mon
 				monitoringv1alpha1.BindingInstanceLabel: bindingTestInstance,
 				monitoringv1alpha1.BindingEntryLabel:    entryName,
 			},
+			OwnerReferences: []metav1.OwnerReference{{
+				APIVersion: corev1alpha1.GroupVersion.String(),
+				Kind:       "Instance",
+				Name:       bindingTestInstance,
+				UID:        "uid",
+				Controller: new(true),
+			}},
 		},
 		Spec: monitoringv1alpha1.MonitoringBindingSpec{
 			InstanceRef:    commonv1alpha1.ObjectRef{Name: bindingTestInstance},
-			DestinationRef: corev1alpha1.MonitoringDestinationRef{Name: destination},
+			DestinationRef: commonv1alpha1.MonitoringDestinationRef{Name: destination},
 			ClassRef:       &commonv1alpha1.ObjectRef{Name: class},
 			ExecutionMode:  mode,
 		},
@@ -291,7 +302,7 @@ func TestMonitoringSources(t *testing.T) {
 		assert.Equal(t, []string{common.ComponentEngine, common.ComponentConfigServer, common.ComponentProxy}, endpointComponents(s))
 		for _, ep := range s.Metrics {
 			assert.Equal(t, "mongodb", ep.Kind)
-			assert.Equal(t, metricsPortName, ep.Port.Name)
+			assert.Equal(t, intstr.FromString(metricsPortName), ep.Port)
 			assert.Equal(t, metricsPath, ep.Path)
 			assert.Equal(t, "http", ep.Scheme)
 			assert.Equal(t, map[string]string{

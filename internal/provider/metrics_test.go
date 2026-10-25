@@ -62,6 +62,7 @@ func metricsContext(t *testing.T, params *components.MonitoringParameters, withS
 	require.NoError(t, monitoringv1.AddToScheme(scheme))
 	require.NoError(t, monitoringv1alpha1.AddToScheme(scheme))
 	require.NoError(t, vmv1beta1.AddToScheme(scheme))
+	require.NoError(t, psmdbv1.SchemeBuilder.AddToScheme(scheme))
 
 	scrapeKinds := []schema.GroupVersionKind{
 		monitoringv1.SchemeGroupVersion.WithKind(monitoringv1.PodMonitorsKind),
