@@ -59,10 +59,12 @@ spec:
         - script:
             timeout: 120s
             content: |
+              set -e
               PMM_POD="$(kubectl -n pmm get pod -l app=pmm-server -o jsonpath='{.items[0].metadata.name}')"
 
               # Create a service account and token via the PMM API, running
               # entirely inside the pod so no host-side tooling is needed.
+              # Not UID: it is readonly in bash.
               TOKEN="$(kubectl -n pmm exec -i "${PMM_POD}" -- sh <<'EOF'
               set -e
               PMM_API='https://127.0.0.1:8443/graph/api'
@@ -72,13 +74,13 @@ spec:
                 -d '{"name":"everest","role":"Admin"}' \
                 "${PMM_API}/serviceaccounts")
               # Extract the "uid" value: strip up to '"uid":"', then from the next '"'.
-              UID=${SA##*\"uid\":\"}
-              UID=${UID%%\"*}
+              SA_UID=${SA##*\"uid\":\"}
+              SA_UID=${SA_UID%%\"*}
 
               KEY=$(curl -fsSk -u admin:admin \
                 -H 'Content-Type: application/json' \
                 -d '{"name":"everest-token","role":"Admin"}' \
-                "${PMM_API}/serviceaccounts/${UID}/tokens")
+                "${PMM_API}/serviceaccounts/${SA_UID}/tokens")
               # Extract the "key" value: strip up to '"key":"', then from the next '"'.
               KEY=${KEY##*\"key\":\"}
               echo "${KEY%%\"*}"
