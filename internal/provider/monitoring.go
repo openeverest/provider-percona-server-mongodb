@@ -71,3 +71,18 @@ func copySecretData(c *controller.Context, source, dest, sourceKey, destKey stri
 		Data:       map[string][]byte{destKey: apiKey},
 	})
 }
+
+// removeSecretData removes the key copySecretData applied to the secret by
+// applying the secret without it, which leaves every other key alone.
+func removeSecretData(c *controller.Context, name, key string) error {
+	secret := &corev1.Secret{}
+	if err := c.Get(secret, name); apierrors.IsNotFound(err) {
+		return nil
+	} else if err != nil {
+		return fmt.Errorf("failed to get secret %s: %w", name, err)
+	}
+	if _, ok := secret.Data[key]; !ok {
+		return nil
+	}
+	return c.Apply(&corev1.Secret{ObjectMeta: c.ObjectMeta(name)})
+}
