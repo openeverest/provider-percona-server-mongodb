@@ -4,32 +4,42 @@
 
 componentTypes:
   mongod:
-    defaultVersion: "8.0.12-4"
+    defaultVersion: "8.0.32-14"
     versions:
     - version: "6.0.19-16"
       image: percona/percona-server-mongodb:6.0.19-16-multi
     - version: "6.0.21-18"
       image: percona/percona-server-mongodb:6.0.21-18
+    - version: "6.0.29-23"
+      image: percona/percona-server-mongodb:6.0.29-23
     - version: "7.0.18-11"
       image: percona/percona-server-mongodb:7.0.18-11
+    - version: "7.0.43-23"
+      image: percona/percona-server-mongodb:7.0.43-23
     - version: "8.0.4-1"
       image: percona/percona-server-mongodb:8.0.4-1-multi
     - version: "8.0.8-3"
       image: percona/percona-server-mongodb:8.0.8-3
     - version: "8.0.12-4"
       image: percona/percona-server-mongodb:8.0.12-4
+    - version: "8.0.32-14"
+      image: percona/percona-server-mongodb:8.0.32-14
   backup:
-    defaultVersion: "2.12.0"
+    defaultVersion: "2.15.0"
     versions:
     - version: "2.12.0"
       image: percona/percona-backup-mongodb:2.12.0
+    - version: "2.15.0"
+      image: percona/percona-backup-mongodb:2.15.0
   pmm:
-    defaultVersion: "3.7.0"
+    defaultVersion: "3.9.1"
     versions:
     - version: "2.44.1"
       image: percona/pmm-client:2.44.1
     - version: "3.7.0"
       image: percona/pmm-client:3.7.0
+    - version: "3.9.1"
+      image: percona/pmm-client:3.9.1
   # Sidecar that exposes metrics when the monitoring component enables
   # metrics. Not a component of its own, so bundles do not pin it.
   mongodbExporter:
@@ -41,8 +51,15 @@ componentTypes:
 # Version bundles — curated sets of component versions known to work together.
 # Users set spec.version on an Instance to select a bundle.
 # The bundle named by defaultVersion is used when spec.version is omitted.
-defaultVersion: "8.0.12"
+defaultVersion: "8.0.32"
 versions:
+- name: "8.0.32"
+  components:
+    engine: "8.0.32-14"
+    configServer: "8.0.32-14"
+    proxy: "8.0.32-14"
+    backupAgent: "2.15.0"
+    monitoring: "3.9.1"
 - name: "8.0.12"
   components:
     engine: "8.0.12-4"
@@ -64,6 +81,13 @@ versions:
     proxy: "8.0.4-1"
     backupAgent: "2.12.0"
     monitoring: "3.7.0"
+- name: "7.0.43"
+  components:
+    engine: "7.0.43-23"
+    configServer: "7.0.43-23"
+    proxy: "7.0.43-23"
+    backupAgent: "2.15.0"
+    monitoring: "3.9.1"
 - name: "7.0.18"
   components:
     engine: "7.0.18-11"
@@ -71,6 +95,13 @@ versions:
     proxy: "7.0.18-11"
     backupAgent: "2.12.0"
     monitoring: "3.7.0"
+- name: "6.0.29"
+  components:
+    engine: "6.0.29-23"
+    configServer: "6.0.29-23"
+    proxy: "6.0.29-23"
+    backupAgent: "2.15.0"
+    monitoring: "3.9.1"
 - name: "6.0.21"
   components:
     engine: "6.0.21-18"

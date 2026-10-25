@@ -3,37 +3,47 @@
 spec:
   componentTypes:
     backup:
-      defaultVersion: 2.12.0
+      defaultVersion: 2.15.0
       versions:
         - image: percona/percona-backup-mongodb:2.12.0
           version: 2.12.0
+        - image: percona/percona-backup-mongodb:2.15.0
+          version: 2.15.0
     mongod:
-      defaultVersion: 8.0.12-4
+      defaultVersion: 8.0.32-14
       versions:
         - image: percona/percona-server-mongodb:6.0.19-16-multi
           version: 6.0.19-16
         - image: percona/percona-server-mongodb:6.0.21-18
           version: 6.0.21-18
+        - image: percona/percona-server-mongodb:6.0.29-23
+          version: 6.0.29-23
         - image: percona/percona-server-mongodb:7.0.18-11
           version: 7.0.18-11
+        - image: percona/percona-server-mongodb:7.0.43-23
+          version: 7.0.43-23
         - image: percona/percona-server-mongodb:8.0.4-1-multi
           version: 8.0.4-1
         - image: percona/percona-server-mongodb:8.0.8-3
           version: 8.0.8-3
         - image: percona/percona-server-mongodb:8.0.12-4
           version: 8.0.12-4
+        - image: percona/percona-server-mongodb:8.0.32-14
+          version: 8.0.32-14
     mongodbExporter:
       defaultVersion: 0.53.0
       versions:
         - image: percona/mongodb_exporter:0.53.0
           version: 0.53.0
     pmm:
-      defaultVersion: 3.7.0
+      defaultVersion: 3.9.1
       versions:
         - image: percona/pmm-client:2.44.1
           version: 2.44.1
         - image: percona/pmm-client:3.7.0
           version: 3.7.0
+        - image: percona/pmm-client:3.9.1
+          version: 3.9.1
   components:
     backupAgent:
       type: backup
@@ -82,7 +92,7 @@ spec:
               type: string
           type: object
       type: mongod
-  defaultVersion: 8.0.12
+  defaultVersion: 8.0.32
   parametersSchema:
     openAPIV3Schema:
       properties:
@@ -984,6 +994,13 @@ spec:
         - advanced
   versions:
     - components:
+        backupAgent: 2.15.0
+        configServer: 8.0.32-14
+        engine: 8.0.32-14
+        monitoring: 3.9.1
+        proxy: 8.0.32-14
+      name: 8.0.32
+    - components:
         backupAgent: 2.12.0
         configServer: 8.0.12-4
         engine: 8.0.12-4
@@ -1005,12 +1022,26 @@ spec:
         proxy: 8.0.4-1
       name: 8.0.4
     - components:
+        backupAgent: 2.15.0
+        configServer: 7.0.43-23
+        engine: 7.0.43-23
+        monitoring: 3.9.1
+        proxy: 7.0.43-23
+      name: 7.0.43
+    - components:
         backupAgent: 2.12.0
         configServer: 7.0.18-11
         engine: 7.0.18-11
         monitoring: 3.7.0
         proxy: 7.0.18-11
       name: 7.0.18
+    - components:
+        backupAgent: 2.15.0
+        configServer: 6.0.29-23
+        engine: 6.0.29-23
+        monitoring: 3.9.1
+        proxy: 6.0.29-23
+      name: 6.0.29
     - components:
         backupAgent: 2.12.0
         configServer: 6.0.21-18
