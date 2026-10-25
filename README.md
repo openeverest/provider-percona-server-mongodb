@@ -102,6 +102,8 @@ helm upgrade provider-percona-server-mongodb \
 helm uninstall provider-percona-server-mongodb --namespace everest-system
 ```
 
+A pre-upgrade hook checks that every Instance can follow the new bundled operator, then
+upgrades the operator's CRDs — Helm itself installs the CRDs of a chart dependency only once.
 Uninstalling the chart does **not** delete running `Instance` resources or their data.
 
 ## Usage
