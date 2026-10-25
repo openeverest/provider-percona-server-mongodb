@@ -1,0 +1,21 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: percona-server-mongodb-operator
+spec:
+  replicas: 0
+---
+# Core's destination controller accepts both destinations against their classes.
+apiVersion: monitoring.openeverest.io/v1alpha1
+kind: MonitoringDestination
+metadata:
+  name: pmm-it
+status:
+  (conditions[?type == 'Accepted'].status | [0]): "True"
+---
+apiVersion: monitoring.openeverest.io/v1alpha1
+kind: MonitoringDestination
+metadata:
+  name: prometheus-it
+status:
+  (conditions[?type == 'Accepted'].status | [0]): "True"

@@ -1,0 +1,6 @@
+# No binding survives its Instance entry.
+apiVersion: monitoring.openeverest.io/v1alpha1
+kind: MonitoringBinding
+metadata:
+  labels:
+    openeverest.io/instance: psmdb-bindings
