@@ -1,5 +1,5 @@
-# With no destinations left the legacy path renders PMM off and the Instance
-# reports no monitoring at all.
+# With no destinations left PMM is off and the Instance reports no monitoring
+# at all.
 apiVersion: psmdb.percona.com/v1
 kind: PerconaServerMongoDB
 metadata:

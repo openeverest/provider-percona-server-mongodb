@@ -4,7 +4,7 @@ apiVersion: monitoring.openeverest.io/v1alpha1
 kind: MonitoringBinding
 metadata:
   labels:
-    openeverest.io/instance: psmdb-bindings
+    core.openeverest.io/instance: psmdb-bindings
     monitoring.openeverest.io/entry: pmm
   ownerReferences:
     - apiVersion: core.openeverest.io/v1alpha1
@@ -34,7 +34,7 @@ apiVersion: monitoring.openeverest.io/v1alpha1
 kind: MonitoringBinding
 metadata:
   labels:
-    openeverest.io/instance: psmdb-bindings
+    core.openeverest.io/instance: psmdb-bindings
     monitoring.openeverest.io/entry: prometheus
 spec:
   destinationRef:
@@ -64,8 +64,7 @@ spec:
         memory: 400Mi
     mongodParams: (join('', ['--custom-labels=namespace=', $namespace, ',core_openeverest_io_instance=psmdb-bindings']))
     mongosParams: (join('', ['--custom-labels=namespace=', $namespace, ',core_openeverest_io_instance=psmdb-bindings,core_openeverest_io_component=proxy']))
-  # The exporter sidecar is on because the prometheus class requires metrics;
-  # no monitoring component asked for it.
+  # The exporter sidecar is on because the prometheus class requires metrics.
   replsets:
     - name: rs0
       sidecars:

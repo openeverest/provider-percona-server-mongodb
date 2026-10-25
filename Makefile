@@ -12,10 +12,6 @@ RELEASE_FULLCOMMIT ?= $(shell git rev-parse HEAD)
 # tools. (i.e. podman)
 CONTAINER_TOOL ?= docker
 
-# OpenEverest branch to use for OpenEverest CRD installation. Tracks the
-# extensible-monitoring branch go.mod is pinned to (openeverest/openeverest#3298).
-OPENEVEREST_BRANCH ?= poc/extensible-monitoring
-
 # Image URL to use all building/pushing image targets
 IMG ?= ghcr.io/openeverest/provider-percona-server-mongodb-dev:latest
 
@@ -157,20 +153,9 @@ load-openeverest-controller-image: ## Import the OpenEverest controller image in
 	k3d image import ${OPENEVEREST_CONTROLLER_IMG} -c ${K3D_CLUSTER_NAME}
 
 .PHONY: install-crds
-install-crds: ## Install OpenEverest and PSMDB CRDs into the cluster.
-	kubectl apply -f https://raw.githubusercontent.com/openeverest/openeverest/$(OPENEVEREST_BRANCH)/config/crd/bases/core.openeverest.io_providers.yaml
-	kubectl apply -f https://raw.githubusercontent.com/openeverest/openeverest/$(OPENEVEREST_BRANCH)/config/crd/bases/core.openeverest.io_instances.yaml
-	kubectl apply -f https://raw.githubusercontent.com/openeverest/openeverest/$(OPENEVEREST_BRANCH)/config/crd/bases/monitoring.openeverest.io_monitoringconfigs.yaml
-	kubectl apply -f https://raw.githubusercontent.com/openeverest/openeverest/$(OPENEVEREST_BRANCH)/config/crd/bases/backup.openeverest.io_backupclasses.yaml
-	kubectl apply -f https://raw.githubusercontent.com/openeverest/openeverest/$(OPENEVEREST_BRANCH)/config/crd/bases/backup.openeverest.io_backups.yaml
-	kubectl apply -f https://raw.githubusercontent.com/openeverest/openeverest/$(OPENEVEREST_BRANCH)/config/crd/bases/backup.openeverest.io_restores.yaml
-	kubectl apply -f https://raw.githubusercontent.com/openeverest/openeverest/$(OPENEVEREST_BRANCH)/config/crd/bases/backup.openeverest.io_backupstorages.yaml
-	kubectl apply -f https://raw.githubusercontent.com/openeverest/openeverest/$(OPENEVEREST_BRANCH)/config/crd/bases/core.openeverest.io_instancepresets.yaml
-	kubectl apply -f https://raw.githubusercontent.com/openeverest/openeverest/$(OPENEVEREST_BRANCH)/config/crd/bases/core.openeverest.io_clusterinstancepresets.yaml
-	kubectl apply -f https://raw.githubusercontent.com/openeverest/openeverest/$(OPENEVEREST_BRANCH)/config/crd/bases/backup.openeverest.io_backupimports.yaml
-	kubectl apply -f https://raw.githubusercontent.com/openeverest/openeverest/$(OPENEVEREST_BRANCH)/config/crd/bases/monitoring.openeverest.io_monitoringclasses.yaml
-	kubectl apply -f https://raw.githubusercontent.com/openeverest/openeverest/$(OPENEVEREST_BRANCH)/config/crd/bases/monitoring.openeverest.io_monitoringdestinations.yaml
-	kubectl apply -f https://raw.githubusercontent.com/openeverest/openeverest/$(OPENEVEREST_BRANCH)/config/crd/bases/monitoring.openeverest.io_monitoringbindings.yaml
+install-crds: ## Install the OpenEverest CRDs of the core version pinned in go.mod, and the PSMDB CRDs.
+	go mod download github.com/openeverest/openeverest/v2
+	kubectl apply --server-side --force-conflicts -f "$$(go list -m -f '{{.Dir}}' github.com/openeverest/openeverest/v2)/config/crd/bases"
 	curl -fsSL https://raw.githubusercontent.com/percona/percona-server-mongodb-operator/v$(PSMDB_OPERATOR_VERSION)/deploy/crd.yaml \
 		| kubectl apply --server-side -f -
 

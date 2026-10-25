@@ -15,7 +15,6 @@ spec:
         limits:
           cpu: 600m
           memory: 512Mi
-  # No monitoring component: everything comes from the destinations.
   monitoring:
     destinations:
       - name: pmm

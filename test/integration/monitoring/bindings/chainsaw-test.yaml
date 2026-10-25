@@ -7,7 +7,8 @@ spec:
   description: |
     Monitoring through Instance.spec.monitoring.destinations[]: a ProviderManaged
     pmm binding renders spec.pmm, an ExtensionManaged prometheus binding turns
-    the mongodb_exporter sidecars on and publishes the metrics endpoints, and
+    the mongodb_exporter sidecars on and publishes the metrics endpoints, a
+    deleted pmm destination keeps the live spec.pmm until it is re-created, and
     dropping each entry undoes exactly its part. No extension controller runs
     here, so the classes are claimed by hand and the prometheus binding is never
     Configured; what the provider owns is asserted.
@@ -68,6 +69,23 @@ spec:
                 -p '{"status":{"state":"ready", "size":3, "ready":3, "host":"psmdb-bindings-rs0.default.svc.cluster.local"}}' --type=merge
         - assert:
             file: 11-assert.yaml
+
+    - name: delete-pmm-destination
+      try:
+        - delete:
+            ref:
+              apiVersion: monitoring.openeverest.io/v1alpha1
+              kind: MonitoringDestination
+              name: pmm-it
+        - assert:
+            file: 12-assert.yaml
+
+    - name: recreate-pmm-destination
+      try:
+        - apply:
+            file: 13-recreate-pmm-destination.yaml
+        - assert:
+            file: 13-assert.yaml
 
     - name: drop-prometheus-entry
       try:

@@ -3,4 +3,4 @@ apiVersion: monitoring.openeverest.io/v1alpha1
 kind: MonitoringBinding
 metadata:
   labels:
-    openeverest.io/instance: psmdb-bindings
+    core.openeverest.io/instance: psmdb-bindings

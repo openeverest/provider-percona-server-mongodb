@@ -1,0 +1,12 @@
+apiVersion: monitoring.openeverest.io/v1alpha1
+kind: MonitoringDestination
+metadata:
+  name: pmm-it
+spec:
+  classRef:
+    name: pmm-it
+  credentialsSecretRef:
+    name: pmm-it-token
+  parameters:
+    url: http://pmm-it.example.com
+    verifyTLS: false

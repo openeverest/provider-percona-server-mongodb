@@ -20,9 +20,9 @@ permissions:
 
 env:
   IMG: provider-percona-server-mongodb:ci
-  # Branch of openeverest/openeverest to build the platform from. Tracks the
-  # extensible-monitoring branch go.mod is pinned to (openeverest/openeverest#3298).
-  OPENEVEREST_BRANCH: poc/extensible-monitoring
+  # Branch of openeverest/openeverest to build the test controller from: it
+  # must run core's monitoring controllers. Flips to main after the merge.
+  OPENEVEREST_BRANCH: monitoring/02-controllers
 
 jobs:
   run:
@@ -70,8 +70,6 @@ jobs:
 
       - name: Install CRDs
         run: make install-crds
-        env:
-          OPENEVEREST_BRANCH: ${{ env.OPENEVEREST_BRANCH }}
 
       - name: Deploy provider
         run: make deploy-provider-ci
