@@ -102,10 +102,11 @@ func scrapeEnabled(scrape *components.ScrapeParameters) bool {
 }
 
 // configureMetricsExporter adds a mongodb_exporter sidecar to every mongod and
-// mongos pod when the monitoring component exposes metrics.
+// mongos pod when the monitoring component exposes metrics or an
+// ExtensionManaged monitoring binding demands them.
 func configureMetricsExporter(c *controller.Context, psmdb *psmdbv1.PerconaServerMongoDB, usersSecretName string) error {
-	metrics, err := metricsParameters(c)
-	if err != nil || metrics == nil {
+	demanded, err := metricsExporterDemanded(c)
+	if err != nil || !demanded {
 		return err
 	}
 
