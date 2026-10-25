@@ -67,7 +67,7 @@ provider itself is covered under [Installation](#installation).
 | Version upgrades | ✅ | of the deployed MongoDB version — change `spec.version`; see [Versions](#versions) |
 | Custom configuration | ✅ | `mongod` / `mongos` config via the component's `configuration` parameter |
 | Monitoring | ✅ | PMM, and Prometheus / VictoriaMetrics through mongodb_exporter, via the optional `monitoring` component |
-| TLS | ✅ | operator-managed certificates; unsafe TLS is never enabled |
+| TLS | ✅ | on by default; generated, cert-manager or your own certificates — see [TLS](#tls) |
 
 Stateful workloads additionally report:
 
@@ -232,6 +232,48 @@ it. Every series carries the `core_openeverest_io_instance` and
   `prometheus.prometheusSpec.podMonitorSelectorNilUsesHelmValues=false` is set.
 - The VictoriaMetrics Operator converts `PodMonitor`s into `VMPodScrape`s by default, so with
   both systems enabled VictoriaMetrics scrapes the instance twice.
+
+### TLS
+
+TLS is on by default. Configure it with the instance-wide `tls` parameter:
+
+```yaml
+spec:
+  parameters:
+    tls:
+      mode: requireTLS                 # preferTLS (default) | requireTLS | disabled
+      # Pick one certificate source, or neither to have certificates issued:
+      certificateSecretName: my-tls    # tls.crt, tls.key and ca.crt
+      internalCertificateSecretName: my-tls-internal  # optional; members only
+      issuer:                          # cert-manager
+        name: corp-ca
+        kind: ClusterIssuer            # Issuer (default) | ClusterIssuer
+```
+
+- **`preferTLS`** encrypts traffic between members and lets clients choose; **`requireTLS`**
+  rejects clients without TLS. The two can be switched on a running instance (a rolling
+  restart). **`disabled`** turns TLS off and can only be chosen at creation: turning TLS on
+  or off changes how members authenticate each other.
+- **Certificates** are, in order of precedence:
+  1. your secrets: `certificateSecretName` (and optionally `internalCertificateSecretName`).
+     Their subject alternative names must cover `localhost` and the instance's service and
+     pod names (`<instance>-rs0`, `*.<instance>-rs0.<namespace>.svc.cluster.local`, plus the
+     `-cfg` and `-mongos` names when sharded). A cert-manager `Certificate` writing such a
+     secret works, and renewals roll out automatically; the operator never replaces the
+     secrets with its own;
+  2. a cert-manager `issuer` — a `ClusterIssuer` requires cert-manager in the
+     `cert-manager` namespace;
+  3. otherwise the operator issues them: through cert-manager with a CA of its own when
+     cert-manager is installed (renewed automatically), or else from a CA it generates once,
+     valid without expiry. Such an instance keeps its certificates if cert-manager is
+     installed later: the operator's migration to cert-manager does not complete.
+
+  The certificate source can't be changed after creation.
+- **Clients** authenticate with their password and need only the CA to verify the instance:
+  the connection secret (`<instance>-conn`) carries it as `ca.crt`, and its `uri` sets `tls`
+  to match the mode. TLS clients don't need a client certificate; on instances created
+  before this was supported, accepting them waits for the
+  `tls-clients-without-certificates` maintenance approval (a rolling restart).
 
 ## Development
 

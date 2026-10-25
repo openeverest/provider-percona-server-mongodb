@@ -1,0 +1,21 @@
+apiVersion: core.openeverest.io/v1alpha1
+kind: Instance
+metadata:
+  name: psmdb-tls
+spec:
+  providerRef:
+    name: percona-server-mongodb
+  parameters:
+    tls:
+      mode: requireTLS
+      certificateSecretName: my-tls
+  components:
+    engine:
+      type: mongod
+      replicas: 3
+      storage:
+        size: 4Gi
+      resources:
+        limits:
+          cpu: 600m
+          memory: 512Mi

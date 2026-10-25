@@ -1,0 +1,16 @@
+# Turning TLS off would change how the members authenticate each other.
+apiVersion: core.openeverest.io/v1alpha1
+kind: Instance
+metadata:
+  name: psmdb-tls
+status:
+  (conditions[?type == 'Ready'] | [0].reason): ValidationFailed
+  (contains(conditions[?type == 'Ready'] | [0].message, 'turned on or off')): true
+---
+apiVersion: psmdb.percona.com/v1
+kind: PerconaServerMongoDB
+metadata:
+  name: psmdb-tls
+spec:
+  tls:
+    mode: preferTLS
