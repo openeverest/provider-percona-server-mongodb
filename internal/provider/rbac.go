@@ -57,10 +57,8 @@ package provider
 // MONITORING RESOURCES
 // =============================================================================
 // +kubebuilder:rbac:groups=monitoring.openeverest.io,resources=monitoringconfigs,verbs=get;list;watch
-// +kubebuilder:rbac:groups=monitoring.openeverest.io,resources=monitoringclasses,verbs=get;list;watch
-// +kubebuilder:rbac:groups=monitoring.openeverest.io,resources=monitoringdestinations,verbs=get;list;watch
-// +kubebuilder:rbac:groups=monitoring.openeverest.io,resources=monitoringbindings,verbs=get;list;watch
-// +kubebuilder:rbac:groups=monitoring.openeverest.io,resources=monitoringbindings/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=monitoring.openeverest.io,resources=monitoringclasses;monitoringdestinations;monitoringbindings,verbs=get;list;watch
+// +kubebuilder:rbac:groups=monitoring.openeverest.io,resources=monitoringbindings/status,verbs=patch
 // +kubebuilder:rbac:groups="",resources=namespaces,verbs=get
 
 // Scrape resources created when the monitoring component exposes metrics:

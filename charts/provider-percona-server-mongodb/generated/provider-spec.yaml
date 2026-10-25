@@ -93,6 +93,14 @@ spec:
           type: object
       type: mongod
   defaultVersion: 8.0.32
+  monitoring:
+    componentTypes:
+      mongod:
+        kind: mongodb
+        metrics: Exporter
+    integrations:
+      pmm:
+        agentVersions: '>=3.0.0 <4.0.0'
   parametersSchema:
     openAPIV3Schema:
       properties:

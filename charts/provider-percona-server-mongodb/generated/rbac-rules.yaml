@@ -152,9 +152,7 @@
   resources:
     - monitoringbindings/status
   verbs:
-    - get
     - patch
-    - update
 - apiGroups:
     - operator.victoriametrics.com
   resources:

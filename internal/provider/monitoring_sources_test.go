@@ -77,10 +77,7 @@ func bindingContext(t *testing.T, entries []corev1alpha1.InstanceMonitoringDesti
 		WithScheme(scheme).
 		WithObjects(append(objs, in, provider)...).
 		Build()
-	c := controller.NewContext(context.Background(), cl, in, "psmdb")
-	// The runtime records the provider's integrations before every Sync.
-	c.SetMonitoringIntegrations((&PSMDBProvider{}).MonitoringIntegrations()...)
-	return c, cl
+	return controller.NewContext(context.Background(), cl, in, "psmdb"), cl
 }
 
 func entry(name, destination string) corev1alpha1.InstanceMonitoringDestination {
