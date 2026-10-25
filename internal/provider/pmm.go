@@ -15,6 +15,8 @@
 package provider
 
 import (
+	"fmt"
+
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 
@@ -106,7 +108,7 @@ var (
 func getPMMResources(
 	c *controller.Context,
 	requested corev1.ResourceRequirements,
-) corev1.ResourceRequirements {
+) (corev1.ResourceRequirements, error) {
 	engine := c.Instance().Spec.Components[common.ComponentEngine]
 	engineMemoryLimits := resource.Quantity{}
 	if engine.Resources != nil {
@@ -130,13 +132,28 @@ func getPMMResources(
 // mergeResources merges requested and default resources.
 // If a resource is specified in both, the value from requested is used.
 // If a resource is only specified in one, that value is used.
-func mergeResources(requested, defaultResources corev1.ResourceRequirements) corev1.ResourceRequirements {
+// A default request above the merged limit is lowered to the limit; a
+// requested request above it is an error.
+func mergeResources(requested, defaultResources corev1.ResourceRequirements) (corev1.ResourceRequirements, error) {
 	resources := corev1.ResourceRequirements{}
 
 	resources.Requests = mergeResourceList(requested.Requests, defaultResources.Requests)
 	resources.Limits = mergeResourceList(requested.Limits, defaultResources.Limits)
 
-	return resources
+	for _, name := range []corev1.ResourceName{corev1.ResourceCPU, corev1.ResourceMemory} {
+		request, hasRequest := resources.Requests[name]
+		limit, hasLimit := resources.Limits[name]
+		if !hasRequest || !hasLimit || request.Cmp(limit) <= 0 {
+			continue
+		}
+		if v, ok := requested.Requests[name]; ok && !v.IsZero() {
+			return corev1.ResourceRequirements{}, fmt.Errorf("resources.requests.%s %s exceeds resources.limits.%s %s",
+				name, request.String(), name, limit.String())
+		}
+		resources.Requests[name] = limit
+	}
+
+	return resources, nil
 }
 
 // mergeResourceList merges two resource lists, preferring values from requested.

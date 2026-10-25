@@ -22,12 +22,14 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	commonv1alpha1 "github.com/openeverest/openeverest/v2/api/common/v1alpha1"
 	corev1alpha1 "github.com/openeverest/openeverest/v2/api/core/v1alpha1"
@@ -46,6 +48,19 @@ const (
 // entries; objs are the bindings, destinations, classes, secrets and engine
 // CR that make them resolvable.
 func bindingContext(t *testing.T, entries []corev1alpha1.InstanceMonitoringDestination, objs ...client.Object) (*controller.Context, client.Client) {
+	t.Helper()
+
+	return bindingContextWith(t, interceptor.Funcs{}, entries, objs...)
+}
+
+// bindingContextWith is bindingContext over a client whose calls go through
+// funcs.
+func bindingContextWith(
+	t *testing.T,
+	funcs interceptor.Funcs,
+	entries []corev1alpha1.InstanceMonitoringDestination,
+	objs ...client.Object,
+) (*controller.Context, client.Client) {
 	t.Helper()
 
 	scheme := runtime.NewScheme()
@@ -76,6 +91,7 @@ func bindingContext(t *testing.T, entries []corev1alpha1.InstanceMonitoringDesti
 	cl := fake.NewClientBuilder().
 		WithScheme(scheme).
 		WithObjects(append(objs, in, provider)...).
+		WithInterceptorFuncs(funcs).
 		Build()
 	return controller.NewContext(context.Background(), cl, in, "psmdb"), cl
 }
@@ -160,22 +176,32 @@ func destination(name, class string, parameters string, secret string) *monitori
 	return d
 }
 
-// livePSMDB is the engine CR as the operator currently sees it.
+// livePSMDB is the engine CR as the operator currently sees it. A ready
+// cluster reports every pod of every component ready, any other state none.
 func livePSMDB(state psmdbv1.AppState, sharded, withExporter bool) *psmdbv1.PerconaServerMongoDB {
+	var ready int32
+	if state == psmdbv1.AppStateReady {
+		ready = 3
+	}
 	psmdb := &psmdbv1.PerconaServerMongoDB{
 		ObjectMeta: metav1.ObjectMeta{Name: bindingTestInstance, Namespace: bindingTestNS},
 		Spec: psmdbv1.PerconaServerMongoDBSpec{
 			Replsets: []*psmdbv1.ReplsetSpec{{Name: "rs0"}},
 			PMM:      psmdbv1.PMMSpec{Enabled: true, ServerHost: "live-pmm.example.com", Image: "percona/pmm-client:3.5.0"},
 		},
-		Status: psmdbv1.PerconaServerMongoDBStatus{State: state},
+		Status: psmdbv1.PerconaServerMongoDBStatus{
+			State:    state,
+			Replsets: map[string]psmdbv1.ReplsetStatus{"rs0": {Size: 3, Ready: ready}},
+		},
 	}
 	if sharded {
 		psmdb.Spec.Sharding = psmdbv1.Sharding{
 			Enabled:          true,
-			ConfigsvrReplSet: &psmdbv1.ReplsetSpec{Name: "cfg"},
+			ConfigsvrReplSet: &psmdbv1.ReplsetSpec{Name: psmdbv1.ConfigReplSetName},
 			Mongos:           &psmdbv1.MongosSpec{},
 		}
+		psmdb.Status.Replsets[psmdbv1.ConfigReplSetName] = psmdbv1.ReplsetStatus{Size: 3, Ready: ready}
+		psmdb.Status.Mongos = &psmdbv1.MongosStatus{Size: 3, Ready: int(ready)}
 	}
 	if withExporter {
 		psmdb.Spec.Replsets[0].Sidecars = []corev1.Container{{Name: metricsExporterContainerName}}
@@ -309,19 +335,52 @@ func TestMonitoringSources(t *testing.T) {
 		assert.Equal(t, []string{common.ComponentEngine}, endpointComponents(s))
 	})
 
-	t.Run("nothing is published without the exporter, before readiness or before the CR exists", func(t *testing.T) {
+	t.Run("nothing is published without the exporter, before a pod is ready or before the CR exists", func(t *testing.T) {
 		t.Parallel()
 
 		for name, objs := range map[string][]client.Object{
-			"no exporter": {livePSMDB(psmdbv1.AppStateReady, true, false)},
-			"not ready":   {livePSMDB(psmdbv1.AppStateInit, true, true)},
-			"no CR":       {},
+			"no exporter":  {livePSMDB(psmdbv1.AppStateReady, true, false)},
+			"no ready pod": {livePSMDB(psmdbv1.AppStateInit, true, true)},
+			"no CR":        {},
 		} {
 			c, _ := bindingContext(t, nil, objs...)
 
 			s, err := p.MonitoringSources(c)
 			require.NoError(t, err, name)
 			assert.Empty(t, s.Metrics, name)
+		}
+	})
+
+	t.Run("a rolling restart keeps the endpoints of components with a ready pod", func(t *testing.T) {
+		t.Parallel()
+
+		// restarting is a sharded cluster the operator reports initializing
+		// with this many of three pods ready per component.
+		restarting := func(engine, configServer, proxy int32) *psmdbv1.PerconaServerMongoDB {
+			psmdb := livePSMDB(psmdbv1.AppStateInit, true, true)
+			psmdb.Status.Replsets["rs0"] = psmdbv1.ReplsetStatus{Size: 3, Ready: engine}
+			psmdb.Status.Replsets[psmdbv1.ConfigReplSetName] = psmdbv1.ReplsetStatus{Size: 3, Ready: configServer}
+			psmdb.Status.Mongos.Ready = int(proxy)
+			return psmdb
+		}
+		for name, tc := range map[string]struct {
+			live *psmdbv1.PerconaServerMongoDB
+			want []string
+		}{
+			"one pod of each component restarting": {
+				restarting(2, 2, 2),
+				[]string{common.ComponentEngine, common.ComponentConfigServer, common.ComponentProxy},
+			},
+			"every mongos restarting": {
+				restarting(3, 3, 0),
+				[]string{common.ComponentEngine, common.ComponentConfigServer},
+			},
+		} {
+			c, _ := bindingContext(t, nil, tc.live)
+
+			s, err := p.MonitoringSources(c)
+			require.NoError(t, err, name)
+			assert.Equal(t, tc.want, endpointComponents(s), name)
 		}
 	})
 }
@@ -384,6 +443,28 @@ func TestApplyPMMBindings(t *testing.T) {
 		assert.Equal(t, pmmResourcesSmall.Requests[corev1.ResourceMemory], psmdb.Spec.PMM.Resources.Requests[corev1.ResourceMemory], "unset values keep the tier default")
 	})
 
+	t.Run("an entry limit below the tier request lowers the request to the limit", func(t *testing.T) {
+		t.Parallel()
+
+		b := acceptedBinding("pmm", "pmm-dst", "pmm", corev1alpha1.MonitoringExecutionModeProviderManaged)
+		b.Spec.Parameters = &runtime.RawExtension{Raw: []byte(`{"resources":{"limits":{"cpu":"50m","memory":"64Mi"}}}`)}
+		c, _ := bindingContext(t, pmmEntry, b,
+			destination("pmm-dst", "pmm", `{"url":"https://pmm.example.com"}`, "pmm-token"),
+			pmmClass("percona/pmm-client:3.8.0"),
+			pmmToken(),
+		)
+		psmdb := &psmdbv1.PerconaServerMongoDB{}
+
+		require.NoError(t, applyPMMBindings(c, psmdb, metricsTestUsersSecret))
+
+		limits := corev1.ResourceList{
+			corev1.ResourceCPU:    resource.MustParse("50m"),
+			corev1.ResourceMemory: resource.MustParse("64Mi"),
+		}
+		assert.Equal(t, corev1.ResourceRequirements{Requests: limits, Limits: limits}, psmdb.Spec.PMM.Resources,
+			"the small tier requests 95m and 97Mi, above these limits")
+	})
+
 	t.Run("a binding that is not Accepted keeps the live rendering", func(t *testing.T) {
 		t.Parallel()
 
@@ -405,36 +486,100 @@ func TestApplyPMMBindings(t *testing.T) {
 	t.Run("a binding that cannot be rendered reports RenderFailed and keeps the live rendering", func(t *testing.T) {
 		t.Parallel()
 
+		type objects struct {
+			binding *monitoringv1alpha1.MonitoringBinding
+			dst     *monitoringv1alpha1.MonitoringDestination
+			class   *monitoringv1alpha1.MonitoringClass
+			token   *corev1.Secret
+		}
 		live := livePSMDB(psmdbv1.AppStateReady, false, false)
 		for name, tc := range map[string]struct {
-			dst   *monitoringv1alpha1.MonitoringDestination
-			class *monitoringv1alpha1.MonitoringClass
+			breakIt func(o *objects)
+			message string
 		}{
 			"relative url": {
-				destination("pmm-dst", "pmm", `{"url":"pmm.example.com"}`, "pmm-token"),
-				pmmClass("percona/pmm-client:3.8.0"),
+				func(o *objects) { o.dst.Spec.Parameters.Raw = []byte(`{"url":"pmm.example.com"}`) },
+				`parameters.url "pmm.example.com": not an absolute URL`,
 			},
 			"no credentials": {
-				destination("pmm-dst", "pmm", `{"url":"https://pmm.example.com"}`, ""),
-				pmmClass("percona/pmm-client:3.8.0"),
+				func(o *objects) { o.dst.Spec.CredentialsSecretRef = nil },
+				"has no credentialsSecretRef",
 			},
 			"no agent image": {
-				destination("pmm-dst", "pmm", `{"url":"https://pmm.example.com"}`, "pmm-token"),
-				pmmClass(""),
+				func(o *objects) { o.class.Spec.ProviderManaged.AgentImage = "" },
+				"sets no providerManaged.agentImage",
+			},
+			"entry request above its own limit": {
+				func(o *objects) {
+					o.binding.Spec.Parameters = &runtime.RawExtension{Raw: []byte(`{"resources":{"requests":{"cpu":"500m"},"limits":{"cpu":"200m"}}}`)}
+				},
+				"resources.requests.cpu 500m exceeds resources.limits.cpu 200m",
+			},
+			"credentials Secret missing": {
+				func(o *objects) { o.token = nil },
+				"secret pmm-token not found",
+			},
+			"credentials Secret without apiKey": {
+				func(o *objects) { o.token.Data = map[string][]byte{"token": []byte("secret-token")} },
+				"failed to get key apiKey from secret pmm-token",
 			},
 		} {
-			c, _ := bindingContext(t, pmmEntry,
-				acceptedBinding("pmm", "pmm-dst", "pmm", corev1alpha1.MonitoringExecutionModeProviderManaged),
-				tc.dst, tc.class, pmmToken(), live.DeepCopy(),
-			)
+			o := objects{
+				binding: acceptedBinding("pmm", "pmm-dst", "pmm", corev1alpha1.MonitoringExecutionModeProviderManaged),
+				dst:     destination("pmm-dst", "pmm", `{"url":"https://pmm.example.com"}`, "pmm-token"),
+				class:   pmmClass("percona/pmm-client:3.8.0"),
+				token:   pmmToken(),
+			}
+			tc.breakIt(&o)
+			objs := []client.Object{o.binding, o.dst, o.class, live.DeepCopy()}
+			if o.token != nil {
+				objs = append(objs, o.token)
+			}
+			c, _ := bindingContext(t, pmmEntry, objs...)
 			psmdb := &psmdbv1.PerconaServerMongoDB{}
 
 			require.NoError(t, applyPMMBindings(c, psmdb, metricsTestUsersSecret), name)
 			assert.Equal(t, live.Spec.PMM, psmdb.Spec.PMM, name)
 
-			reason, _, staged := c.MonitoringBindingResult(bindingTestInstance + "-pmm")
+			reason, message, staged := c.MonitoringBindingResult(bindingTestInstance + "-pmm")
 			require.True(t, staged, name)
 			assert.Equal(t, monitoringv1alpha1.ReasonRenderFailed, reason, name)
+			assert.Contains(t, message, tc.message, name)
+		}
+	})
+
+	t.Run("API errors fail Sync instead of reporting RenderFailed", func(t *testing.T) {
+		t.Parallel()
+
+		errAPI := apierrors.NewServiceUnavailable("apiserver is restarting")
+		for name, funcs := range map[string]interceptor.Funcs{
+			"reading the credentials Secret": {
+				Get: func(ctx context.Context, cl client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+					if _, ok := obj.(*corev1.Secret); ok && key.Name == "pmm-token" {
+						return errAPI
+					}
+					return cl.Get(ctx, key, obj, opts...)
+				},
+			},
+			"applying the users Secret": {
+				Apply: func(context.Context, client.WithWatch, runtime.ApplyConfiguration, ...client.ApplyOption) error {
+					return errAPI
+				},
+			},
+		} {
+			c, _ := bindingContextWith(t, funcs, pmmEntry,
+				acceptedBinding("pmm", "pmm-dst", "pmm", corev1alpha1.MonitoringExecutionModeProviderManaged),
+				destination("pmm-dst", "pmm", `{"url":"https://pmm.example.com"}`, "pmm-token"),
+				pmmClass("percona/pmm-client:3.8.0"),
+				pmmToken(),
+				livePSMDB(psmdbv1.AppStateReady, false, false),
+			)
+			psmdb := &psmdbv1.PerconaServerMongoDB{}
+
+			require.ErrorIs(t, applyPMMBindings(c, psmdb, metricsTestUsersSecret), errAPI, name)
+
+			_, _, staged := c.MonitoringBindingResult(bindingTestInstance + "-pmm")
+			assert.False(t, staged, "%s: the retry decides the binding's result", name)
 		}
 	})
 

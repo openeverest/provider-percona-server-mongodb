@@ -210,7 +210,8 @@ spec:
       - name: pmm
         destinationRef:
           name: pmm-prod
-        # Optional; merged over the PMM client resources sized from the engine.
+        # Optional; merged over the PMM client resources sized from the engine. A request
+        # left unset never exceeds the limit set here.
         parameters:
           resources:
             limits:
@@ -234,9 +235,9 @@ The provider declares its monitoring contract in
   destinations requires metrics. The sidecar serves on the `metrics` port (9216) and logs in
   as the operator's cluster monitor user; its image is pinned by the `mongodbExporter`
   component type in [definition/versions.yaml](definition/versions.yaml). The provider
-  publishes the endpoints in `status.monitoring.sources` once the cluster is ready, and the
-  class's extension creates the scrape resources. Adding or removing the sidecar restarts
-  the pods one at a time.
+  publishes each component's endpoint in `status.monitoring.sources` once it has a ready
+  pod, and the class's extension creates the scrape resources. Adding or removing the
+  sidecar restarts the pods one at a time.
 
 `kubectl get monitoringbindings` lists one binding per destination entry, and the
 instance's `MonitoringConfigured` condition reports whether every entry is configured.

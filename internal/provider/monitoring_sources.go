@@ -16,8 +16,10 @@ package provider
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
+	"slices"
 
 	psmdbv1 "github.com/percona/percona-server-mongodb-operator/pkg/apis/psmdb/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -45,7 +47,7 @@ func (p *PSMDBProvider) MonitoringIntegrations() []string {
 // mongod and mongos pod carries a mongodb_exporter sidecar while a bound class
 // requires metrics, so one endpoint per component is published: engine, and
 // for sharded clusters configServer and proxy, each selected by the component
-// labels labelPods sets.
+// labels labelPods sets, once that component has a ready pod.
 func (p *PSMDBProvider) MonitoringSources(c *controller.Context) (*corev1alpha1.MonitoringSources, error) {
 	psmdb := &psmdbv1.PerconaServerMongoDB{}
 	if err := c.Get(psmdb, c.Name()); err != nil {
@@ -53,14 +55,10 @@ func (p *PSMDBProvider) MonitoringSources(c *controller.Context) (*corev1alpha1.
 		return &corev1alpha1.MonitoringSources{}, nil //nolint:nilerr
 	}
 	s := &corev1alpha1.MonitoringSources{}
-	if !hasMetricsExporter(psmdb) || psmdb.Status.State != psmdbv1.AppStateReady {
+	if !hasMetricsExporter(psmdb) {
 		return s, nil
 	}
-	components := []string{common.ComponentEngine}
-	if psmdb.Spec.Sharding.Enabled {
-		components = append(components, common.ComponentConfigServer, common.ComponentProxy)
-	}
-	for _, component := range components {
+	for _, component := range servingComponents(psmdb) {
 		s.Metrics = append(s.Metrics, corev1alpha1.MetricsEndpoint{
 			Component: component,
 			Kind:      "mongodb",
@@ -74,6 +72,27 @@ func (p *PSMDBProvider) MonitoringSources(c *controller.Context) (*corev1alpha1.
 		})
 	}
 	return s, nil
+}
+
+// servingComponents returns the components the operator reports a ready pod
+// for, so a rolling restart or scale keeps their endpoints published.
+func servingComponents(psmdb *psmdbv1.PerconaServerMongoDB) []string {
+	var components []string
+	if slices.ContainsFunc(psmdb.Spec.Replsets, func(rs *psmdbv1.ReplsetSpec) bool {
+		return psmdb.Status.Replsets[rs.Name].Ready > 0
+	}) {
+		components = append(components, common.ComponentEngine)
+	}
+	if !psmdb.Spec.Sharding.Enabled {
+		return components
+	}
+	if psmdb.Status.Replsets[psmdbv1.ConfigReplSetName].Ready > 0 {
+		components = append(components, common.ComponentConfigServer)
+	}
+	if psmdb.Status.Mongos != nil && psmdb.Status.Mongos.Ready > 0 {
+		components = append(components, common.ComponentProxy)
+	}
+	return components
 }
 
 // hasMetricsExporter reports whether the engine CR carries the exporter
@@ -127,13 +146,20 @@ type pmmInstanceParameters struct {
 	Resources corev1.ResourceRequirements `json:"resources"`
 }
 
+// renderFailure is a binding that cannot be rendered as configured. It is
+// reported as RenderFailed; any other error fails Sync, which is retried.
+type renderFailure struct{ error }
+
+func renderFailedf(format string, args ...any) error {
+	return renderFailure{fmt.Errorf(format, args...)}
+}
+
 // applyPMMBindings renders spec.pmm from the Instance's ProviderManaged pmm
 // binding while the pmm integration is required, keeps the live spec.pmm
 // while that is unresolved, and leaves PMM disabled otherwise.
 //
-// A binding that fails to render is reported through
-// SetMonitoringBindingResult and keeps the live rendering; it never fails
-// Sync.
+// A binding that cannot be rendered as configured is reported through
+// SetMonitoringBindingResult and keeps the live rendering.
 func applyPMMBindings(c *controller.Context, psmdb *psmdbv1.PerconaServerMongoDB, usersSecretName string) error {
 	req, err := c.RequiredSources()
 	if err != nil {
@@ -153,10 +179,13 @@ func applyPMMBindings(c *controller.Context, psmdb *psmdbv1.PerconaServerMongoDB
 			if !rb.Apply || rb.Integration() != pmmIntegration {
 				continue
 			}
-			if err := renderPMMBinding(c, psmdb, usersSecretName, rb); err != nil {
+			err := renderPMMBinding(c, psmdb, usersSecretName, rb)
+			if _, invalid := errors.AsType[renderFailure](err); invalid {
 				log.FromContext(c.Context()).Error(err, "PMM binding could not be rendered", "binding", rb.Binding.Name)
 				c.SetMonitoringBindingResult(rb.Binding.Name, monitoringv1alpha1.ReasonRenderFailed, err.Error())
 				psmdb.Spec.PMM = *live.Spec.PMM.DeepCopy()
+			} else if err != nil {
+				return fmt.Errorf("render PMM binding %s: %w", rb.Binding.Name, err)
 			}
 		}
 	case pmm.Else(live.Spec.PMM.Enabled):
@@ -172,28 +201,32 @@ func applyPMMBindings(c *controller.Context, psmdb *psmdbv1.PerconaServerMongoDB
 func renderPMMBinding(c *controller.Context, psmdb *psmdbv1.PerconaServerMongoDB, usersSecretName string, rb controller.ResolvedBinding) error {
 	image := rb.Class.Spec.ProviderManaged.AgentImage
 	if image == "" {
-		return fmt.Errorf("MonitoringClass %q sets no providerManaged.agentImage", rb.Class.Name)
+		return renderFailedf("MonitoringClass %q sets no providerManaged.agentImage", rb.Class.Name)
 	}
 
 	dstParams := pmmDestinationParameters{}
 	if rb.Destination.Spec.Parameters != nil {
 		if err := json.Unmarshal(rb.Destination.Spec.Parameters.Raw, &dstParams); err != nil {
-			return fmt.Errorf("decode MonitoringDestination %q parameters: %w", rb.Destination.Name, err)
+			return renderFailedf("decode MonitoringDestination %q parameters: %w", rb.Destination.Name, err)
 		}
 	}
 	u, err := url.Parse(dstParams.URL)
 	if err != nil || u.Host == "" {
-		return fmt.Errorf("MonitoringDestination %q parameters.url %q: not an absolute URL", rb.Destination.Name, dstParams.URL)
+		return renderFailedf("MonitoringDestination %q parameters.url %q: not an absolute URL", rb.Destination.Name, dstParams.URL)
 	}
 	if rb.Destination.Spec.CredentialsSecretRef == nil {
-		return fmt.Errorf("MonitoringDestination %q has no credentialsSecretRef", rb.Destination.Name)
+		return renderFailedf("MonitoringDestination %q has no credentialsSecretRef", rb.Destination.Name)
 	}
 
 	entryParams := pmmInstanceParameters{}
 	if rb.Binding.Spec.Parameters != nil {
 		if err := json.Unmarshal(rb.Binding.Spec.Parameters.Raw, &entryParams); err != nil {
-			return fmt.Errorf("decode binding parameters: %w", err)
+			return renderFailedf("decode binding parameters: %w", err)
 		}
+	}
+	resources, err := getPMMResources(c, entryParams.Resources)
+	if err != nil {
+		return renderFailedf("binding parameters: %w", err)
 	}
 
 	// The operator reads the server token from the users secret.
@@ -205,7 +238,7 @@ func renderPMMBinding(c *controller.Context, psmdb *psmdbv1.PerconaServerMongoDB
 		Enabled:    true,
 		ServerHost: u.Host,
 		Image:      image,
-		Resources:  getPMMResources(c, entryParams.Resources),
+		Resources:  resources,
 		// mongodParams covers both shard and config server replica sets, so
 		// only mongos can be labelled with its component.
 		MongodParams: pmmAdminParams(c, ""),

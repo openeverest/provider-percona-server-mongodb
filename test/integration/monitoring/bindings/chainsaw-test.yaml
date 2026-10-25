@@ -60,13 +60,13 @@ spec:
             file: 10-errors.yaml
 
     # Simulate the PSMDB operator (scaled to 0) marking the cluster ready: the
-    # provider publishes metrics endpoints only for a serving cluster.
+    # provider publishes a component's metrics endpoint once it has a ready pod.
     - name: cluster-ready
       try:
         - script:
             content: |
               kubectl patch psmdb/psmdb-bindings --subresource status -n $NAMESPACE \
-                -p '{"status":{"state":"ready", "size":3, "ready":3, "host":"psmdb-bindings-rs0.default.svc.cluster.local"}}' --type=merge
+                -p '{"status":{"state":"ready", "size":3, "ready":3, "host":"psmdb-bindings-rs0.default.svc.cluster.local", "replsets":{"rs0":{"size":3, "ready":3, "status":"ready"}}}}' --type=merge
         - assert:
             file: 11-assert.yaml
 

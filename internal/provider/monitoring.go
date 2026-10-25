@@ -20,6 +20,7 @@ import (
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 
 	"github.com/openeverest/openeverest/v2/provider-runtime/controller"
 )
@@ -50,15 +51,18 @@ func prometheusLabelName(key string) string {
 
 // copySecretData copies the value of a source key from the secret
 // and applies it to the destination secret with the destination key.
+// A missing source secret or key is a renderFailure.
 func copySecretData(c *controller.Context, source, dest, sourceKey, destKey string) error {
 	sourceSecret := &corev1.Secret{}
-	if err := c.Get(sourceSecret, source); err != nil {
+	if err := c.Get(sourceSecret, source); apierrors.IsNotFound(err) {
+		return renderFailedf("secret %s not found", source)
+	} else if err != nil {
 		return fmt.Errorf("failed to get secret %s: %w", source, err)
 	}
 
 	apiKey, ok := sourceSecret.Data[sourceKey]
 	if !ok {
-		return fmt.Errorf("failed to get key %s from secret %s", sourceKey, source)
+		return renderFailedf("failed to get key %s from secret %s", sourceKey, source)
 	}
 
 	// Server-side apply owns only destKey; the operator's user keys are left alone.
