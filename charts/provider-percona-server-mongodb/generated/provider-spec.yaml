@@ -22,6 +22,11 @@ spec:
           version: 8.0.8-3
         - image: percona/percona-server-mongodb:8.0.12-4
           version: 8.0.12-4
+    mongodbExporter:
+      defaultVersion: 0.53.0
+      versions:
+        - image: percona/mongodb_exporter:0.53.0
+          version: 0.53.0
     pmm:
       defaultVersion: 3.7.0
       versions:
@@ -52,6 +57,19 @@ spec:
       parametersSchema:
         openAPIV3Schema:
           properties:
+            metrics:
+              properties:
+                prometheus:
+                  properties:
+                    enabled:
+                      type: boolean
+                  type: object
+                victoriaMetrics:
+                  properties:
+                    enabled:
+                      type: boolean
+                  type: object
+              type: object
             monitoringConfigName:
               type: string
           type: object
@@ -241,13 +259,47 @@ spec:
           label: Database Version
         monitoring:
           components:
-            monitoring:
-              dataSource:
-                provider: monitoringConfigs
-              fieldParams:
-                label: Monitoring endpoint
-              path: spec.components.monitoring.parameters.monitoringConfigName
-              uiType: select
+            metrics:
+              components:
+                prometheus:
+                  fieldParams:
+                    helperText: Create a PodMonitor so the Prometheus Operator scrapes the metrics.
+                    label: Prometheus
+                  path: spec.components.monitoring.parameters.metrics.prometheus.enabled
+                  uiType: toggle
+                victoriaMetrics:
+                  fieldParams:
+                    helperText: Create a VMPodScrape so the VictoriaMetrics Operator scrapes the metrics.
+                    label: VictoriaMetrics
+                  path: spec.components.monitoring.parameters.metrics.victoriaMetrics.enabled
+                  uiType: toggle
+              componentsOrder:
+                - prometheus
+                - victoriaMetrics
+              description: Run mongodb_exporter next to every MongoDB pod to expose metrics in the Prometheus format.
+              groupType: toggleable
+              label: Expose metrics
+              uiType: group
+            pmm:
+              components:
+                monitoringConfig:
+                  dataSource:
+                    provider: monitoringConfigs
+                  fieldParams:
+                    label: PMM server
+                  path: spec.components.monitoring.parameters.monitoringConfigName
+                  uiType: select
+                  validation:
+                    required: true
+              componentsOrder:
+                - monitoringConfig
+              description: Send metrics and query analytics to Percona Monitoring and Management.
+              groupType: toggleable
+              label: PMM
+              uiType: group
+          componentsOrder:
+            - pmm
+            - metrics
           description: Monitor the health of your database to detect issues quickly and improve its performance.
           label: Monitoring
         resources:
@@ -399,13 +451,47 @@ spec:
           label: Database Version
         monitoring:
           components:
-            monitoring:
-              dataSource:
-                provider: monitoringConfigs
-              fieldParams:
-                label: Monitoring endpoint
-              path: spec.components.monitoring.parameters.monitoringConfigName
-              uiType: select
+            metrics:
+              components:
+                prometheus:
+                  fieldParams:
+                    helperText: Create a PodMonitor so the Prometheus Operator scrapes the metrics.
+                    label: Prometheus
+                  path: spec.components.monitoring.parameters.metrics.prometheus.enabled
+                  uiType: toggle
+                victoriaMetrics:
+                  fieldParams:
+                    helperText: Create a VMPodScrape so the VictoriaMetrics Operator scrapes the metrics.
+                    label: VictoriaMetrics
+                  path: spec.components.monitoring.parameters.metrics.victoriaMetrics.enabled
+                  uiType: toggle
+              componentsOrder:
+                - prometheus
+                - victoriaMetrics
+              description: Run mongodb_exporter next to every MongoDB pod to expose metrics in the Prometheus format.
+              groupType: toggleable
+              label: Expose metrics
+              uiType: group
+            pmm:
+              components:
+                monitoringConfig:
+                  dataSource:
+                    provider: monitoringConfigs
+                  fieldParams:
+                    label: PMM server
+                  path: spec.components.monitoring.parameters.monitoringConfigName
+                  uiType: select
+                  validation:
+                    required: true
+              componentsOrder:
+                - monitoringConfig
+              description: Send metrics and query analytics to Percona Monitoring and Management.
+              groupType: toggleable
+              label: PMM
+              uiType: group
+          componentsOrder:
+            - pmm
+            - metrics
           description: Monitor the health of your database to detect issues quickly and improve its performance.
           label: Monitoring
         resources:

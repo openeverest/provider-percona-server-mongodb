@@ -19,6 +19,7 @@ import (
 
 	goversion "github.com/hashicorp/go-version"
 	psmdbv1 "github.com/percona/percona-server-mongodb-operator/pkg/apis/psmdb/v1"
+	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -35,6 +36,7 @@ import (
 	monitoringv1alpha1 "github.com/openeverest/openeverest/v2/api/monitoring/v1alpha1"
 	"github.com/openeverest/openeverest/v2/provider-runtime/controller"
 
+	vmv1beta1 "github.com/openeverest/provider-percona-server-mongodb/internal/apis/victoriametrics/v1beta1"
 	"github.com/openeverest/provider-percona-server-mongodb/internal/common"
 )
 
@@ -262,6 +264,10 @@ func SyncPSMDB(c *controller.Context) error {
 
 	usersSecretName := "everest-secrets-" + c.Name()
 
+	if err := configureMetricsExporter(c, psmdb, usersSecretName); err != nil {
+		return fmt.Errorf("configure metrics exporter: %w", err)
+	}
+
 	// Ensuring user secret MUST run before configureMonitoring: when PMM
 	// is enabled, it creates or updates the user secret to hold
 	// PMM_SERVER_TOKEN, which would make ensureUserSecret and
@@ -305,6 +311,10 @@ func SyncPSMDB(c *controller.Context) error {
 	}
 
 	if err := c.Apply(psmdb); err != nil {
+		return err
+	}
+
+	if err := reconcileMetricsScrapes(c); err != nil {
 		return err
 	}
 
@@ -578,6 +588,12 @@ func CleanupPSMDB(c *controller.Context) error {
 		return err
 	}
 
+	// Owner references remove the scrape resources the provider created;
+	// the VMPodScrape converted from its PodMonitor has none.
+	if err := deleteConvertedPodMonitor(c); err != nil {
+		return err
+	}
+
 	l.Info("PSMDB cluster cleaned up", "cluster", c.Name())
 
 	return nil
@@ -612,6 +628,9 @@ func NewPSMDBProviderInterface() *PSMDBProvider {
 			monitoringv1alpha1.SchemeBuilder.AddToScheme,
 			// Deployments are read to discover the running operator version.
 			appsv1.AddToScheme,
+			// Scrape resources for the exposed metrics.
+			monitoringv1.AddToScheme,
+			vmv1beta1.AddToScheme,
 		},
 		WatchConfigs: []controller.WatchConfig{
 			// Watch owned PSMDB resources - only trigger on spec changes

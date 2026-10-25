@@ -1,0 +1,28 @@
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMPodScrape
+metadata:
+  name: psmdb-metrics-victoriametrics
+  ownerReferences:
+    - apiVersion: core.openeverest.io/v1alpha1
+      kind: Instance
+      name: psmdb-metrics
+spec:
+  selector:
+    matchLabels:
+      core.openeverest.io/instance: psmdb-metrics
+  podTargetLabels:
+    - core.openeverest.io/instance
+    - core.openeverest.io/component
+  podMetricsEndpoints:
+    - port: metrics
+      path: /metrics
+---
+apiVersion: psmdb.percona.com/v1
+kind: PerconaServerMongoDB
+metadata:
+  name: psmdb-metrics
+spec:
+  replsets:
+    - name: rs0
+      sidecars:
+        - name: mongodb-exporter

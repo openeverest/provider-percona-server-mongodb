@@ -359,13 +359,47 @@ ui:
       label: "Monitoring"
       description: "Monitor the health of your database to detect issues quickly and improve its performance."
       components:
-        monitoring:
-          uiType: select
-          path: spec.components.monitoring.parameters.monitoringConfigName
-          fieldParams:
-            label: "Monitoring endpoint"
-          dataSource:
-            provider: monitoringConfigs
+        pmm:
+          uiType: group
+          groupType: toggleable
+          label: "PMM"
+          description: "Send metrics and query analytics to Percona Monitoring and Management."
+          components:
+            monitoringConfig:
+              uiType: select
+              path: spec.components.monitoring.parameters.monitoringConfigName
+              fieldParams:
+                label: "PMM server"
+              validation:
+                required: true
+              dataSource:
+                provider: monitoringConfigs
+          componentsOrder:
+            - monitoringConfig
+        metrics:
+          uiType: group
+          groupType: toggleable
+          label: "Expose metrics"
+          description: "Run mongodb_exporter next to every MongoDB pod to expose metrics in the Prometheus format."
+          components:
+            prometheus:
+              uiType: toggle
+              path: spec.components.monitoring.parameters.metrics.prometheus.enabled
+              fieldParams:
+                label: "Prometheus"
+                helperText: "Create a PodMonitor so the Prometheus Operator scrapes the metrics."
+            victoriaMetrics:
+              uiType: toggle
+              path: spec.components.monitoring.parameters.metrics.victoriaMetrics.enabled
+              fieldParams:
+                label: "VictoriaMetrics"
+                helperText: "Create a VMPodScrape so the VictoriaMetrics Operator scrapes the metrics."
+          componentsOrder:
+            - prometheus
+            - victoriaMetrics
+      componentsOrder:
+        - pmm
+        - metrics
     advanced:
       label: "Advanced configuration"
       description: "Configure advanced settings for your database"
