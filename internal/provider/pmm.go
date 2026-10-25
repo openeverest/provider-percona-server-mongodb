@@ -98,20 +98,15 @@ var (
 // getPMMResources returns the PMM resource requirements for the instance.
 //
 // Default resources are calculated from the engine memory size tier (small,
-// medium, or large) and then merged with any user-specified overrides from the
-// monitoring component. User-provided values always take precedence over the
-// calculated defaults. Resources are never preserved from a previous monitoring
-// configuration; they are always freshly calculated on each reconciliation.
+// medium, or large) and then merged with requested, the overrides set in the
+// parameters of the instance's pmm monitoring destination. Requested values
+// always take precedence over the calculated defaults. Resources are never
+// preserved from a previous monitoring configuration; they are always freshly
+// calculated on each reconciliation.
 func getPMMResources(
 	c *controller.Context,
+	requested corev1.ResourceRequirements,
 ) corev1.ResourceRequirements {
-	monitoring := c.Instance().Spec.Components[common.ComponentMonitoring]
-
-	requested := corev1.ResourceRequirements{}
-	if monitoring.Resources != nil {
-		requested = *monitoring.Resources
-	}
-
 	engine := c.Instance().Spec.Components[common.ComponentEngine]
 	engineMemoryLimits := resource.Quantity{}
 	if engine.Resources != nil {

@@ -42,38 +42,5 @@ type MongosParameters struct {
 	Configuration string `json:"configuration,omitempty"`
 }
 
-// MonitoringParameters defines structured parameters for the monitoring
-// component. Each monitoring integration is configured independently; an
-// integration left unset is not deployed.
-type MonitoringParameters struct {
-	// MonitoringConfigName specifies the name of the MonitoringConfig resource
-	// of the PMM server to send metrics to.
-	// If not specified, PMM is not configured.
-	MonitoringConfigName *string `json:"monitoringConfigName,omitempty"`
-
-	// Metrics exposes MongoDB metrics in the Prometheus format through a
-	// mongodb_exporter sidecar next to every mongod and mongos.
-	// If not specified, no exporter runs.
-	Metrics *MetricsParameters `json:"metrics,omitempty"`
-}
-
-// MetricsParameters configures which monitoring systems scrape the exposed
-// metrics.
-type MetricsParameters struct {
-	// Prometheus configures scraping by the Prometheus Operator.
-	Prometheus *ScrapeParameters `json:"prometheus,omitempty"`
-
-	// VictoriaMetrics configures scraping by the VictoriaMetrics Operator.
-	VictoriaMetrics *ScrapeParameters `json:"victoriaMetrics,omitempty"`
-}
-
-// ScrapeParameters configures scraping of the exposed metrics by one
-// monitoring system.
-type ScrapeParameters struct {
-	// Enabled creates the monitoring system's scrape resource for the
-	// instance: a PodMonitor for Prometheus, a VMPodScrape for VictoriaMetrics.
-	Enabled bool `json:"enabled,omitempty"`
-}
-
 // BackupParameters defines structured parameters for backup agents.
 type BackupParameters struct{}

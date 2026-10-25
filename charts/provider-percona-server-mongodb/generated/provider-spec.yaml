@@ -35,15 +35,6 @@ spec:
       versions:
         - image: percona/mongodb_exporter:0.53.0
           version: 0.53.0
-    pmm:
-      defaultVersion: 3.9.1
-      versions:
-        - image: percona/pmm-client:2.44.1
-          version: 2.44.1
-        - image: percona/pmm-client:3.7.0
-          version: 3.7.0
-        - image: percona/pmm-client:3.9.1
-          version: 3.9.1
   components:
     backupAgent:
       type: backup
@@ -63,27 +54,6 @@ spec:
               type: string
           type: object
       type: mongod
-    monitoring:
-      parametersSchema:
-        openAPIV3Schema:
-          properties:
-            metrics:
-              properties:
-                prometheus:
-                  properties:
-                    enabled:
-                      type: boolean
-                  type: object
-                victoriaMetrics:
-                  properties:
-                    enabled:
-                      type: boolean
-                  type: object
-              type: object
-            monitoringConfigName:
-              type: string
-          type: object
-      type: pmm
     proxy:
       parametersSchema:
         openAPIV3Schema:
@@ -174,12 +144,6 @@ spec:
                 storage: {}
               required:
                 - storage
-        monitoring:
-          optional: true
-          supportedFields:
-            openAPIV3Schema:
-              properties:
-                resources: {}
     sharded:
       components:
         backupAgent:
@@ -215,12 +179,6 @@ spec:
                 storage: {}
               required:
                 - storage
-        monitoring:
-          optional: true
-          supportedFields:
-            openAPIV3Schema:
-              properties:
-                resources: {}
         proxy:
           supportedFields:
             openAPIV3Schema:
@@ -307,51 +265,6 @@ spec:
                 required: true
           description: Provide the information about the database version you want to use.
           label: Database Version
-        monitoring:
-          components:
-            metrics:
-              components:
-                prometheus:
-                  fieldParams:
-                    helperText: Create a PodMonitor so the Prometheus Operator scrapes the metrics.
-                    label: Prometheus
-                  path: spec.components.monitoring.parameters.metrics.prometheus.enabled
-                  uiType: toggle
-                victoriaMetrics:
-                  fieldParams:
-                    helperText: Create a VMPodScrape so the VictoriaMetrics Operator scrapes the metrics.
-                    label: VictoriaMetrics
-                  path: spec.components.monitoring.parameters.metrics.victoriaMetrics.enabled
-                  uiType: toggle
-              componentsOrder:
-                - prometheus
-                - victoriaMetrics
-              description: Run mongodb_exporter next to every MongoDB pod to expose metrics in the Prometheus format.
-              groupType: toggleable
-              label: Expose metrics
-              uiType: group
-            pmm:
-              components:
-                monitoringConfig:
-                  dataSource:
-                    provider: monitoringConfigs
-                  fieldParams:
-                    label: PMM server
-                  path: spec.components.monitoring.parameters.monitoringConfigName
-                  uiType: select
-                  validation:
-                    required: true
-              componentsOrder:
-                - monitoringConfig
-              description: Send metrics and query analytics to Percona Monitoring and Management.
-              groupType: toggleable
-              label: PMM
-              uiType: group
-          componentsOrder:
-            - pmm
-            - metrics
-          description: Monitor the health of your database to detect issues quickly and improve its performance.
-          label: Monitoring
         resources:
           components:
             nodes:
@@ -529,7 +442,6 @@ spec:
       sectionsOrder:
         - databaseVersion
         - resources
-        - monitoring
         - tls
         - advanced
     sharded:
@@ -598,51 +510,6 @@ spec:
                 required: true
           description: Provide the information about the database version you want to use.
           label: Database Version
-        monitoring:
-          components:
-            metrics:
-              components:
-                prometheus:
-                  fieldParams:
-                    helperText: Create a PodMonitor so the Prometheus Operator scrapes the metrics.
-                    label: Prometheus
-                  path: spec.components.monitoring.parameters.metrics.prometheus.enabled
-                  uiType: toggle
-                victoriaMetrics:
-                  fieldParams:
-                    helperText: Create a VMPodScrape so the VictoriaMetrics Operator scrapes the metrics.
-                    label: VictoriaMetrics
-                  path: spec.components.monitoring.parameters.metrics.victoriaMetrics.enabled
-                  uiType: toggle
-              componentsOrder:
-                - prometheus
-                - victoriaMetrics
-              description: Run mongodb_exporter next to every MongoDB pod to expose metrics in the Prometheus format.
-              groupType: toggleable
-              label: Expose metrics
-              uiType: group
-            pmm:
-              components:
-                monitoringConfig:
-                  dataSource:
-                    provider: monitoringConfigs
-                  fieldParams:
-                    label: PMM server
-                  path: spec.components.monitoring.parameters.monitoringConfigName
-                  uiType: select
-                  validation:
-                    required: true
-              componentsOrder:
-                - monitoringConfig
-              description: Send metrics and query analytics to Percona Monitoring and Management.
-              groupType: toggleable
-              label: PMM
-              uiType: group
-          componentsOrder:
-            - pmm
-            - metrics
-          description: Monitor the health of your database to detect issues quickly and improve its performance.
-          label: Monitoring
         resources:
           components:
             configServers:
@@ -997,7 +864,6 @@ spec:
       sectionsOrder:
         - databaseVersion
         - resources
-        - monitoring
         - tls
         - advanced
   versions:
@@ -1005,62 +871,53 @@ spec:
         backupAgent: 2.15.0
         configServer: 8.0.32-14
         engine: 8.0.32-14
-        monitoring: 3.9.1
         proxy: 8.0.32-14
       name: 8.0.32
     - components:
         backupAgent: 2.12.0
         configServer: 8.0.12-4
         engine: 8.0.12-4
-        monitoring: 3.7.0
         proxy: 8.0.12-4
       name: 8.0.12
     - components:
         backupAgent: 2.12.0
         configServer: 8.0.8-3
         engine: 8.0.8-3
-        monitoring: 3.7.0
         proxy: 8.0.8-3
       name: 8.0.8
     - components:
         backupAgent: 2.12.0
         configServer: 8.0.4-1
         engine: 8.0.4-1
-        monitoring: 3.7.0
         proxy: 8.0.4-1
       name: 8.0.4
     - components:
         backupAgent: 2.15.0
         configServer: 7.0.43-23
         engine: 7.0.43-23
-        monitoring: 3.9.1
         proxy: 7.0.43-23
       name: 7.0.43
     - components:
         backupAgent: 2.12.0
         configServer: 7.0.18-11
         engine: 7.0.18-11
-        monitoring: 3.7.0
         proxy: 7.0.18-11
       name: 7.0.18
     - components:
         backupAgent: 2.15.0
         configServer: 6.0.29-23
         engine: 6.0.29-23
-        monitoring: 3.9.1
         proxy: 6.0.29-23
       name: 6.0.29
     - components:
         backupAgent: 2.12.0
         configServer: 6.0.21-18
         engine: 6.0.21-18
-        monitoring: 3.7.0
         proxy: 6.0.21-18
       name: 6.0.21
     - components:
         backupAgent: 2.12.0
         configServer: 6.0.19-16
         engine: 6.0.19-16
-        monitoring: 3.7.0
         proxy: 6.0.19-16
       name: 6.0.19

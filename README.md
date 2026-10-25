@@ -67,7 +67,7 @@ provider itself is covered under [Installation](#installation).
 | Vertical scaling (CPU / memory) | ✅ | `spec.components.<name>.resources` |
 | Version upgrades | ✅ | of the deployed MongoDB version — change `spec.version`; see [Versions](#versions) |
 | Custom configuration | ✅ | `mongod` / `mongos` config via the component's `configuration` parameter |
-| Monitoring | ✅ | PMM, and Prometheus / VictoriaMetrics through mongodb_exporter, via the optional `monitoring` component |
+| Monitoring | ✅ | PMM, and any metrics backend through mongodb_exporter, via `spec.monitoring.destinations` — see [Monitoring](#monitoring) |
 | TLS | ✅ | on by default; generated, cert-manager or your own certificates — see [TLS](#tls) |
 | Pod scheduling | ✅ | affinity and topology spread per component — see [Pod scheduling](#pod-scheduling) |
 
@@ -160,22 +160,22 @@ Credentials are in the secret named by `.status.connection.credentialsSecretRef`
 | `sharded` | | Sharded cluster: `engine` shards, `configServer`, and `mongos` routers (`proxy`); shard count via the topology's `numShards` parameter |
 <!-- END GENERATED: topologies -->
 
-The `backupAgent` and `monitoring` components are optional in both topologies.
+The `backupAgent` component is optional in both topologies.
 
 ## Versions
 
 <!-- BEGIN GENERATED: versions -->
-| Version bundle | Default | mongod | backup | pmm |
-|---|---|---|---|---|
-| `8.0.32` | ✅ | `8.0.32-14` | `2.15.0` | `3.9.1` |
-| `8.0.12` | | `8.0.12-4` | `2.12.0` | `3.7.0` |
-| `8.0.8` | | `8.0.8-3` | `2.12.0` | `3.7.0` |
-| `8.0.4` | | `8.0.4-1` | `2.12.0` | `3.7.0` |
-| `7.0.43` | | `7.0.43-23` | `2.15.0` | `3.9.1` |
-| `7.0.18` | | `7.0.18-11` | `2.12.0` | `3.7.0` |
-| `6.0.29` | | `6.0.29-23` | `2.15.0` | `3.9.1` |
-| `6.0.21` | | `6.0.21-18` | `2.12.0` | `3.7.0` |
-| `6.0.19` | | `6.0.19-16` | `2.12.0` | `3.7.0` |
+| Version bundle | Default | mongod | backup |
+|---|---|---|---|
+| `8.0.32` | ✅ | `8.0.32-14` | `2.15.0` |
+| `8.0.12` | | `8.0.12-4` | `2.12.0` |
+| `8.0.8` | | `8.0.8-3` | `2.12.0` |
+| `8.0.4` | | `8.0.4-1` | `2.12.0` |
+| `7.0.43` | | `7.0.43-23` | `2.15.0` |
+| `7.0.18` | | `7.0.18-11` | `2.12.0` |
+| `6.0.29` | | `6.0.29-23` | `2.15.0` |
+| `6.0.21` | | `6.0.21-18` | `2.12.0` |
+| `6.0.19` | | `6.0.19-16` | `2.12.0` |
 <!-- END GENERATED: versions -->
 
 Source of truth: [definition/versions.yaml](definition/versions.yaml).
@@ -196,47 +196,50 @@ The technology-specific knobs worth knowing about:
 | Parameter | Applies to | Purpose |
 |---|---|---|
 | `configuration` | `engine`, `configServer`, `proxy` | Raw `mongod` / `mongos` configuration passed to the operator |
-| `monitoringConfigName` | `monitoring` | PMM configuration to attach the instance to; omit to run without PMM |
-| `metrics` | `monitoring` | Expose metrics through a mongodb_exporter sidecar; omit to run no exporter |
-| `metrics.prometheus.enabled` | `monitoring` | Create a `PodMonitor` for the Prometheus Operator |
-| `metrics.victoriaMetrics.enabled` | `monitoring` | Create a `VMPodScrape` for the VictoriaMetrics Operator |
 | `numShards` | `sharded` topology | Number of shards to provision |
 
-With PMM enabled, the instance's metrics in PMM carry `namespace` and
-`core_openeverest_io_instance` labels, plus `core_openeverest_io_component=proxy` on mongos,
-so they can be queried per instance.
+### Monitoring
 
-### Metrics for Prometheus and VictoriaMetrics
+Monitoring is configured through `MonitoringDestination`s: each entry of
+`spec.monitoring.destinations` sends the instance's monitoring data to one destination.
 
 ```yaml
 spec:
-  components:
-    monitoring:
-      parameters:
-        metrics:
-          prometheus:
-            enabled: true
-          victoriaMetrics:
-            enabled: false
+  monitoring:
+    destinations:
+      - name: pmm
+        destinationRef:
+          name: pmm-prod
+        # Optional; merged over the PMM client resources sized from the engine.
+        parameters:
+          resources:
+            limits:
+              memory: 256Mi
+      - name: prometheus
+        destinationRef:
+          name: prometheus
 ```
 
-Setting `metrics` runs a `mongodb_exporter` sidecar next to every mongod and mongos, serving
-metrics on the `metrics` port (9216). It logs in as the operator's cluster monitor user. The
-exporter image is pinned by the `mongodbExporter` component type in
-[definition/versions.yaml](definition/versions.yaml). Adding or removing the sidecar restarts
-the pods one at a time.
+The provider declares its monitoring contract in
+[definition/monitoring.yaml](definition/monitoring.yaml): the `pmm` integration, and a
+`mongodb_exporter` metrics endpoint on every `mongod` component.
 
-The scrape resources are named `<instance>-prometheus` (`PodMonitor`) and
-`<instance>-victoriametrics` (`VMPodScrape`), live next to the Instance, and are removed with
-it. Every series carries the `core_openeverest_io_instance` and
-`core_openeverest_io_component` labels. Keep in mind:
+- **PMM** (the `pmm` class, installed by the `monitoring-pmm` extension) is rendered by the
+  provider into the operator's `spec.pmm`: the server from the destination's `url`, the
+  token from the `apiKey` key of its credentials Secret, the PMM client image from the
+  class. The instance's metrics in PMM carry `namespace` and `core_openeverest_io_instance`
+  labels, plus `core_openeverest_io_component=proxy` on mongos.
+- **Metrics backends** (for example the `prometheus` and `victoriametrics` classes) run a
+  `mongodb_exporter` sidecar next to every mongod and mongos while one of the instance's
+  destinations requires metrics. The sidecar serves on the `metrics` port (9216) and logs in
+  as the operator's cluster monitor user; its image is pinned by the `mongodbExporter`
+  component type in [definition/versions.yaml](definition/versions.yaml). The provider
+  publishes the endpoints in `status.monitoring.sources` once the cluster is ready, and the
+  class's extension creates the scrape resources. Adding or removing the sidecar restarts
+  the pods one at a time.
 
-- The matching operator must be installed; otherwise the Instance fails validation.
-- Prometheus must select the `PodMonitor`. kube-prometheus-stack, for example, selects only
-  `PodMonitor`s labelled with its release unless
-  `prometheus.prometheusSpec.podMonitorSelectorNilUsesHelmValues=false` is set.
-- The VictoriaMetrics Operator converts `PodMonitor`s into `VMPodScrape`s by default, so with
-  both systems enabled VictoriaMetrics scrapes the instance twice.
+`kubectl get monitoringbindings` lists one binding per destination entry, and the
+instance's `MonitoringConfigured` condition reports whether every entry is configured.
 
 ### TLS
 
@@ -362,7 +365,7 @@ code generation, and the backup/restore interfaces are documented once for all p
 - **Unit tests** — `make test-unit`.
 - **Integration tests** — chainsaw suites under [test/integration/](test/integration/).
   Individual suites are also exposed as make targets (`make test-integration-core`,
-  `make test-integration-backup`, `make test-integration-monitoring-pmm`, …).
+  `make test-integration-backup`, `make test-integration-monitoring-bindings`, …).
 - **End-to-end tests** — `make test-e2e` drives the Everest UI with Playwright.
 - **CI** — [.github/workflows/ci.yaml](.github/workflows/ci.yaml) runs lint, build, unit
   tests, generated-file verification, Helm lint, and each integration suite on every pull

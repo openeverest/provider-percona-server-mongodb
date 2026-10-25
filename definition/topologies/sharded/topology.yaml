@@ -54,11 +54,6 @@ config:
       # them. Declaring them would publish a no-op; wiring them is a separate fix.
       supportedFields:
         properties: {}
-    monitoring:
-      optional: true
-      supportedFields:
-        properties:
-          resources: {}
 
 # UI schema: rendering hints for the frontend form.
 # Paths reference fields in the Instance CR spec.
@@ -355,51 +350,6 @@ ui:
         - shards
         - configServers
         - routers
-    monitoring:
-      label: "Monitoring"
-      description: "Monitor the health of your database to detect issues quickly and improve its performance."
-      components:
-        pmm:
-          uiType: group
-          groupType: toggleable
-          label: "PMM"
-          description: "Send metrics and query analytics to Percona Monitoring and Management."
-          components:
-            monitoringConfig:
-              uiType: select
-              path: spec.components.monitoring.parameters.monitoringConfigName
-              fieldParams:
-                label: "PMM server"
-              validation:
-                required: true
-              dataSource:
-                provider: monitoringConfigs
-          componentsOrder:
-            - monitoringConfig
-        metrics:
-          uiType: group
-          groupType: toggleable
-          label: "Expose metrics"
-          description: "Run mongodb_exporter next to every MongoDB pod to expose metrics in the Prometheus format."
-          components:
-            prometheus:
-              uiType: toggle
-              path: spec.components.monitoring.parameters.metrics.prometheus.enabled
-              fieldParams:
-                label: "Prometheus"
-                helperText: "Create a PodMonitor so the Prometheus Operator scrapes the metrics."
-            victoriaMetrics:
-              uiType: toggle
-              path: spec.components.monitoring.parameters.metrics.victoriaMetrics.enabled
-              fieldParams:
-                label: "VictoriaMetrics"
-                helperText: "Create a VMPodScrape so the VictoriaMetrics Operator scrapes the metrics."
-          componentsOrder:
-            - prometheus
-            - victoriaMetrics
-      componentsOrder:
-        - pmm
-        - metrics
     tls:
       label: "TLS"
       description: "Encrypt connections to your database and between its members."
@@ -535,6 +485,5 @@ ui:
   sectionsOrder:
     - databaseVersion
     - resources
-    - monitoring
     - tls
     - advanced

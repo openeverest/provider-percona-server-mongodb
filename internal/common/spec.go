@@ -23,9 +23,7 @@ const (
 	ComponentConfigServer = "configServer"
 	ComponentProxy        = "proxy"
 	ComponentBackupAgent  = "backupAgent"
-	ComponentMonitoring   = "monitoring"
 
 	ComponentTypeMongod = "mongod"
 	ComponentTypeBackup = "backup"
-	ComponentTypePMM    = "pmm"
 )

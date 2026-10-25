@@ -32,7 +32,7 @@ import (
 	"github.com/openeverest/provider-percona-server-mongodb/internal/common"
 )
 
-// pmmIntegration is the integration name declared in the chart's monitoring
+// pmmIntegration is the integration name declared in the provider's monitoring
 // contract and matched by the pmm MonitoringClass.
 const pmmIntegration = "pmm"
 
@@ -42,9 +42,9 @@ func (p *PSMDBProvider) MonitoringIntegrations() []string {
 }
 
 // MonitoringSources implements controller.MonitoringSourcesProvider. Every
-// mongod and mongos pod carries a mongodb_exporter sidecar while metrics are
-// demanded, so one endpoint per component is published: engine, and for
-// sharded clusters configServer and proxy, each selected by the component
+// mongod and mongos pod carries a mongodb_exporter sidecar while a bound class
+// requires metrics, so one endpoint per component is published: engine, and
+// for sharded clusters configServer and proxy, each selected by the component
 // labels labelPods sets.
 func (p *PSMDBProvider) MonitoringSources(c *controller.Context) (*corev1alpha1.MonitoringSources, error) {
 	psmdb := &psmdbv1.PerconaServerMongoDB{}
@@ -99,19 +99,11 @@ func liveEngine(c *controller.Context) (*psmdbv1.PerconaServerMongoDB, error) {
 	return live, nil
 }
 
-// metricsExporterDemanded says whether the exporter sidecars go on the engine
-// pods this pass: when the legacy monitoring component exposes metrics, when a
-// bound class requires metrics, or, while that is unresolved, when the live CR
-// already carries them (removing and re-adding a sidecar would roll the pods
-// twice for nothing).
-func metricsExporterDemanded(c *controller.Context) (bool, error) {
-	legacy, err := metricsParameters(c)
-	if err != nil {
-		return false, err
-	}
-	if legacy != nil {
-		return true, nil
-	}
+// metricsExporterRequired says whether the exporter sidecars go on the engine
+// pods this pass: when a bound class requires metrics or, while that is
+// unresolved, when the live CR already carries them (removing and re-adding a
+// sidecar would roll the pods twice for nothing).
+func metricsExporterRequired(c *controller.Context) (bool, error) {
 	req, err := c.RequiredSources()
 	if err != nil {
 		return false, err
@@ -126,38 +118,36 @@ func metricsExporterDemanded(c *controller.Context) (bool, error) {
 // pmmDestinationParameters is the shape of MonitoringDestination.spec.parameters
 // for the pmm class.
 type pmmDestinationParameters struct {
-	URL       string `json:"url"`
-	VerifyTLS *bool  `json:"verifyTLS,omitempty"`
+	URL string `json:"url"`
 }
 
 // pmmInstanceParameters is the shape of
 // Instance.spec.monitoring.destinations[].parameters for the pmm class.
 type pmmInstanceParameters struct {
-	Resources *corev1.ResourceRequirements `json:"resources,omitempty"`
+	Resources corev1.ResourceRequirements `json:"resources"`
 }
 
 // applyPMMBindings renders spec.pmm from the Instance's ProviderManaged pmm
-// binding while the pmm integration is required, and keeps the live spec.pmm
-// while that is unresolved. It reports false when no binding needs pmm, so the
-// caller can fall back to the legacy monitoring component.
+// binding while the pmm integration is required, keeps the live spec.pmm
+// while that is unresolved, and leaves PMM disabled otherwise.
 //
 // A binding that fails to render is reported through
 // SetMonitoringBindingResult and keeps the live rendering; it never fails
 // Sync.
-func applyPMMBindings(c *controller.Context, psmdb *psmdbv1.PerconaServerMongoDB, usersSecretName string) (bool, error) {
+func applyPMMBindings(c *controller.Context, psmdb *psmdbv1.PerconaServerMongoDB, usersSecretName string) error {
 	req, err := c.RequiredSources()
 	if err != nil {
-		return false, err
+		return err
 	}
 	live, err := liveEngine(c)
 	if err != nil {
-		return false, err
+		return err
 	}
 	switch pmm := req.Integrations[pmmIntegration]; {
 	case pmm == controller.Required:
 		bindings, err := c.MonitoringBindings()
 		if err != nil {
-			return false, err
+			return err
 		}
 		for _, rb := range bindings {
 			if !rb.Apply || rb.Integration() != pmmIntegration {
@@ -169,15 +159,22 @@ func applyPMMBindings(c *controller.Context, psmdb *psmdbv1.PerconaServerMongoDB
 				psmdb.Spec.PMM = *live.Spec.PMM.DeepCopy()
 			}
 		}
-	case !pmm.Else(live.Spec.PMM.Enabled):
-		return false, nil
-	default:
+	case pmm.Else(live.Spec.PMM.Enabled):
 		psmdb.Spec.PMM = *live.Spec.PMM.DeepCopy()
 	}
-	return true, nil
+	return nil
 }
 
+// renderPMMBinding sets spec.pmm from one Apply-able pmm binding: the server
+// from the destination URL, the token from the destination credentials, the
+// image from the class and the resources from the size tier and the entry
+// parameters.
 func renderPMMBinding(c *controller.Context, psmdb *psmdbv1.PerconaServerMongoDB, usersSecretName string, rb controller.ResolvedBinding) error {
+	image := rb.Class.Spec.ProviderManaged.AgentImage
+	if image == "" {
+		return fmt.Errorf("MonitoringClass %q sets no providerManaged.agentImage", rb.Class.Name)
+	}
+
 	dstParams := pmmDestinationParameters{}
 	if rb.Destination.Spec.Parameters != nil {
 		if err := json.Unmarshal(rb.Destination.Spec.Parameters.Raw, &dstParams); err != nil {
@@ -192,16 +189,11 @@ func renderPMMBinding(c *controller.Context, psmdb *psmdbv1.PerconaServerMongoDB
 		return fmt.Errorf("MonitoringDestination %q has no credentialsSecretRef", rb.Destination.Name)
 	}
 
-	image := rb.Class.Spec.ProviderManaged.AgentImage
-	if image == "" {
-		spec, err := c.ProviderSpec()
-		if err != nil {
-			return err
+	entryParams := pmmInstanceParameters{}
+	if rb.Binding.Spec.Parameters != nil {
+		if err := json.Unmarshal(rb.Binding.Spec.Parameters.Raw, &entryParams); err != nil {
+			return fmt.Errorf("decode binding parameters: %w", err)
 		}
-		image = controller.GetDefaultImageForComponent(spec, common.ComponentMonitoring)
-	}
-	if image == "" {
-		return fmt.Errorf("MonitoringClass %q sets no agentImage and the provider has no default pmm image", rb.Class.Name)
 	}
 
 	// The operator reads the server token from the users secret.
@@ -209,22 +201,13 @@ func renderPMMBinding(c *controller.Context, psmdb *psmdbv1.PerconaServerMongoDB
 		return fmt.Errorf("copy PMM token to users secret: %w", err)
 	}
 
-	resources := getPMMResources(c)
-	if rb.Binding.Spec.Parameters != nil {
-		bp := pmmInstanceParameters{}
-		if err := json.Unmarshal(rb.Binding.Spec.Parameters.Raw, &bp); err != nil {
-			return fmt.Errorf("decode binding parameters: %w", err)
-		}
-		if bp.Resources != nil {
-			resources = mergeResources(*bp.Resources, resources)
-		}
-	}
-
 	psmdb.Spec.PMM = psmdbv1.PMMSpec{
-		Enabled:      true,
-		ServerHost:   u.Host,
-		Image:        image,
-		Resources:    resources,
+		Enabled:    true,
+		ServerHost: u.Host,
+		Image:      image,
+		Resources:  getPMMResources(c, entryParams.Resources),
+		// mongodParams covers both shard and config server replica sets, so
+		// only mongos can be labelled with its component.
 		MongodParams: pmmAdminParams(c, ""),
 		MongosParams: pmmAdminParams(c, common.ComponentProxy),
 	}

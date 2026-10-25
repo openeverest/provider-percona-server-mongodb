@@ -185,24 +185,6 @@ jobs:
       suite: tls
     secrets: inherit
 
-  test-integration-monitoring-pmm:
-    name: Integration / monitoring PMM
-    needs: [lint, build, verify]
-    uses: ./.github/workflows/integration-test.yaml
-    with:
-      make_target: test-integration-monitoring-pmm
-      suite: monitoring
-    secrets: inherit
-
-  test-integration-monitoring-metrics:
-    name: Integration / monitoring metrics
-    needs: [lint, build, verify]
-    uses: ./.github/workflows/integration-test.yaml
-    with:
-      make_target: test-integration-monitoring-metrics
-      suite: metrics
-    secrets: inherit
-
   test-integration-monitoring-bindings:
     name: Integration / monitoring bindings
     needs: [lint, build, verify]

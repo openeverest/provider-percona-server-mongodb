@@ -87,8 +87,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Inject the manager's client so watch handlers can
-	// list Instance objects that reference MonitoringConfig.
+	// Inject the manager's client so backup imports can read the
+	// BackupStorage credentials.
 	// TODO: change the way manager is configured so injection is not necessary.
 	provider.SetClient(r.GetManager().GetClient())
 

@@ -5,15 +5,15 @@ metadata:
 spec:
   description: |
     Seed a new Instance from a Backup CR: deploy SeaweedFS and PMM, create a source
-    Instance with backups enabled, write data and take a Backup, then create a
-    destination Instance with a Backup dataSource and monitoring, verify the datasource
-    Restore is created and completes, and validate the seeded data via a
-    MongoDB client.
+    Instance with backups enabled and a PMM destination, write data and take a
+    Backup, then create a destination Instance with a Backup dataSource and the
+    same PMM destination, verify the datasource Restore is created and completes,
+    and validate the seeded data via a MongoDB client.
   catch:
     - script:
-        content: kubectl -n $NAMESPACE get instance,psmdb,backup,psmdb-backup,restore,psmdb-restore,backupstorage,monitoringconfig -o yaml
+        content: kubectl -n $NAMESPACE get instance,psmdb,backup,psmdb-backup,restore,psmdb-restore,backupstorage,monitoringdestination,monitoringbinding -o yaml
     - script:
-        content: kubectl get backupclass -o yaml
+        content: kubectl get backupclass,monitoringclass -o yaml
     - script:
         content: kubectl -n pmm get pods -o yaml
     - podLogs:
@@ -52,10 +52,10 @@ spec:
             content: |
               kubectl -n pmm wait --for=condition=Ready pod -l app=pmm-server --timeout=360s
         # Provision a PMM3 service-account token (default admin/admin creds),
-        # then create the credentials Secret the MonitoringConfig references.
-        # The token is dynamic, so the Secret is created via script rather
-        # than a static manifest; the MonitoringConfig itself lives in
-        # 20-install.yaml.
+        # then create the credentials Secret the MonitoringDestination
+        # references. The token is dynamic, so the Secret is created via
+        # script rather than a static manifest; the MonitoringDestination
+        # itself lives in 20-install.yaml.
         - script:
             timeout: 120s
             content: |
@@ -87,7 +87,7 @@ spec:
 
               test -n "${TOKEN}"
 
-              kubectl -n ${NAMESPACE} create secret generic mc-pmm-secret \
+              kubectl -n ${NAMESPACE} create secret generic pmm-token \
                 --from-literal=apiKey="${TOKEN}" \
                 --dry-run=client -o yaml | kubectl apply -f -
       catch:
@@ -96,10 +96,16 @@ spec:
         - script:
             content: kubectl -n pmm logs -l app=pmm-server --tail=100
 
-    - name: setup-backup
+    - name: setup-backup-and-monitoring
       try:
         - apply:
             file: 20-install.yaml
+        # Stand in for the monitoring-pmm controller: a class is usable only
+        # once its controller has claimed it.
+        - script:
+            content: |
+              kubectl patch monitoringclass/pmm-e2e --subresource status --type merge \
+                -p '{"status":{"conditions":[{"type":"Accepted","status":"True","reason":"Accepted","message":"claimed by the test","lastTransitionTime":"2026-01-01T00:00:00Z"}]}}'
         - assert:
             file: 20-assert.yaml
 

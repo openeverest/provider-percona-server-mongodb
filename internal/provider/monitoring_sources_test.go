@@ -44,7 +44,7 @@ const (
 
 // bindingContext builds a context for an Instance whose spec.monitoring lists
 // entries; objs are the bindings, destinations, classes, secrets and engine
-// CR that make them resolvable. The legacy monitoring component is absent.
+// CR that make them resolvable.
 func bindingContext(t *testing.T, entries []corev1alpha1.InstanceMonitoringDestination, objs ...client.Object) (*controller.Context, client.Client) {
 	t.Helper()
 
@@ -183,10 +183,10 @@ func livePSMDB(state psmdbv1.AppState, sharded, withExporter bool) *psmdbv1.Perc
 	return psmdb
 }
 
-func TestMetricsExporterDemanded(t *testing.T) {
+func TestMetricsExporterRequired(t *testing.T) {
 	t.Parallel()
 
-	t.Run("an ExtensionManaged binding whose class requires metrics demands the exporter", func(t *testing.T) {
+	t.Run("an ExtensionManaged binding whose class requires metrics requires the exporter", func(t *testing.T) {
 		t.Parallel()
 
 		c, _ := bindingContext(t, []corev1alpha1.InstanceMonitoringDestination{entry("prom", "prom-dst")},
@@ -195,9 +195,9 @@ func TestMetricsExporterDemanded(t *testing.T) {
 			metricsClass("prometheus"),
 		)
 
-		demanded, err := metricsExporterDemanded(c)
+		required, err := metricsExporterRequired(c)
 		require.NoError(t, err)
-		assert.True(t, demanded)
+		assert.True(t, required)
 	})
 
 	t.Run("a ProviderManaged pmm binding alone does not", func(t *testing.T) {
@@ -210,29 +210,19 @@ func TestMetricsExporterDemanded(t *testing.T) {
 			livePSMDB(psmdbv1.AppStateReady, false, true),
 		)
 
-		demanded, err := metricsExporterDemanded(c)
+		required, err := metricsExporterRequired(c)
 		require.NoError(t, err)
-		assert.False(t, demanded, "settled without a metrics class: the live sidecar is not held")
+		assert.False(t, required, "resolved without a metrics class: the live sidecar is not held")
 	})
 
-	t.Run("no entries and no legacy component means no exporter", func(t *testing.T) {
+	t.Run("no entries means no exporter", func(t *testing.T) {
 		t.Parallel()
 
 		c, _ := bindingContext(t, nil, livePSMDB(psmdbv1.AppStateReady, false, true))
 
-		demanded, err := metricsExporterDemanded(c)
+		required, err := metricsExporterRequired(c)
 		require.NoError(t, err)
-		assert.False(t, demanded)
-	})
-
-	t.Run("the legacy metrics parameters still demand it", func(t *testing.T) {
-		t.Parallel()
-
-		c, _ := metricsContext(t, metricsOnly(true, false), true)
-
-		demanded, err := metricsExporterDemanded(c)
-		require.NoError(t, err)
-		assert.True(t, demanded)
+		assert.False(t, required)
 	})
 
 	t.Run("while an entry has no binding yet the live sidecar is held", func(t *testing.T) {
@@ -242,9 +232,9 @@ func TestMetricsExporterDemanded(t *testing.T) {
 			livePSMDB(psmdbv1.AppStateReady, false, true),
 		)
 
-		demanded, err := metricsExporterDemanded(c)
+		required, err := metricsExporterRequired(c)
 		require.NoError(t, err)
-		assert.True(t, demanded, "hold rule")
+		assert.True(t, required, "hold rule")
 	})
 
 	t.Run("while an entry has no binding yet and nothing is live, nothing is added", func(t *testing.T) {
@@ -252,12 +242,12 @@ func TestMetricsExporterDemanded(t *testing.T) {
 
 		c, _ := bindingContext(t, []corev1alpha1.InstanceMonitoringDestination{entry("prom", "prom-dst")})
 
-		demanded, err := metricsExporterDemanded(c)
+		required, err := metricsExporterRequired(c)
 		require.NoError(t, err)
-		assert.False(t, demanded)
+		assert.False(t, required)
 	})
 
-	t.Run("configureMetricsExporter follows the demand", func(t *testing.T) {
+	t.Run("configureMetricsExporter follows the requirement", func(t *testing.T) {
 		t.Parallel()
 
 		c, _ := bindingContext(t, []corev1alpha1.InstanceMonitoringDestination{entry("prom", "prom-dst")},
@@ -358,9 +348,7 @@ func TestApplyPMMBindings(t *testing.T) {
 		)
 		psmdb := &psmdbv1.PerconaServerMongoDB{}
 
-		bound, err := applyPMMBindings(c, psmdb, metricsTestUsersSecret)
-		require.NoError(t, err)
-		assert.True(t, bound)
+		require.NoError(t, applyPMMBindings(c, psmdb, metricsTestUsersSecret))
 
 		assert.True(t, psmdb.Spec.PMM.Enabled)
 		assert.Equal(t, "pmm.example.com:8443", psmdb.Spec.PMM.ServerHost)
@@ -377,25 +365,6 @@ func TestApplyPMMBindings(t *testing.T) {
 		assert.False(t, staged, "a clean render leaves Configured to the runtime")
 	})
 
-	t.Run("falls back to the provider's default pmm image when the class sets none", func(t *testing.T) {
-		t.Parallel()
-
-		c, _ := bindingContext(t, pmmEntry,
-			acceptedBinding("pmm", "pmm-dst", "pmm", corev1alpha1.MonitoringExecutionModeProviderManaged),
-			destination("pmm-dst", "pmm", `{"url":"https://pmm.example.com"}`, "pmm-token"),
-			pmmClass(""),
-			pmmToken(),
-		)
-		psmdb := &psmdbv1.PerconaServerMongoDB{}
-
-		_, err := applyPMMBindings(c, psmdb, metricsTestUsersSecret)
-		require.NoError(t, err)
-
-		spec, err := c.ProviderSpec()
-		require.NoError(t, err)
-		assert.Equal(t, controller.GetDefaultImageForComponent(spec, common.ComponentMonitoring), psmdb.Spec.PMM.Image)
-	})
-
 	t.Run("binding parameters override the size tier resources", func(t *testing.T) {
 		t.Parallel()
 
@@ -408,8 +377,7 @@ func TestApplyPMMBindings(t *testing.T) {
 		)
 		psmdb := &psmdbv1.PerconaServerMongoDB{}
 
-		_, err := applyPMMBindings(c, psmdb, metricsTestUsersSecret)
-		require.NoError(t, err)
+		require.NoError(t, applyPMMBindings(c, psmdb, metricsTestUsersSecret))
 
 		assert.Equal(t, resource.MustParse("1Gi"), psmdb.Spec.PMM.Resources.Limits[corev1.ResourceMemory])
 		assert.Equal(t, resource.MustParse("250m"), psmdb.Spec.PMM.Resources.Requests[corev1.ResourceCPU])
@@ -430,29 +398,38 @@ func TestApplyPMMBindings(t *testing.T) {
 		)
 		psmdb := &psmdbv1.PerconaServerMongoDB{}
 
-		bound, err := applyPMMBindings(c, psmdb, metricsTestUsersSecret)
-		require.NoError(t, err)
-		assert.True(t, bound, "the entry still claims spec.pmm, the legacy component must not take over")
+		require.NoError(t, applyPMMBindings(c, psmdb, metricsTestUsersSecret))
 		assert.Equal(t, live.Spec.PMM, psmdb.Spec.PMM)
 	})
 
-	t.Run("a destination that cannot be rendered reports RenderFailed and keeps the live rendering", func(t *testing.T) {
+	t.Run("a binding that cannot be rendered reports RenderFailed and keeps the live rendering", func(t *testing.T) {
 		t.Parallel()
 
 		live := livePSMDB(psmdbv1.AppStateReady, false, false)
-		for name, dst := range map[string]*monitoringv1alpha1.MonitoringDestination{
-			"relative url":   destination("pmm-dst", "pmm", `{"url":"pmm.example.com"}`, "pmm-token"),
-			"no credentials": destination("pmm-dst", "pmm", `{"url":"https://pmm.example.com"}`, ""),
+		for name, tc := range map[string]struct {
+			dst   *monitoringv1alpha1.MonitoringDestination
+			class *monitoringv1alpha1.MonitoringClass
+		}{
+			"relative url": {
+				destination("pmm-dst", "pmm", `{"url":"pmm.example.com"}`, "pmm-token"),
+				pmmClass("percona/pmm-client:3.8.0"),
+			},
+			"no credentials": {
+				destination("pmm-dst", "pmm", `{"url":"https://pmm.example.com"}`, ""),
+				pmmClass("percona/pmm-client:3.8.0"),
+			},
+			"no agent image": {
+				destination("pmm-dst", "pmm", `{"url":"https://pmm.example.com"}`, "pmm-token"),
+				pmmClass(""),
+			},
 		} {
 			c, _ := bindingContext(t, pmmEntry,
 				acceptedBinding("pmm", "pmm-dst", "pmm", corev1alpha1.MonitoringExecutionModeProviderManaged),
-				dst, pmmClass("percona/pmm-client:3.8.0"), pmmToken(), live.DeepCopy(),
+				tc.dst, tc.class, pmmToken(), live.DeepCopy(),
 			)
 			psmdb := &psmdbv1.PerconaServerMongoDB{}
 
-			bound, err := applyPMMBindings(c, psmdb, metricsTestUsersSecret)
-			require.NoError(t, err, name)
-			assert.True(t, bound, name)
+			require.NoError(t, applyPMMBindings(c, psmdb, metricsTestUsersSecret), name)
 			assert.Equal(t, live.Spec.PMM, psmdb.Spec.PMM, name)
 
 			reason, _, staged := c.MonitoringBindingResult(bindingTestInstance + "-pmm")
@@ -461,19 +438,18 @@ func TestApplyPMMBindings(t *testing.T) {
 		}
 	})
 
-	t.Run("without a pmm binding the legacy component is left in charge", func(t *testing.T) {
+	t.Run("without a pmm entry spec.pmm is disabled", func(t *testing.T) {
 		t.Parallel()
 
 		c, _ := bindingContext(t, []corev1alpha1.InstanceMonitoringDestination{entry("prom", "prom-dst")},
 			acceptedBinding("prom", "prom-dst", "prometheus", corev1alpha1.MonitoringExecutionModeExtensionManaged),
 			destination("prom-dst", "prometheus", "", ""),
 			metricsClass("prometheus"),
+			livePSMDB(psmdbv1.AppStateReady, false, false),
 		)
 		psmdb := &psmdbv1.PerconaServerMongoDB{}
 
-		bound, err := applyPMMBindings(c, psmdb, metricsTestUsersSecret)
-		require.NoError(t, err)
-		assert.False(t, bound)
-		assert.False(t, psmdb.Spec.PMM.Enabled)
+		require.NoError(t, applyPMMBindings(c, psmdb, metricsTestUsersSecret))
+		assert.Equal(t, psmdbv1.PMMSpec{}, psmdb.Spec.PMM, "the live PMM goes once its entry is removed")
 	})
 }

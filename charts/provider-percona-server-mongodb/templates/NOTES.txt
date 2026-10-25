@@ -22,5 +22,5 @@
 {{- end }}
 
 NOTE: Ensure that the following prerequisites are installed in your cluster:
-  - OpenEverest CRDs (Instances, Providers, MonitoringConfigs)
+  - OpenEverest CRDs (Instances, Providers, MonitoringClasses, MonitoringDestinations, MonitoringBindings)
   - Percona Server MongoDB Operator (v1.21.1+)

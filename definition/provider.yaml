@@ -27,6 +27,3 @@ components:
     parametersSchema: MongosParameters
   backupAgent:
     type: backup
-  monitoring:
-    type: pmm
-    parametersSchema: MonitoringParameters

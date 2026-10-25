@@ -56,14 +56,9 @@ package provider
 // =============================================================================
 // MONITORING RESOURCES
 // =============================================================================
-// +kubebuilder:rbac:groups=monitoring.openeverest.io,resources=monitoringconfigs,verbs=get;list;watch
 // +kubebuilder:rbac:groups=monitoring.openeverest.io,resources=monitoringclasses;monitoringdestinations;monitoringbindings,verbs=get;list;watch
 // +kubebuilder:rbac:groups=monitoring.openeverest.io,resources=monitoringbindings/status,verbs=patch
 // +kubebuilder:rbac:groups="",resources=namespaces,verbs=get
-
-// Scrape resources created when the monitoring component exposes metrics:
-// +kubebuilder:rbac:groups=monitoring.coreos.com,resources=podmonitors,verbs=get;create;patch;delete
-// +kubebuilder:rbac:groups=operator.victoriametrics.com,resources=vmpodscrapes,verbs=get;create;patch;delete
 
 // =============================================================================
 // CORE KUBERNETES RESOURCES

@@ -19,19 +19,10 @@ import (
 
 	psmdbv1 "github.com/percona/percona-server-mongodb-operator/pkg/apis/psmdb/v1"
 	psmdbconfig "github.com/percona/percona-server-mongodb-operator/pkg/psmdb/config"
-	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/utils/ptr"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/openeverest/openeverest/v2/provider-runtime/controller"
-
-	"github.com/openeverest/provider-percona-server-mongodb/definition/components"
-	vmv1beta1 "github.com/openeverest/provider-percona-server-mongodb/internal/apis/victoriametrics/v1beta1"
 )
 
 const (
@@ -82,31 +73,13 @@ var (
 			corev1.ResourceMemory: resource.MustParse("64Mi"),
 		},
 	}
-
-	podMonitorGroupKind  = schema.GroupKind{Group: monitoringv1.SchemeGroupVersion.Group, Kind: monitoringv1.PodMonitorsKind}
-	vmPodScrapeGroupKind = schema.GroupKind{Group: vmv1beta1.GroupVersion.Group, Kind: "VMPodScrape"}
 )
 
-// metricsParameters returns the metrics settings of the monitoring component,
-// or nil when metrics are not exposed.
-func metricsParameters(c *controller.Context) (*components.MetricsParameters, error) {
-	params, err := monitoringParameters(c)
-	if err != nil || params == nil {
-		return nil, err
-	}
-	return params.Metrics, nil
-}
-
-func scrapeEnabled(scrape *components.ScrapeParameters) bool {
-	return scrape != nil && scrape.Enabled
-}
-
 // configureMetricsExporter adds a mongodb_exporter sidecar to every mongod and
-// mongos pod when the monitoring component exposes metrics or an
-// ExtensionManaged monitoring binding demands them.
+// mongos pod while a monitoring class bound to the instance requires metrics.
 func configureMetricsExporter(c *controller.Context, psmdb *psmdbv1.PerconaServerMongoDB, usersSecretName string) error {
-	demanded, err := metricsExporterDemanded(c)
-	if err != nil || !demanded {
+	required, err := metricsExporterRequired(c)
+	if err != nil || !required {
 		return err
 	}
 
@@ -194,144 +167,4 @@ func metricsExporterSidecar(image, usersSecretName string, mongoPort int32, useT
 		VolumeMounts: mounts,
 		Resources:    metricsExporterResources,
 	}
-}
-
-// reconcileMetricsScrapes creates the scrape resource of every monitoring
-// system the monitoring component enables, and removes the others.
-func reconcileMetricsScrapes(c *controller.Context) error {
-	metrics, err := metricsParameters(c)
-	if err != nil {
-		return err
-	}
-
-	var prometheus, victoriaMetrics bool
-	if metrics != nil {
-		prometheus = scrapeEnabled(metrics.Prometheus)
-		victoriaMetrics = scrapeEnabled(metrics.VictoriaMetrics)
-	}
-
-	if err := reconcileScrape(c, prometheus, podMonitor(c), &monitoringv1.PodMonitor{ObjectMeta: c.ObjectMeta(podMonitorName(c))}); err != nil {
-		return fmt.Errorf("reconcile PodMonitor: %w", err)
-	}
-	if !prometheus {
-		if err := deleteConvertedPodMonitor(c); err != nil {
-			return err
-		}
-	}
-	if err := reconcileScrape(c, victoriaMetrics, vmPodScrape(c), &vmv1beta1.VMPodScrape{ObjectMeta: c.ObjectMeta(vmPodScrapeName(c))}); err != nil {
-		return fmt.Errorf("reconcile VMPodScrape: %w", err)
-	}
-
-	return nil
-}
-
-func reconcileScrape(c *controller.Context, enabled bool, desired, existing client.Object) error {
-	if enabled {
-		return c.Apply(desired)
-	}
-	return deleteIfServed(c, existing)
-}
-
-// deleteIfServed deletes obj; there is nothing to remove when the cluster
-// does not serve its kind at all.
-func deleteIfServed(c *controller.Context, obj client.Object) error {
-	if err := c.Delete(obj); err != nil && !meta.IsNoMatchError(err) {
-		return err
-	}
-	return nil
-}
-
-// deleteConvertedPodMonitor removes the VMPodScrape the VictoriaMetrics
-// Operator converted from the instance's PodMonitor. The converter does not
-// always remove it with the PodMonitor (it sets no owner reference by
-// default), and it would keep the instance scraped.
-func deleteConvertedPodMonitor(c *controller.Context) error {
-	converted := &vmv1beta1.VMPodScrape{ObjectMeta: c.ObjectMeta(podMonitorName(c))}
-	if err := deleteIfServed(c, converted); err != nil {
-		return fmt.Errorf("delete VMPodScrape converted from the PodMonitor: %w", err)
-	}
-	return nil
-}
-
-// scrapeSelector selects the instance's pods; only those running the
-// exporter expose the metrics port the scrape endpoints name.
-func scrapeSelector(c *controller.Context) metav1.LabelSelector {
-	return metav1.LabelSelector{MatchLabels: map[string]string{controller.InstanceLabel: c.Name()}}
-}
-
-// scrapeTargetLabels label every series with the instance and component, the
-// way PMM metrics are labelled.
-func scrapeTargetLabels() []string {
-	return []string{controller.InstanceLabel, controller.ComponentLabel}
-}
-
-// The scrape resources are named apart: the VictoriaMetrics Operator converts
-// a PodMonitor into a VMPodScrape of the same name by default, and the
-// provider must not mistake that one for its own.
-func podMonitorName(c *controller.Context) string {
-	return c.Name() + "-prometheus"
-}
-
-func vmPodScrapeName(c *controller.Context) string {
-	return c.Name() + "-victoriametrics"
-}
-
-func podMonitor(c *controller.Context) *monitoringv1.PodMonitor {
-	return &monitoringv1.PodMonitor{
-		ObjectMeta: c.ObjectMeta(podMonitorName(c)),
-		Spec: monitoringv1.PodMonitorSpec{
-			Selector:        scrapeSelector(c),
-			PodTargetLabels: scrapeTargetLabels(),
-			PodMetricsEndpoints: []monitoringv1.PodMetricsEndpoint{{
-				Port: ptr.To(metricsPortName),
-				Path: metricsPath,
-			}},
-		},
-	}
-}
-
-func vmPodScrape(c *controller.Context) *vmv1beta1.VMPodScrape {
-	return &vmv1beta1.VMPodScrape{
-		ObjectMeta: c.ObjectMeta(vmPodScrapeName(c)),
-		Spec: vmv1beta1.VMPodScrapeSpec{
-			Selector:        scrapeSelector(c),
-			PodTargetLabels: scrapeTargetLabels(),
-			PodMetricsEndpoints: []vmv1beta1.PodMetricsEndpoint{{
-				Port: ptr.To(metricsPortName),
-				Path: metricsPath,
-			}},
-		},
-	}
-}
-
-// validateMetrics rejects scraping by a monitoring system whose operator is
-// not installed, since its scrape resource could not be created.
-func validateMetrics(c *controller.Context) error {
-	metrics, err := metricsParameters(c)
-	if err != nil || metrics == nil {
-		return err
-	}
-
-	checks := []struct {
-		enabled  bool
-		kind     schema.GroupKind
-		version  string
-		operator string
-	}{
-		{scrapeEnabled(metrics.Prometheus), podMonitorGroupKind, monitoringv1.Version, "Prometheus Operator"},
-		{scrapeEnabled(metrics.VictoriaMetrics), vmPodScrapeGroupKind, vmv1beta1.GroupVersion.Version, "VictoriaMetrics Operator"},
-	}
-	for _, check := range checks {
-		if !check.enabled {
-			continue
-		}
-		if _, err := c.Client().RESTMapper().RESTMapping(check.kind, check.version); err != nil {
-			if meta.IsNoMatchError(err) {
-				return fmt.Errorf("%s is not installed: the cluster does not serve %s", check.operator, check.kind)
-			}
-			return fmt.Errorf("look up %s: %w", check.kind, err)
-		}
-	}
-
-	return nil
 }
