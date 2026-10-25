@@ -252,8 +252,20 @@ spec:
                     value: NodePort
               path: spec.components.engine.service.serviceType
               uiType: select
+            podSchedulingPolicy:
+              components:
+                policy:
+                  uiType: widget
+                  widgetType: podSchedulingPolicy
+              componentsOrder:
+                - policy
+              description: Control how database pods are scheduled onto nodes using affinity rules. Rules replace the default, which keeps each member on its own node.
+              groupType: bordered
+              label: Pod scheduling policy
+              uiType: group
           componentsOrder:
             - configuration
+            - podSchedulingPolicy
           description: Configure advanced settings for your database
           label: Advanced configuration
         databaseVersion:
@@ -531,8 +543,20 @@ spec:
                     value: NodePort
               path: spec.components.proxy.service.serviceType
               uiType: select
+            podSchedulingPolicy:
+              components:
+                policy:
+                  uiType: widget
+                  widgetType: podSchedulingPolicy
+              componentsOrder:
+                - policy
+              description: Control how shard, config server and router pods are scheduled onto nodes using affinity rules. Rules replace a component's default, which keeps each shard and config server member on its own node.
+              groupType: bordered
+              label: Pod scheduling policy
+              uiType: group
           componentsOrder:
             - configuration
+            - podSchedulingPolicy
           description: Configure advanced settings for your database
           label: Advanced configuration
         databaseVersion:
