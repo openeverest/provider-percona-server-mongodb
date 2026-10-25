@@ -8,7 +8,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.113.4
 	github.com/cert-manager/cert-manager v1.21.0
 	github.com/hashicorp/go-version v1.9.0
-	github.com/openeverest/openeverest/v2 v2.0.0-dev.2.0.20261025183846-c59a766e2e15
+	github.com/openeverest/openeverest/v2 v2.0.0-dev.2.0.20261025190517-80bdb25279a3
 	github.com/percona/percona-server-mongodb-operator v1.23.1
 	github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.94.2
 	github.com/stretchr/testify v1.12.1
