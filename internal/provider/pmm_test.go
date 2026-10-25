@@ -114,6 +114,30 @@ func TestApplyPMMBindings(t *testing.T) {
 			"the small tier requests 95m and 97Mi, above these limits")
 	})
 
+	t.Run("the engine memory limit picks the size tier", func(t *testing.T) {
+		t.Parallel()
+
+		for engineMemory, want := range map[string]corev1.ResourceRequirements{
+			"8G":  pmmResourcesMedium,
+			"32G": pmmResourcesLarge,
+		} {
+			t.Run(engineMemory, func(t *testing.T) {
+				t.Parallel()
+
+				c, _ := bindingContextWith(t, interceptor.Funcs{}, engineMemory, pmmEntry,
+					acceptedBinding("pmm", "pmm-dst", "pmm", corev1alpha1.MonitoringExecutionModeProviderManaged),
+					destination("pmm-dst", "pmm", `{"url":"https://pmm.example.com"}`, "pmm-token"),
+					pmmClass("percona/pmm-client:3.8.0"),
+					pmmToken(),
+				)
+				psmdb := &psmdbv1.PerconaServerMongoDB{}
+
+				require.NoError(t, applyPMMBindings(c, psmdb, metricsTestUsersSecret))
+				assert.Equal(t, want, psmdb.Spec.PMM.Resources)
+			})
+		}
+	})
+
 	t.Run("a binding that is not Accepted keeps the live rendering", func(t *testing.T) {
 		t.Parallel()
 
@@ -183,27 +207,31 @@ func TestApplyPMMBindings(t *testing.T) {
 				"decode binding parameters",
 			},
 		} {
-			o := objects{
-				binding: acceptedBinding("pmm", "pmm-dst", "pmm", corev1alpha1.MonitoringExecutionModeProviderManaged),
-				dst:     destination("pmm-dst", "pmm", `{"url":"https://pmm.example.com"}`, "pmm-token"),
-				class:   pmmClass("percona/pmm-client:3.8.0"),
-				token:   pmmToken(),
-			}
-			tc.breakIt(&o)
-			objs := []client.Object{o.binding, o.dst, o.class, live.DeepCopy()}
-			if o.token != nil {
-				objs = append(objs, o.token)
-			}
-			c, _ := bindingContext(t, pmmEntry, objs...)
-			psmdb := &psmdbv1.PerconaServerMongoDB{}
+			t.Run(name, func(t *testing.T) {
+				t.Parallel()
 
-			require.NoError(t, applyPMMBindings(c, psmdb, metricsTestUsersSecret), name)
-			assert.Equal(t, live.Spec.PMM, psmdb.Spec.PMM, name)
+				o := objects{
+					binding: acceptedBinding("pmm", "pmm-dst", "pmm", corev1alpha1.MonitoringExecutionModeProviderManaged),
+					dst:     destination("pmm-dst", "pmm", `{"url":"https://pmm.example.com"}`, "pmm-token"),
+					class:   pmmClass("percona/pmm-client:3.8.0"),
+					token:   pmmToken(),
+				}
+				tc.breakIt(&o)
+				objs := []client.Object{o.binding, o.dst, o.class, live.DeepCopy()}
+				if o.token != nil {
+					objs = append(objs, o.token)
+				}
+				c, _ := bindingContext(t, pmmEntry, objs...)
+				psmdb := &psmdbv1.PerconaServerMongoDB{}
 
-			reason, message, staged := c.MonitoringBindingResult(bindingTestInstance + "-pmm")
-			require.True(t, staged, name)
-			assert.Equal(t, monitoringv1alpha1.ReasonRenderFailed, reason, name)
-			assert.Contains(t, message, tc.message, name)
+				require.NoError(t, applyPMMBindings(c, psmdb, metricsTestUsersSecret))
+				assert.Equal(t, live.Spec.PMM, psmdb.Spec.PMM)
+
+				reason, message, staged := c.MonitoringBindingResult(bindingTestInstance + "-pmm")
+				require.True(t, staged)
+				assert.Equal(t, monitoringv1alpha1.ReasonRenderFailed, reason)
+				assert.Contains(t, message, tc.message)
+			})
 		}
 	})
 
@@ -226,19 +254,23 @@ func TestApplyPMMBindings(t *testing.T) {
 				},
 			},
 		} {
-			c, _ := bindingContextWith(t, funcs, pmmEntry,
-				acceptedBinding("pmm", "pmm-dst", "pmm", corev1alpha1.MonitoringExecutionModeProviderManaged),
-				destination("pmm-dst", "pmm", `{"url":"https://pmm.example.com"}`, "pmm-token"),
-				pmmClass("percona/pmm-client:3.8.0"),
-				pmmToken(),
-				livePSMDB(psmdbv1.AppStateReady, false, false),
-			)
-			psmdb := &psmdbv1.PerconaServerMongoDB{}
+			t.Run(name, func(t *testing.T) {
+				t.Parallel()
 
-			require.ErrorIs(t, applyPMMBindings(c, psmdb, metricsTestUsersSecret), errAPI, name)
+				c, _ := bindingContextWith(t, funcs, "1G", pmmEntry,
+					acceptedBinding("pmm", "pmm-dst", "pmm", corev1alpha1.MonitoringExecutionModeProviderManaged),
+					destination("pmm-dst", "pmm", `{"url":"https://pmm.example.com"}`, "pmm-token"),
+					pmmClass("percona/pmm-client:3.8.0"),
+					pmmToken(),
+					livePSMDB(psmdbv1.AppStateReady, false, false),
+				)
+				psmdb := &psmdbv1.PerconaServerMongoDB{}
 
-			_, _, staged := c.MonitoringBindingResult(bindingTestInstance + "-pmm")
-			assert.False(t, staged, "%s: the retry decides the binding's result", name)
+				require.ErrorIs(t, applyPMMBindings(c, psmdb, metricsTestUsersSecret), errAPI)
+
+				_, _, staged := c.MonitoringBindingResult(bindingTestInstance + "-pmm")
+				assert.False(t, staged, "the retry decides the binding's result")
+			})
 		}
 	})
 

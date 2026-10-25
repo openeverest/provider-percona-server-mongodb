@@ -1,7 +1,7 @@
-# The prometheus binding is gone with its entry.
+# The victoriametrics binding is gone with its entry.
 apiVersion: monitoring.openeverest.io/v1alpha1
 kind: MonitoringBinding
 metadata:
   labels:
     core.openeverest.io/instance: psmdb-bindings
-    monitoring.openeverest.io/entry: prometheus
+    monitoring.openeverest.io/entry: victoriametrics

@@ -19,3 +19,15 @@ spec:
   (monitoring == null): true
 status:
   (monitoring == null || monitoring.destinations == null): true
+---
+# Once the cluster has PMM off the token leaves the users secret; the seeded
+# credentials stay.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: everest-secrets-psmdb-bindings
+type: Opaque
+data:
+  MONGODB_DATABASE_ADMIN_USER: dGVzdC11c2Vy
+  MONGODB_DATABASE_ADMIN_PASSWORD: dGVzdC1wYXNzd29yZA==
+  (PMM_SERVER_TOKEN == null): true

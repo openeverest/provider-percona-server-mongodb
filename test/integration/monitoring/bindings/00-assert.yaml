@@ -5,7 +5,7 @@ metadata:
 spec:
   replicas: 0
 ---
-# Core's destination controller accepts both destinations against their classes.
+# Core's destination controller accepts every destination against its class.
 apiVersion: monitoring.openeverest.io/v1alpha1
 kind: MonitoringDestination
 metadata:
@@ -17,5 +17,12 @@ apiVersion: monitoring.openeverest.io/v1alpha1
 kind: MonitoringDestination
 metadata:
   name: prometheus-it
+status:
+  (conditions[?type == 'Accepted'].status | [0]): "True"
+---
+apiVersion: monitoring.openeverest.io/v1alpha1
+kind: MonitoringDestination
+metadata:
+  name: victoriametrics-it
 status:
   (conditions[?type == 'Accepted'].status | [0]): "True"

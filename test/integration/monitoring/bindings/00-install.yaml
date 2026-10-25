@@ -1,5 +1,5 @@
 ---
-# The pmm class as monitoring-pmm's chart ships it, under a test-local name.
+# A minimal pmm class, under a test-local name.
 apiVersion: monitoring.openeverest.io/v1alpha1
 kind: MonitoringClass
 metadata:
@@ -37,7 +37,7 @@ spec:
   credentialsSchema:
     required: [apiKey]
 ---
-# The prometheus class as monitoring-prometheus's chart ships it.
+# A minimal prometheus class, under a test-local name.
 apiVersion: monitoring.openeverest.io/v1alpha1
 kind: MonitoringClass
 metadata:
@@ -52,6 +52,25 @@ spec:
       type: object
       properties:
         podMonitorLabels:
+          type: object
+          additionalProperties:
+            type: string
+---
+# A minimal victoriametrics class, under a test-local name.
+apiVersion: monitoring.openeverest.io/v1alpha1
+kind: MonitoringClass
+metadata:
+  name: victoriametrics-it
+spec:
+  controllerName: openeverest.io/monitoring-victoriametrics
+  extensionManaged:
+    requires:
+      metrics: true
+  destinationParametersSchema:
+    openAPIV3Schema:
+      type: object
+      properties:
+        vmPodScrapeLabels:
           type: object
           additionalProperties:
             type: string
@@ -87,6 +106,17 @@ spec:
   parameters:
     podMonitorLabels:
       release: kps
+---
+apiVersion: monitoring.openeverest.io/v1alpha1
+kind: MonitoringDestination
+metadata:
+  name: victoriametrics-it
+spec:
+  classRef:
+    name: victoriametrics-it
+  parameters:
+    vmPodScrapeLabels:
+      release: vm
 ---
 # Seeded admin credentials: the provider reads them for connection details once
 # the cluster is ready. PMM_SERVER_TOKEN is added to this secret by the provider.

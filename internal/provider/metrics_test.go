@@ -136,14 +136,18 @@ func TestConfigureMetricsExporter(t *testing.T) {
 			"no monitoring": {},
 			"PMM only":      {entries: []corev1alpha1.InstanceMonitoringDestination{entry("pmm", "pmm-dst")}, objs: pmmOnly},
 		} {
-			c, _ := bindingContext(t, tc.entries, tc.objs...)
-			psmdb := shardedPSMDB()
+			t.Run(name, func(t *testing.T) {
+				t.Parallel()
 
-			require.NoError(t, configureMetricsExporter(c, psmdb, metricsTestUsersSecret), name)
+				c, _ := bindingContext(t, tc.entries, tc.objs...)
+				psmdb := shardedPSMDB()
 
-			assert.Empty(t, psmdb.Spec.Replsets[0].Sidecars, name)
-			assert.Empty(t, psmdb.Spec.Sharding.ConfigsvrReplSet.Sidecars, name)
-			assert.Empty(t, psmdb.Spec.Sharding.Mongos.Sidecars, name)
+				require.NoError(t, configureMetricsExporter(c, psmdb, metricsTestUsersSecret))
+
+				assert.Empty(t, psmdb.Spec.Replsets[0].Sidecars)
+				assert.Empty(t, psmdb.Spec.Sharding.ConfigsvrReplSet.Sidecars)
+				assert.Empty(t, psmdb.Spec.Sharding.Mongos.Sidecars)
+			})
 		}
 	})
 }

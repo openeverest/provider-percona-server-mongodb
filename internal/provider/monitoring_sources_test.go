@@ -55,14 +55,15 @@ const (
 func bindingContext(t *testing.T, entries []corev1alpha1.InstanceMonitoringDestination, objs ...client.Object) (*controller.Context, client.Client) {
 	t.Helper()
 
-	return bindingContextWith(t, interceptor.Funcs{}, entries, objs...)
+	return bindingContextWith(t, interceptor.Funcs{}, "1G", entries, objs...)
 }
 
 // bindingContextWith is bindingContext over a client whose calls go through
-// funcs.
+// funcs, for an engine limited to engineMemory.
 func bindingContextWith(
 	t *testing.T,
 	funcs interceptor.Funcs,
+	engineMemory string,
 	entries []corev1alpha1.InstanceMonitoringDestination,
 	objs ...client.Object,
 ) (*controller.Context, client.Client) {
@@ -80,7 +81,7 @@ func bindingContextWith(
 			Components: map[string]corev1alpha1.ComponentSpec{
 				common.ComponentEngine: {
 					Resources: &corev1.ResourceRequirements{
-						Limits: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("1G")},
+						Limits: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse(engineMemory)},
 					},
 				},
 			},
@@ -292,6 +293,21 @@ func TestMetricsExporterRequired(t *testing.T) {
 		assert.False(t, required)
 	})
 
+	t.Run("switching backends keeps the live sidecar until the new entry has a binding", func(t *testing.T) {
+		t.Parallel()
+
+		c, _ := bindingContext(t, []corev1alpha1.InstanceMonitoringDestination{entry("vm", "vm-dst")},
+			acceptedBinding("prom", "prom-dst", "prometheus", corev1alpha1.MonitoringExecutionModeExtensionManaged),
+			destination("prom-dst", "prometheus", "", ""),
+			metricsClass("prometheus"),
+			livePSMDB(psmdbv1.AppStateReady, false, true),
+		)
+
+		required, err := metricsExporterRequired(c)
+		require.NoError(t, err)
+		assert.True(t, required, "the removed entry's binding is left and the new one has none yet")
+	})
+
 	t.Run("configureMetricsExporter follows the requirement", func(t *testing.T) {
 		t.Parallel()
 
@@ -362,11 +378,15 @@ func TestMonitoringSources(t *testing.T) {
 			"no ready pod": {livePSMDB(psmdbv1.AppStateInit, true, true)},
 			"no CR":        {},
 		} {
-			c, _ := bindingContext(t, nil, objs...)
+			t.Run(name, func(t *testing.T) {
+				t.Parallel()
 
-			s, err := p.MonitoringSources(c)
-			require.NoError(t, err, name)
-			assert.Empty(t, s.Metrics, name)
+				c, _ := bindingContext(t, nil, objs...)
+
+				s, err := p.MonitoringSources(c)
+				require.NoError(t, err)
+				assert.Empty(t, s.Metrics)
+			})
 		}
 	})
 
@@ -381,7 +401,7 @@ func TestMonitoringSources(t *testing.T) {
 				}
 				return cl.Get(ctx, key, obj, opts...)
 			},
-		}, nil, livePSMDB(psmdbv1.AppStateReady, false, true))
+		}, "1G", nil, livePSMDB(psmdbv1.AppStateReady, false, true))
 
 		_, err := p.MonitoringSources(c)
 		require.ErrorIs(t, err, errAPI, "the runtime keeps the published sources on an error")
@@ -412,11 +432,15 @@ func TestMonitoringSources(t *testing.T) {
 				[]string{common.ComponentEngine, common.ComponentConfigServer},
 			},
 		} {
-			c, _ := bindingContext(t, nil, tc.live)
+			t.Run(name, func(t *testing.T) {
+				t.Parallel()
 
-			s, err := p.MonitoringSources(c)
-			require.NoError(t, err, name)
-			assert.Equal(t, tc.want, endpointComponents(s), name)
+				c, _ := bindingContext(t, nil, tc.live)
+
+				s, err := p.MonitoringSources(c)
+				require.NoError(t, err)
+				assert.Equal(t, tc.want, endpointComponents(s))
+			})
 		}
 	})
 }

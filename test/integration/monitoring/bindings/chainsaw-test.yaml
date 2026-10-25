@@ -8,10 +8,12 @@ spec:
     Monitoring through Instance.spec.monitoring.destinations[]: a ProviderManaged
     pmm binding renders spec.pmm, an ExtensionManaged prometheus binding turns
     the mongodb_exporter sidecars on and publishes the metrics endpoints, a
-    deleted pmm destination keeps the live spec.pmm until it is re-created, and
-    dropping each entry undoes exactly its part. No extension controller runs
-    here, so the classes are claimed by hand and the prometheus binding is never
-    Configured; what the provider owns is asserted.
+    deleted pmm destination keeps the live spec.pmm until it is re-created, a
+    rotated pmm token reaches the users secret, replacing prometheus with
+    victoriametrics keeps the sidecars and endpoints, and dropping each entry
+    undoes exactly its part. No extension controller runs here, so the classes
+    are claimed by hand and the ExtensionManaged bindings are never Configured;
+    what the provider owns is asserted.
   catch:
     - script:
         content: kubectl -n $NAMESPACE get instance,psmdb,monitoringdestination,monitoringbinding,secret -o yaml
@@ -43,7 +45,7 @@ spec:
         # its controller has claimed it.
         - script:
             content: |
-              for class in pmm-it prometheus-it; do
+              for class in pmm-it prometheus-it victoriametrics-it; do
                 kubectl patch monitoringclass/$class --subresource status --type merge \
                   -p '{"status":{"conditions":[{"type":"Accepted","status":"True","reason":"Accepted","message":"claimed by the test","lastTransitionTime":"2026-01-01T00:00:00Z"}]}}'
               done
@@ -87,10 +89,26 @@ spec:
         - assert:
             file: 13-assert.yaml
 
-    - name: drop-prometheus-entry
+    - name: update-pmm-credentials
       try:
         - apply:
-            file: 20-drop-prometheus.yaml
+            file: 14-update-pmm-credentials.yaml
+        - assert:
+            file: 14-assert.yaml
+
+    - name: switch-prometheus-to-victoriametrics
+      try:
+        - apply:
+            file: 15-switch-to-victoriametrics.yaml
+        - assert:
+            file: 15-assert.yaml
+        - error:
+            file: 15-errors.yaml
+
+    - name: drop-victoriametrics-entry
+      try:
+        - apply:
+            file: 20-drop-victoriametrics.yaml
         - assert:
             file: 20-assert.yaml
         - error:

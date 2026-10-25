@@ -36,7 +36,7 @@ spec:
     limits:
       maxPITREnabledStorages: 1
 ---
-# The pmm class as monitoring-pmm's chart ships it, under a test-local name.
+# A minimal pmm class, under a test-local name.
 apiVersion: monitoring.openeverest.io/v1alpha1
 kind: MonitoringClass
 metadata:
