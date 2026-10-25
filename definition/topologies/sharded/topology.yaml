@@ -518,8 +518,20 @@ ui:
             multiline: true
             minRows: 3
             maxRows: 8
+        podSchedulingPolicy:
+          uiType: group
+          groupType: bordered
+          label: "Pod scheduling policy"
+          description: "Control how shard, config server and router pods are scheduled onto nodes using affinity rules. Rules replace a component's default, which keeps each shard and config server member on its own node."
+          components:
+            policy:
+              uiType: widget
+              widgetType: podSchedulingPolicy
+          componentsOrder:
+            - policy
       componentsOrder:
         - configuration
+        - podSchedulingPolicy
   sectionsOrder:
     - databaseVersion
     - resources

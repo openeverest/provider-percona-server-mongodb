@@ -68,6 +68,7 @@ provider itself is covered under [Installation](#installation).
 | Custom configuration | ✅ | `mongod` / `mongos` config via the component's `configuration` parameter |
 | Monitoring | ✅ | PMM, and Prometheus / VictoriaMetrics through mongodb_exporter, via the optional `monitoring` component |
 | TLS | ✅ | on by default; generated, cert-manager or your own certificates — see [TLS](#tls) |
+| Pod scheduling | ✅ | affinity and topology spread per component — see [Pod scheduling](#pod-scheduling) |
 
 Stateful workloads additionally report:
 
@@ -274,6 +275,44 @@ spec:
   to match the mode. TLS clients don't need a client certificate; on instances created
   before this was supported, accepting them waits for the
   `tls-clients-without-certificates` maintenance approval (a rolling restart).
+
+### Pod scheduling
+
+Each component's `schedulingPolicy` accepts `affinity` and `topologySpreadConstraints`;
+the UI edits affinity under **Advanced configuration → Pod scheduling policy**, one tab per
+component:
+
+```yaml
+spec:
+  components:
+    engine:
+      schedulingPolicy:
+        affinity:
+          nodeAffinity:
+            requiredDuringSchedulingIgnoredDuringExecution:
+              nodeSelectorTerms:
+                - matchExpressions:
+                    - {key: node-pool, operator: In, values: [databases]}
+          podAntiAffinity:
+            requiredDuringSchedulingIgnoredDuringExecution:
+              - topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels:
+                    core.openeverest.io/instance: my-mongodb
+                    core.openeverest.io/component: engine
+                matchLabelKeys: [app.kubernetes.io/replset]
+```
+
+- **By default** the members of every replica set — each shard and the config servers — are
+  required to run on separate nodes; `mongos` routers hold no data and are not constrained.
+- **An `affinity` replaces that default** for its component, so add a pod anti-affinity like
+  the one above to keep members apart. Pods carry the `core.openeverest.io/instance` and
+  `core.openeverest.io/component` labels. All shards share one `engine` affinity;
+  `matchLabelKeys` narrows the selector to the pod's own replica set (Kubernetes 1.31+;
+  without it, members of all shards are kept apart). An empty affinity (`{}`) sets no
+  constraints.
+- **`topologySpreadConstraints`** without a `labelSelector` count the component's own pods.
+- `nodeSelector`, `tolerations` and `schedulerName` are not supported yet.
 
 ## Development
 
