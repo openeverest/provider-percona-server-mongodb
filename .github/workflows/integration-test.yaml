@@ -20,8 +20,9 @@ permissions:
 
 env:
   IMG: provider-percona-server-mongodb:ci
-  # Branch of openeverest/openeverest to build the platform from.
-  OPENEVEREST_BRANCH: main
+  # Branch of openeverest/openeverest to build the platform from. Tracks the
+  # extensible-monitoring branch go.mod is pinned to (openeverest/openeverest#3298).
+  OPENEVEREST_BRANCH: poc/extensible-monitoring
 
 jobs:
   run:

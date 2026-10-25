@@ -47,8 +47,9 @@ env:
   EVEREST_NAMESPACE: everest-system
   PROVIDER_NAMESPACE: provider-system
 
-  # Branch of openeverest/openeverest to build the platform from.
-  OPENEVEREST_BRANCH: main
+  # Branch of openeverest/openeverest to build the platform from. Tracks the
+  # extensible-monitoring branch go.mod is pinned to (openeverest/openeverest#3298).
+  OPENEVEREST_BRANCH: poc/extensible-monitoring
 
   # Image names produced by the openeverest build (must match its Makefile).
   EVEREST_IMG: ghcr.io/openeverest/openeverest-dev:0.0.0
