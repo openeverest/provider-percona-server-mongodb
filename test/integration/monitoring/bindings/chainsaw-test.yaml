@@ -1,0 +1,102 @@
+---
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: monitoring-bindings
+spec:
+  description: |
+    Monitoring through Instance.spec.monitoring.destinations[]: a ProviderManaged
+    pmm binding renders spec.pmm, an ExtensionManaged prometheus binding turns
+    the mongodb_exporter sidecars on and publishes the metrics endpoints, and
+    dropping each entry undoes exactly its part. No extension controller runs
+    here, so the classes are claimed by hand and the prometheus binding is never
+    Configured; what the provider owns is asserted.
+  catch:
+    - script:
+        content: kubectl -n $NAMESPACE get instance,psmdb,monitoringdestination,monitoringbinding,secret -o yaml
+    - script:
+        content: kubectl get monitoringclass -o yaml
+    - podLogs:
+        namespace: provider-system
+        selector: app.kubernetes.io/name=provider-percona-server-mongodb
+        tail: 100
+  steps:
+    # We don't need the PSMDB operator to be running for the integration
+    # tests, but the deployment must exist in the test namespace.
+    - name: setup
+      try:
+        - script:
+            content: |
+              curl -fsSL "https://raw.githubusercontent.com/percona/percona-server-mongodb-operator/v${PSMDB_OPERATOR_VERSION:-1.21.1}/deploy/operator.yaml" \
+                | sed 's/replicas: [0-9]/replicas: 0/g' | kubectl apply -n $NAMESPACE -f -
+        # The PodMonitor CRD is installed only to prove the provider creates
+        # none for a binding.
+        - script:
+            timeout: 120s
+            content: |
+              kubectl apply --server-side -f https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/v0.94.2/example/prometheus-operator-crd/monitoring.coreos.com_podmonitors.yaml
+              kubectl wait --for=condition=Established --timeout=60s crd/podmonitors.monitoring.coreos.com
+        - apply:
+            file: 00-install.yaml
+        # Stand in for the extension controllers: a class is usable only once
+        # its controller has claimed it.
+        - script:
+            content: |
+              for class in pmm-it prometheus-it; do
+                kubectl patch monitoringclass/$class --subresource status --type merge \
+                  -p '{"status":{"conditions":[{"type":"Accepted","status":"True","reason":"Accepted","message":"claimed by the test","lastTransitionTime":"2026-01-01T00:00:00Z"}]}}'
+              done
+        - assert:
+            file: 00-assert.yaml
+
+    - name: create-cluster-with-destinations
+      try:
+        - apply:
+            file: 10-create-cluster.yaml
+        - assert:
+            file: 10-assert.yaml
+        - error:
+            file: 10-errors.yaml
+
+    # Simulate the PSMDB operator (scaled to 0) marking the cluster ready: the
+    # provider publishes metrics endpoints only for a serving cluster.
+    - name: cluster-ready
+      try:
+        - script:
+            content: |
+              kubectl patch psmdb/psmdb-bindings --subresource status -n $NAMESPACE \
+                -p '{"status":{"state":"ready", "size":3, "ready":3, "host":"psmdb-bindings-rs0.default.svc.cluster.local"}}' --type=merge
+        - assert:
+            file: 11-assert.yaml
+
+    - name: drop-prometheus-entry
+      try:
+        - apply:
+            file: 20-drop-prometheus.yaml
+        - assert:
+            file: 20-assert.yaml
+        - error:
+            file: 20-errors.yaml
+
+    - name: drop-pmm-entry
+      try:
+        - apply:
+            file: 30-drop-pmm.yaml
+        - assert:
+            file: 30-assert.yaml
+        - error:
+            file: 30-errors.yaml
+
+    - name: delete-cluster
+      try:
+        - script:
+            content: |
+              kubectl -n $NAMESPACE delete in/psmdb-bindings psmdb/psmdb-bindings --wait=false && sleep 5
+              # The PSMDB operator is scaled to 0, so nothing processes the psmdb finalizers.
+              kubectl -n $NAMESPACE patch psmdb/psmdb-bindings -p '{"metadata":{"finalizers":null}}' --type merge
+        - wait:
+            apiVersion: core.openeverest.io/v1alpha1
+            kind: Instance
+            name: psmdb-bindings
+            for:
+              deletion: {}

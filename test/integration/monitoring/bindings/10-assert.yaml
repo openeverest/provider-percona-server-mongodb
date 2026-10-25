@@ -1,0 +1,98 @@
+# Core materialises one binding per entry; the pmm one resolves to
+# ProviderManaged and the provider reports it Configured.
+apiVersion: monitoring.openeverest.io/v1alpha1
+kind: MonitoringBinding
+metadata:
+  labels:
+    openeverest.io/instance: psmdb-bindings
+    monitoring.openeverest.io/entry: pmm
+  ownerReferences:
+    - apiVersion: core.openeverest.io/v1alpha1
+      kind: Instance
+      name: psmdb-bindings
+spec:
+  instanceRef:
+    name: psmdb-bindings
+  destinationRef:
+    name: pmm-it
+  classRef:
+    name: pmm-it
+  executionMode: ProviderManaged
+  parameters:
+    resources:
+      limits:
+        memory: 400Mi
+status:
+  (conditions[?type == 'Accepted'].status | [0]): "True"
+  (conditions[?type == 'Configured'].status | [0]): "True"
+  (conditions[?type == 'Configured'].reason | [0]): Configured
+---
+# The prometheus entry resolves to ExtensionManaged because mongod declares
+# metrics: Exporter; its Configured condition belongs to the class controller,
+# which is not running here.
+apiVersion: monitoring.openeverest.io/v1alpha1
+kind: MonitoringBinding
+metadata:
+  labels:
+    openeverest.io/instance: psmdb-bindings
+    monitoring.openeverest.io/entry: prometheus
+spec:
+  destinationRef:
+    name: prometheus-it
+  classRef:
+    name: prometheus-it
+  executionMode: ExtensionManaged
+status:
+  (conditions[?type == 'Accepted'].status | [0]): "True"
+---
+apiVersion: psmdb.percona.com/v1
+kind: PerconaServerMongoDB
+metadata:
+  name: psmdb-bindings
+spec:
+  # spec.pmm comes from the binding: server from the destination URL, image
+  # from the class, limits from the entry parameters over the size tier.
+  pmm:
+    enabled: true
+    serverHost: pmm-it.example.com
+    image: percona/pmm-client:3.8.0
+    resources:
+      requests:
+        memory: 99604Ki
+        cpu: 95m
+      limits:
+        memory: 400Mi
+    mongodParams: (join('', ['--custom-labels=namespace=', $namespace, ',core_openeverest_io_instance=psmdb-bindings']))
+    mongosParams: (join('', ['--custom-labels=namespace=', $namespace, ',core_openeverest_io_instance=psmdb-bindings,core_openeverest_io_component=proxy']))
+  # The exporter sidecar is on because the prometheus class requires metrics;
+  # no monitoring component asked for it.
+  replsets:
+    - name: rs0
+      sidecars:
+        - name: mongodb-exporter
+          ports:
+            - name: metrics
+              containerPort: 9216
+  secrets:
+    users: everest-secrets-psmdb-bindings
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: everest-secrets-psmdb-bindings
+type: Opaque
+data:
+  MONGODB_DATABASE_ADMIN_USER: dGVzdC11c2Vy
+  PMM_SERVER_TOKEN: YWJjZGVm
+---
+apiVersion: core.openeverest.io/v1alpha1
+kind: Instance
+metadata:
+  name: psmdb-bindings
+status:
+  monitoring:
+    (destinations[?name == 'pmm'] | [0]):
+      mode: ProviderManaged
+      configured: "True"
+    (destinations[?name == 'prometheus'] | [0]):
+      mode: ExtensionManaged
