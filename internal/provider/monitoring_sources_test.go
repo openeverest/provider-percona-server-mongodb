@@ -16,6 +16,10 @@ package provider
 
 import (
 	"context"
+	"maps"
+	"os"
+	"path/filepath"
+	"slices"
 	"testing"
 
 	psmdbv1 "github.com/percona/percona-server-mongodb-operator/pkg/apis/psmdb/v1"
@@ -30,6 +34,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
+	"sigs.k8s.io/yaml"
 
 	commonv1alpha1 "github.com/openeverest/openeverest/v2/api/common/v1alpha1"
 	corev1alpha1 "github.com/openeverest/openeverest/v2/api/core/v1alpha1"
@@ -207,6 +212,20 @@ func livePSMDB(state psmdbv1.AppState, sharded, withExporter bool) *psmdbv1.Perc
 		psmdb.Spec.Replsets[0].Sidecars = []corev1.Container{{Name: metricsExporterContainerName}}
 	}
 	return psmdb
+}
+
+func TestMonitoringIntegrations(t *testing.T) {
+	t.Parallel()
+
+	raw, err := os.ReadFile(filepath.Clean("../../definition/monitoring.yaml"))
+	require.NoError(t, err)
+	var contract struct {
+		Integrations map[string]any `json:"integrations"`
+	}
+	require.NoError(t, yaml.Unmarshal(raw, &contract))
+
+	assert.ElementsMatch(t, slices.Collect(maps.Keys(contract.Integrations)), (&PSMDBProvider{}).MonitoringIntegrations(),
+		"the provider renders exactly the integrations its contract declares")
 }
 
 func TestMetricsExporterRequired(t *testing.T) {
@@ -523,6 +542,16 @@ func TestApplyPMMBindings(t *testing.T) {
 				func(o *objects) { o.token.Data = map[string][]byte{"token": []byte("secret-token")} },
 				"failed to get key apiKey from secret pmm-token",
 			},
+			"undecodable destination parameters": {
+				func(o *objects) { o.dst.Spec.Parameters.Raw = []byte(`{"url":42}`) },
+				`decode MonitoringDestination "pmm-dst" parameters`,
+			},
+			"undecodable binding parameters": {
+				func(o *objects) {
+					o.binding.Spec.Parameters = &runtime.RawExtension{Raw: []byte(`{"resources":"lots"}`)}
+				},
+				"decode binding parameters",
+			},
 		} {
 			o := objects{
 				binding: acceptedBinding("pmm", "pmm-dst", "pmm", corev1alpha1.MonitoringExecutionModeProviderManaged),
@@ -581,6 +610,61 @@ func TestApplyPMMBindings(t *testing.T) {
 			_, _, staged := c.MonitoringBindingResult(bindingTestInstance + "-pmm")
 			assert.False(t, staged, "%s: the retry decides the binding's result", name)
 		}
+	})
+
+	t.Run("a binding that cannot be rendered leaves PMM disabled while no engine CR exists", func(t *testing.T) {
+		t.Parallel()
+
+		c, _ := bindingContext(t, pmmEntry,
+			acceptedBinding("pmm", "pmm-dst", "pmm", corev1alpha1.MonitoringExecutionModeProviderManaged),
+			destination("pmm-dst", "pmm", `{"url":"pmm.example.com"}`, "pmm-token"),
+			pmmClass("percona/pmm-client:3.8.0"),
+			pmmToken(),
+		)
+		psmdb := &psmdbv1.PerconaServerMongoDB{}
+
+		require.NoError(t, applyPMMBindings(c, psmdb, metricsTestUsersSecret))
+		assert.Equal(t, psmdbv1.PMMSpec{}, psmdb.Spec.PMM)
+
+		reason, _, staged := c.MonitoringBindingResult(bindingTestInstance + "-pmm")
+		require.True(t, staged)
+		assert.Equal(t, monitoringv1alpha1.ReasonRenderFailed, reason)
+	})
+
+	t.Run("removing the entry disables PMM while its binding still exists", func(t *testing.T) {
+		t.Parallel()
+
+		c, _ := bindingContext(t, nil,
+			acceptedBinding("pmm", "pmm-dst", "pmm", corev1alpha1.MonitoringExecutionModeProviderManaged),
+			destination("pmm-dst", "pmm", `{"url":"https://pmm.example.com"}`, "pmm-token"),
+			pmmClass("percona/pmm-client:3.8.0"),
+			pmmToken(),
+			livePSMDB(psmdbv1.AppStateReady, false, false),
+		)
+		psmdb := &psmdbv1.PerconaServerMongoDB{}
+
+		require.NoError(t, applyPMMBindings(c, psmdb, metricsTestUsersSecret))
+		assert.Equal(t, psmdbv1.PMMSpec{}, psmdb.Spec.PMM, "core deletes the binding of a removed entry")
+
+		_, _, staged := c.MonitoringBindingResult(bindingTestInstance + "-pmm")
+		assert.False(t, staged)
+	})
+
+	t.Run("a usable pmm binding renders while another entry has no binding yet", func(t *testing.T) {
+		t.Parallel()
+
+		c, _ := bindingContext(t, []corev1alpha1.InstanceMonitoringDestination{entry("pmm", "pmm-dst"), entry("prom", "prom-dst")},
+			acceptedBinding("pmm", "pmm-dst", "pmm", corev1alpha1.MonitoringExecutionModeProviderManaged),
+			destination("pmm-dst", "pmm", `{"url":"https://pmm.example.com"}`, "pmm-token"),
+			pmmClass("percona/pmm-client:3.8.0"),
+			pmmToken(),
+			livePSMDB(psmdbv1.AppStateReady, false, false),
+		)
+		psmdb := &psmdbv1.PerconaServerMongoDB{}
+
+		require.NoError(t, applyPMMBindings(c, psmdb, metricsTestUsersSecret))
+		assert.True(t, psmdb.Spec.PMM.Enabled)
+		assert.Equal(t, "pmm.example.com", psmdb.Spec.PMM.ServerHost, "rendered from the binding, not held from the live CR")
 	})
 
 	t.Run("without a pmm entry spec.pmm is disabled", func(t *testing.T) {

@@ -642,6 +642,7 @@ func NewPSMDBProviderInterface() *PSMDBProvider {
 		ProviderName: "percona-server-mongodb",
 		SchemeFuncs: []func(*runtime.Scheme) error{
 			psmdbv1.SchemeBuilder.AddToScheme,
+			// Sync lists MonitoringBindings and the conformance harness's scheme has only these.
 			monitoringv1alpha1.SchemeBuilder.AddToScheme,
 			// Deployments are read to discover the running operator version.
 			appsv1.AddToScheme,
