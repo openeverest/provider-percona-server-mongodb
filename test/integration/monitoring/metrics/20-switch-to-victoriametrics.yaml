@@ -1,0 +1,14 @@
+apiVersion: core.openeverest.io/v1alpha1
+kind: Instance
+metadata:
+  name: psmdb-metrics
+spec:
+  components:
+    monitoring:
+      type: pmm
+      parameters:
+        metrics:
+          prometheus:
+            enabled: false
+          victoriaMetrics:
+            enabled: true

@@ -78,10 +78,12 @@ spec:
   - arbiter:
       enabled: false
       size: 0
-    configuration: |2
-
-            operationProfiling:
-              mode: slowOp
+    configuration: |
+      net:
+        tls:
+          allowConnectionsWithoutCertificates: true
+      operationProfiling:
+        mode: slowOp
     expose:
       enabled: false
       type: ClusterIP
@@ -110,10 +112,12 @@ spec:
   - arbiter:
       enabled: false
       size: 0
-    configuration: |2
-
-            operationProfiling:
-              mode: slowOp
+    configuration: |
+      net:
+        tls:
+          allowConnectionsWithoutCertificates: true
+      operationProfiling:
+        mode: slowOp
     expose:
       enabled: false
     hidden:
@@ -186,4 +190,4 @@ data:
   port: MjcwMTc=
   username: dGVzdC11c2Vy
   password: dGVzdC1wYXNzd29yZA==
-  uri: bW9uZ29kYjovL3Rlc3QtdXNlcjp0ZXN0LXBhc3N3b3JkQHRlc3QtcHNtZGItY2x1c3Rlci1tb25nb3MuZGVmYXVsdC5zdmMuY2x1c3Rlci5sb2NhbDoyNzAxNy9hZG1pbj9zc2w9ZmFsc2U=
+  uri: bW9uZ29kYjovL3Rlc3QtdXNlcjp0ZXN0LXBhc3N3b3JkQHRlc3QtcHNtZGItY2x1c3Rlci1tb25nb3MuZGVmYXVsdC5zdmMuY2x1c3Rlci5sb2NhbDoyNzAxNy9hZG1pbj90bHM9ZmFsc2U=

@@ -1,0 +1,62 @@
+---
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: core-tls
+spec:
+  description: |
+    TLS configuration: an instance requiring TLS with its own certificates,
+    switching to preferred TLS, and refusing to turn TLS off once running.
+  catch:
+    - script:
+        content: kubectl -n $NAMESPACE get instance,psmdb -o yaml
+    - podLogs:
+        namespace: provider-system
+        selector: app.kubernetes.io/name=provider-percona-server-mongodb
+        tail: 100
+  steps:
+    # We don't need the PSMDB operator to be running for the integration
+    # tests, but the deployment must exist in the test namespace.
+    - name: setup
+      try:
+        - script:
+            content: |
+              curl -fsSL "https://raw.githubusercontent.com/percona/percona-server-mongodb-operator/v${PSMDB_OPERATOR_VERSION:-1.21.1}/deploy/operator.yaml" \
+                | sed 's/replicas: [0-9]/replicas: 0/g' | kubectl apply -n $NAMESPACE -f -
+        - apply:
+            file: 00-certificate-secret.yaml
+
+    - name: require-tls-with-own-certificates
+      try:
+        - apply:
+            file: 10-create-cluster.yaml
+        - assert:
+            file: 10-assert.yaml
+
+    - name: prefer-tls
+      try:
+        - apply:
+            file: 20-prefer-tls.yaml
+        - assert:
+            file: 20-assert.yaml
+
+    - name: tls-stays-on
+      try:
+        - apply:
+            file: 30-disable-tls.yaml
+        - assert:
+            file: 30-assert.yaml
+
+    - name: delete-cluster
+      try:
+        - script:
+            content: |
+              kubectl -n $NAMESPACE delete in/psmdb-tls psmdb/psmdb-tls --wait=false && sleep 5
+              # The PSMDB operator is scaled to 0, so nothing processes the psmdb finalizers.
+              kubectl -n $NAMESPACE patch psmdb/psmdb-tls -p '{"metadata":{"finalizers":null}}' --type merge
+        - wait:
+            apiVersion: core.openeverest.io/v1alpha1
+            kind: Instance
+            name: psmdb-tls
+            for:
+              deletion: {}

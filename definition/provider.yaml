@@ -7,6 +7,10 @@
 
 name: percona-server-mongodb
 
+# Instance-wide parameters (Instance.spec.parameters), a Go type in
+# definition/types.go.
+parametersSchema: Parameters
+
 # Components map logical component names to their type.
 # The type must match a key in versions.yaml's componentTypes.
 # parametersSchema references a Go type in definition/components/ describing
@@ -25,4 +29,4 @@ components:
     type: backup
   monitoring:
     type: pmm
-    parametersSchema: PMMParameters
+    parametersSchema: MonitoringParameters

@@ -133,7 +133,7 @@ presets:
       spec:
         providerRef:
           name: percona-server-mongodb
-        version: 8.0.12
+        version: 8.0.32
         topology:
           type: replicaSet
         components:
@@ -160,7 +160,7 @@ presets:
       spec:
         providerRef:
           name: percona-server-mongodb
-        version: 8.0.12
+        version: 8.0.32
         topology:
           type: sharded
           parameters:
@@ -199,6 +199,13 @@ presets:
               serviceType: ClusterIP
           configServer:
             replicas: 3
+            resources:
+              limits:
+                cpu: "1"
+                memory: 2Gi
+            storage:
+              size: 10Gi
+              # storageClass: ""  # Specify a storage class if you want to set the default
 
 # -- Additional environment variables to set on the provider container
 extraEnv: []

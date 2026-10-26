@@ -19,6 +19,7 @@ import (
 
 	goversion "github.com/hashicorp/go-version"
 	psmdbv1 "github.com/percona/percona-server-mongodb-operator/pkg/apis/psmdb/v1"
+	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -35,6 +36,7 @@ import (
 	monitoringv1alpha1 "github.com/openeverest/openeverest/v2/api/monitoring/v1alpha1"
 	"github.com/openeverest/openeverest/v2/provider-runtime/controller"
 
+	vmv1beta1 "github.com/openeverest/provider-percona-server-mongodb/internal/apis/victoriametrics/v1beta1"
 	"github.com/openeverest/provider-percona-server-mongodb/internal/common"
 )
 
@@ -88,7 +90,7 @@ func defaultSpec() psmdbv1.PerconaServerMongoDBSpec {
 		Sharding: psmdbv1.Sharding{
 			Enabled: false,
 		},
-		VolumeExpansionEnabled: true, //nolint:staticcheck // operator v1.22 still honours it; moving to StorageScaling is separate
+		VolumeExpansionEnabled: true, //nolint:staticcheck // operator v1.23 still honours it; moving to StorageScaling is separate
 	}
 }
 
@@ -168,6 +170,11 @@ func ValidatePSMDB(c *controller.Context) error {
 	if err := validateDataSource(c); err != nil {
 		l.Error(err, "DataSource validation failed", "cluster", c.Name())
 		return fmt.Errorf("dataSource validation failed: %w", err)
+	}
+
+	if err := validateTLS(c); err != nil {
+		l.Error(err, "TLS validation failed", "cluster", c.Name())
+		return fmt.Errorf("tls validation failed: %w", err)
 	}
 
 	if err := validateUserSecret(c); err != nil {
@@ -262,6 +269,24 @@ func SyncPSMDB(c *controller.Context) error {
 
 	usersSecretName := "everest-secrets-" + c.Name()
 
+	tls, err := tlsParameters(c)
+	if err != nil {
+		return err
+	}
+	keep, err := keepCertificates(c, tls)
+	if err != nil {
+		return err
+	}
+	configureTLS(psmdb, tls, keep)
+	psmdb.Spec.Unsafe.TLS = !tlsEnabled(tls.Mode)
+	if err := acceptClientsWithoutCertificates(c, psmdb, tls); err != nil {
+		return fmt.Errorf("configure TLS: %w", err)
+	}
+
+	if err := configureMetricsExporter(c, psmdb, usersSecretName); err != nil {
+		return fmt.Errorf("configure metrics exporter: %w", err)
+	}
+
 	// Ensuring user secret MUST run before configureMonitoring: when PMM
 	// is enabled, it creates or updates the user secret to hold
 	// PMM_SERVER_TOKEN, which would make ensureUserSecret and
@@ -301,10 +326,16 @@ func SyncPSMDB(c *controller.Context) error {
 	psmdb.Spec.Secrets = &psmdbv1.SecretsSpec{
 		Users:         usersSecretName,
 		EncryptionKey: c.Name() + "-mongodb-encryption-key",
-		SSLInternal:   c.Name() + "-ssl-internal",
+		// Left empty, the operator names the secret it generates itself.
+		SSL:         tls.CertificateSecretName,
+		SSLInternal: internalCertificateSecretName(c, tls),
 	}
 
 	if err := c.Apply(psmdb); err != nil {
+		return err
+	}
+
+	if err := reconcileMetricsScrapes(c); err != nil {
 		return err
 	}
 
@@ -424,15 +455,27 @@ func buildConnectionDetails(c *controller.Context, psmdb *psmdbv1.PerconaServerM
 	username := string(secret.Data[psmdbv1.EnvMongoDBDatabaseAdminUser])
 	password := string(secret.Data[psmdbv1.EnvMongoDBDatabaseAdminPassword])
 
-	return controller.ConnectionDetails{
+	ca, tlsRequired, err := tlsConnection(c)
+	if err != nil {
+		return controller.ConnectionDetails{}, err
+	}
+
+	details := controller.ConnectionDetails{
 		Type:     "mongodb",
 		Provider: "percona-server-mongodb",
 		Host:     host,
 		Port:     port,
 		Username: username,
 		Password: password,
-		URI:      fmt.Sprintf("mongodb://%s:%s@%s/admin?ssl=false", username, password, host),
-	}, nil
+		URI:      fmt.Sprintf("mongodb://%s:%s@%s/admin?tls=%t", username, password, host, tlsRequired),
+	}
+	if len(ca) > 0 {
+		// Clients verify the instance's certificate against this CA
+		// (tlsCAFile); the operator's own CA is not publicly trusted.
+		details.AdditionalProperties = map[string]string{caKey: string(ca)}
+	}
+
+	return details, nil
 }
 
 // ensureUserSecret copies the user-supplied credentials secret
@@ -578,6 +621,12 @@ func CleanupPSMDB(c *controller.Context) error {
 		return err
 	}
 
+	// Owner references remove the scrape resources the provider created;
+	// the VMPodScrape converted from its PodMonitor has none.
+	if err := deleteConvertedPodMonitor(c); err != nil {
+		return err
+	}
+
 	l.Info("PSMDB cluster cleaned up", "cluster", c.Name())
 
 	return nil
@@ -612,6 +661,9 @@ func NewPSMDBProviderInterface() *PSMDBProvider {
 			monitoringv1alpha1.SchemeBuilder.AddToScheme,
 			// Deployments are read to discover the running operator version.
 			appsv1.AddToScheme,
+			// Scrape resources for the exposed metrics.
+			monitoringv1.AddToScheme,
+			vmv1beta1.AddToScheme,
 		},
 		WatchConfigs: []controller.WatchConfig{
 			// Watch owned PSMDB resources - only trigger on spec changes
