@@ -1,0 +1,127 @@
+---
+# A minimal pmm class, under a test-local name.
+apiVersion: monitoring.openeverest.io/v1alpha1
+kind: MonitoringClass
+metadata:
+  name: pmm-it
+spec:
+  providerManaged:
+    integration: pmm
+    agentImage: percona/pmm-client:3.8.0
+    agentVersion: 3.8.0
+  destinationParametersSchema:
+    openAPIV3Schema:
+      type: object
+      required: [url]
+      properties:
+        url:
+          type: string
+        verifyTLS:
+          type: boolean
+  instanceParametersSchema:
+    openAPIV3Schema:
+      type: object
+      properties:
+        resources:
+          type: object
+          properties:
+            limits:
+              type: object
+              additionalProperties:
+                type: string
+            requests:
+              type: object
+              additionalProperties:
+                type: string
+  credentialsSchema:
+    required: [apiKey]
+---
+# A minimal prometheus class, under a test-local name.
+apiVersion: monitoring.openeverest.io/v1alpha1
+kind: MonitoringClass
+metadata:
+  name: prometheus-it
+spec:
+  extensionManaged:
+    requires:
+      metrics: true
+  destinationParametersSchema:
+    openAPIV3Schema:
+      type: object
+      properties:
+        podMonitorLabels:
+          type: object
+          additionalProperties:
+            type: string
+---
+# A minimal victoriametrics class, under a test-local name.
+apiVersion: monitoring.openeverest.io/v1alpha1
+kind: MonitoringClass
+metadata:
+  name: victoriametrics-it
+spec:
+  extensionManaged:
+    requires:
+      metrics: true
+  destinationParametersSchema:
+    openAPIV3Schema:
+      type: object
+      properties:
+        vmPodScrapeLabels:
+          type: object
+          additionalProperties:
+            type: string
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: pmm-it-token
+type: Opaque
+data:
+  apiKey: YWJjZGVm
+---
+apiVersion: monitoring.openeverest.io/v1alpha1
+kind: MonitoringDestination
+metadata:
+  name: pmm-it
+spec:
+  classRef:
+    name: pmm-it
+  credentialsSecretRef:
+    name: pmm-it-token
+  parameters:
+    url: http://pmm-it.example.com
+    verifyTLS: false
+---
+apiVersion: monitoring.openeverest.io/v1alpha1
+kind: MonitoringDestination
+metadata:
+  name: prometheus-it
+spec:
+  classRef:
+    name: prometheus-it
+  parameters:
+    podMonitorLabels:
+      release: kps
+---
+apiVersion: monitoring.openeverest.io/v1alpha1
+kind: MonitoringDestination
+metadata:
+  name: victoriametrics-it
+spec:
+  classRef:
+    name: victoriametrics-it
+  parameters:
+    vmPodScrapeLabels:
+      release: vm
+---
+# Seeded admin credentials: the provider reads them for connection details once
+# the cluster is ready. PMM_SERVER_TOKEN is added to this secret by the provider.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: everest-secrets-psmdb-bindings
+type: Opaque
+data:
+  MONGODB_DATABASE_ADMIN_USER: dGVzdC11c2Vy
+  MONGODB_DATABASE_ADMIN_PASSWORD: dGVzdC1wYXNzd29yZA==

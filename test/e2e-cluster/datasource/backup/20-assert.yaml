@@ -17,3 +17,10 @@ spec:
     supportsPITR: true
     limits:
       maxPITREnabledStorages: 1
+---
+apiVersion: monitoring.openeverest.io/v1alpha1
+kind: MonitoringDestination
+metadata:
+  name: pmm
+status:
+  (conditions[?type == 'Accepted'].status | [0]): "True"

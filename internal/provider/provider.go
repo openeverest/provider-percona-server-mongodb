@@ -19,7 +19,6 @@ import (
 
 	goversion "github.com/hashicorp/go-version"
 	psmdbv1 "github.com/percona/percona-server-mongodb-operator/pkg/apis/psmdb/v1"
-	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -36,7 +35,6 @@ import (
 	monitoringv1alpha1 "github.com/openeverest/openeverest/v2/api/monitoring/v1alpha1"
 	"github.com/openeverest/openeverest/v2/provider-runtime/controller"
 
-	vmv1beta1 "github.com/openeverest/provider-percona-server-mongodb/internal/apis/victoriametrics/v1beta1"
 	"github.com/openeverest/provider-percona-server-mongodb/internal/common"
 )
 
@@ -287,7 +285,7 @@ func SyncPSMDB(c *controller.Context) error {
 		return fmt.Errorf("configure metrics exporter: %w", err)
 	}
 
-	// Ensuring user secret MUST run before configureMonitoring: when PMM
+	// Ensuring user secret MUST run before applyPMMBindings: when PMM
 	// is enabled, it creates or updates the user secret to hold
 	// PMM_SERVER_TOKEN, which would make ensureUserSecret and
 	// ensureDataSourceCredentials treat the secret as already provisioned and
@@ -312,15 +310,11 @@ func SyncPSMDB(c *controller.Context) error {
 		}
 	}
 
-	// Configure monitoring after ensuring data source user credentials.
-	// Configure monitoring adds PMM_SERVER_TOKEN to the users secret
-	// or creates user secret if none exists.
-	pmmSpec, err := configureMonitoring(c, usersSecretName)
-	if err != nil {
+	// Configure PMM after ensuring data source user credentials: it adds
+	// PMM_SERVER_TOKEN to the users secret or creates the users secret if
+	// none exists.
+	if err := applyPMMBindings(c, psmdb, usersSecretName); err != nil {
 		return err
-	}
-	if pmmSpec != nil {
-		psmdb.Spec.PMM = *pmmSpec
 	}
 
 	psmdb.Spec.Secrets = &psmdbv1.SecretsSpec{
@@ -332,10 +326,6 @@ func SyncPSMDB(c *controller.Context) error {
 	}
 
 	if err := c.Apply(psmdb); err != nil {
-		return err
-	}
-
-	if err := reconcileMetricsScrapes(c); err != nil {
 		return err
 	}
 
@@ -621,12 +611,6 @@ func CleanupPSMDB(c *controller.Context) error {
 		return err
 	}
 
-	// Owner references remove the scrape resources the provider created;
-	// the VMPodScrape converted from its PodMonitor has none.
-	if err := deleteConvertedPodMonitor(c); err != nil {
-		return err
-	}
-
 	l.Info("PSMDB cluster cleaned up", "cluster", c.Name())
 
 	return nil
@@ -650,7 +634,7 @@ func (p *PSMDBProvider) SetClient(c client.Client) {
 // The provider name must match the Provider CR name so the runtime
 // can automatically fetch schemas and version metadata from it.
 // Call SetClient on the returned provider before starting the reconciler
-// so the MonitoringConfig watch handler can list referencing Instances.
+// so backup imports can read the BackupStorage credentials.
 func NewPSMDBProviderInterface() *PSMDBProvider {
 	p := &PSMDBProvider{}
 
@@ -658,12 +642,10 @@ func NewPSMDBProviderInterface() *PSMDBProvider {
 		ProviderName: "percona-server-mongodb",
 		SchemeFuncs: []func(*runtime.Scheme) error{
 			psmdbv1.SchemeBuilder.AddToScheme,
+			// Sync lists MonitoringBindings and the conformance harness's scheme has only these.
 			monitoringv1alpha1.SchemeBuilder.AddToScheme,
 			// Deployments are read to discover the running operator version.
 			appsv1.AddToScheme,
-			// Scrape resources for the exposed metrics.
-			monitoringv1.AddToScheme,
-			vmv1beta1.AddToScheme,
 		},
 		WatchConfigs: []controller.WatchConfig{
 			// Watch owned PSMDB resources - only trigger on spec changes
@@ -687,16 +669,6 @@ func NewPSMDBProviderInterface() *PSMDBProvider {
 			// to the parent via spec.clusterName.
 			controller.WatchExternal(&psmdbv1.PerconaServerMongoDBBackup{},
 				handler.EnqueueRequestsFromMapFunc(enqueueOperatorBackupInstance()),
-			),
-			controller.WatchExternal(&monitoringv1alpha1.MonitoringConfig{},
-				handler.EnqueueRequestsFromMapFunc(enqueueMonitoringConfig(p)),
-				monitoringConfigPredicate(),
-			),
-			// Watch secrets referenced by MonitoringConfig resources
-			// TODO: Can this watch removed? After all, MontoringConfig owns this secret.
-			controller.WatchExternal(&corev1.Secret{},
-				handler.EnqueueRequestsFromMapFunc(enqueueMonitoringConfigSecret(p)),
-				monitoringConfigPredicate(),
 			),
 		},
 	}
@@ -724,23 +696,6 @@ func (p *PSMDBProvider) Cleanup(c *controller.Context) error {
 	return CleanupPSMDB(c)
 }
 
-// FieldIndexes implements controller.FieldIndexProvider.
-// It registers indexes used by watchers.
-func (p *PSMDBProvider) FieldIndexes() []controller.FieldIndex {
-	return []controller.FieldIndex{
-		{
-			Object:    &corev1alpha1.Instance{},
-			FieldPath: monitoringConfigPath,
-			Extractor: extractMonitoringConfigName,
-		},
-		{
-			Object:    &monitoringv1alpha1.MonitoringConfig{},
-			FieldPath: credentialsSecretPath,
-			Extractor: extractMonitoringConfigSecretName,
-		},
-	}
-}
-
 // BackupWatches implements controller.BackupWatcher. The runtime's Backup
 // reconciler watches PerconaServerMongoDBBackup CRs as owned resources so
 // operator status changes are routed directly to the parent Backup CR via
@@ -765,7 +720,6 @@ func (p *PSMDBProvider) RestoreWatches() []controller.WatchConfig {
 // Compile-time interface checks
 var _ controller.ProviderInterface = (*PSMDBProvider)(nil)
 var _ controller.WatchProvider = (*PSMDBProvider)(nil)
-var _ controller.FieldIndexProvider = (*PSMDBProvider)(nil)
 var _ controller.BackupProvider = (*PSMDBProvider)(nil)
 var _ controller.BackupWatcher = (*PSMDBProvider)(nil)
 var _ controller.RestoreWatcher = (*PSMDBProvider)(nil)

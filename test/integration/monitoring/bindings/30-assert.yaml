@@ -1,0 +1,33 @@
+# With no destinations left PMM is off and the Instance reports no monitoring
+# at all.
+apiVersion: psmdb.percona.com/v1
+kind: PerconaServerMongoDB
+metadata:
+  name: psmdb-bindings
+spec:
+  (pmm.enabled == null): true
+  (pmm.serverHost == null): true
+  replsets:
+    - name: rs0
+      (sidecars == null): true
+---
+apiVersion: core.openeverest.io/v1alpha1
+kind: Instance
+metadata:
+  name: psmdb-bindings
+spec:
+  (monitoring == null): true
+status:
+  (monitoring == null || monitoring.destinations == null): true
+---
+# Once the cluster has PMM off the token leaves the users secret; the seeded
+# credentials stay.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: everest-secrets-psmdb-bindings
+type: Opaque
+data:
+  MONGODB_DATABASE_ADMIN_USER: dGVzdC11c2Vy
+  MONGODB_DATABASE_ADMIN_PASSWORD: dGVzdC1wYXNzd29yZA==
+  (PMM_SERVER_TOKEN == null): true

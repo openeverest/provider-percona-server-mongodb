@@ -27,7 +27,8 @@ env:
 jobs:
   run:
     name: ${{ inputs.suite }}
-    runs-on: ubuntu-latest
+    # mongod 8.0.32 refuses to start on the ubuntu-26.04 kernel (SERVER-131779).
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
 
     steps:
@@ -70,8 +71,6 @@ jobs:
 
       - name: Install CRDs
         run: make install-crds
-        env:
-          OPENEVEREST_BRANCH: ${{ env.OPENEVEREST_BRANCH }}
 
       - name: Deploy provider with PSMDB operator
         run: make deploy-provider-e2e

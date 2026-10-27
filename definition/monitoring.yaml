@@ -1,0 +1,14 @@
+# Monitoring contract, published by `provider-sdk generate` as
+# Provider.spec.monitoring.
+#
+# integrations: operator-native integrations rendered in Sync (spec.pmm).
+# componentTypes: what each component type from provider.yaml exposes; every
+# mongod and mongos pod can run a mongodb_exporter sidecar.
+
+integrations:
+  pmm:
+    agentVersions: ">=3.0.0 <4.0.0"
+componentTypes:
+  mongod:
+    kind: mongodb
+    metrics: Exporter

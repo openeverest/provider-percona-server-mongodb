@@ -1,0 +1,22 @@
+# Nothing requires metrics any more: the sidecar goes, PMM stays.
+apiVersion: psmdb.percona.com/v1
+kind: PerconaServerMongoDB
+metadata:
+  name: psmdb-bindings
+spec:
+  pmm:
+    enabled: true
+    serverHost: pmm-it.example.com
+  replsets:
+    - name: rs0
+      (sidecars == null): true
+---
+apiVersion: core.openeverest.io/v1alpha1
+kind: Instance
+metadata:
+  name: psmdb-bindings
+status:
+  monitoring:
+    (length(destinations)): 1
+    (destinations[0].name): pmm
+    (sources.metrics == null): true
