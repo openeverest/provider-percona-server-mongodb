@@ -42,7 +42,6 @@ kind: MonitoringClass
 metadata:
   name: pmm-e2e
 spec:
-  controllerName: openeverest.io/monitoring-pmm
   providerManaged:
     integration: pmm
     agentImage: percona/pmm-client:3.9.1

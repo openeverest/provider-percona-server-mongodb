@@ -147,7 +147,6 @@ func metricsClass(name string) *monitoringv1alpha1.MonitoringClass {
 	return &monitoringv1alpha1.MonitoringClass{
 		ObjectMeta: metav1.ObjectMeta{Name: name},
 		Spec: monitoringv1alpha1.MonitoringClassSpec{
-			ControllerName: "openeverest.io/" + name,
 			ExtensionManaged: &monitoringv1alpha1.ExtensionManagedFulfilment{
 				Requires: monitoringv1alpha1.SourceRequirements{Metrics: true},
 			},
@@ -159,7 +158,6 @@ func pmmClass(agentImage string) *monitoringv1alpha1.MonitoringClass {
 	return &monitoringv1alpha1.MonitoringClass{
 		ObjectMeta: metav1.ObjectMeta{Name: "pmm"},
 		Spec: monitoringv1alpha1.MonitoringClassSpec{
-			ControllerName: "openeverest.io/monitoring-pmm",
 			ProviderManaged: &monitoringv1alpha1.ProviderManagedFulfilment{
 				Integration: pmmIntegration,
 				AgentImage:  agentImage,
