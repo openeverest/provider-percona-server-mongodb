@@ -20,9 +20,8 @@ permissions:
 
 env:
   IMG: provider-percona-server-mongodb:ci
-  # Branch of openeverest/openeverest to build the test controller from: it
-  # must run core's monitoring controllers. Flips to main after the merge.
-  OPENEVEREST_BRANCH: monitoring/02-controllers
+  # Branch of openeverest/openeverest to build the test controller from.
+  OPENEVEREST_BRANCH: main
 
 jobs:
   run:

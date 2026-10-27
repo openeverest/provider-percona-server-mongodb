@@ -47,9 +47,8 @@ env:
   EVEREST_NAMESPACE: everest-system
   PROVIDER_NAMESPACE: provider-system
 
-  # Branch of openeverest/openeverest to build the platform from: it must run
-  # core's monitoring controllers. Flips to main after the merge.
-  OPENEVEREST_BRANCH: monitoring/02-controllers
+  # Branch of openeverest/openeverest to build the platform from.
+  OPENEVEREST_BRANCH: main
 
   # Image names produced by the openeverest build (must match its Makefile).
   EVEREST_IMG: ghcr.io/openeverest/openeverest-dev:0.0.0
