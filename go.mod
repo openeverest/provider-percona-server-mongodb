@@ -217,7 +217,7 @@ require (
 	github.com/nunnatsa/ginkgolinter v0.24.0 // indirect
 	github.com/oasdiff/yaml v0.1.1 // indirect
 	github.com/oasdiff/yaml3 v0.0.14 // indirect
-	github.com/openeverest/provider-sdk v0.3.1-0.20261027153243-12136fba4e7f // indirect
+	github.com/openeverest/provider-sdk v0.3.1-0.20261027204428-af9c51d03896 // indirect
 	github.com/pelletier/go-toml/v2 v2.4.3 // indirect
 	github.com/percona/percona-backup-mongodb v1.8.1-0.20260617122520-9641a911c853 // indirect
 	github.com/pierrec/lz4 v2.6.1+incompatible // indirect
