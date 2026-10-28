@@ -16,6 +16,7 @@ package provider
 
 import (
 	"fmt"
+	"strings"
 
 	goversion "github.com/hashicorp/go-version"
 	psmdbv1 "github.com/percona/percona-server-mongodb-operator/pkg/apis/psmdb/v1"
@@ -342,6 +343,20 @@ func SyncPSMDB(c *controller.Context) error {
 			// reconcile after the PSMDB CR appears will re-enter this branch.
 			return nil
 		}
+
+		if authErr := unrecoverableAuthError(current); authErr != "" {
+			// The users secret does not match the credentials the engine
+			// expects (e.g. a wrong userSecretRef or credentials that differ
+			// from the backup's origin). The operator retries, but it's
+			// a terminal failure: as instance sets immutable userSecretRef.
+			c.SetDataSourceStatus(controller.DataSourceStatus{
+				Done:    true,
+				State:   controller.DataSourceStateFailed,
+				Reason:  corev1alpha1.ReasonUserSecretMismatch,
+				Message: "restore failed: supplied credentials do not match the users in the source backup: " + authErr,
+			})
+			return nil
+		}
 		if current.Status.State != psmdbv1.AppStateReady || current.Status.BackupVersion == "" {
 			c.SetDataSourceStatus(controller.DataSourceStatus{
 				Done:    false,
@@ -357,6 +372,23 @@ func SyncPSMDB(c *controller.Context) error {
 	}
 
 	return nil
+}
+
+// unrecoverableAuthError returns the operator's error message when
+// the users secret credentials are rejected by mongod (retrying cannot
+// fix that). The operator's state flaps between error and
+// initializing while it retries, so every True condition is checked.
+// Other errors are ignored; they may be transient.
+func unrecoverableAuthError(psmdb *psmdbv1.PerconaServerMongoDB) string {
+	for _, cond := range psmdb.Status.Conditions {
+		if cond.Status == psmdbv1.ConditionTrue &&
+			cond.Type == psmdbv1.AppStateError &&
+			strings.Contains(cond.Message, "AuthenticationFailed") {
+			return cond.Message
+		}
+	}
+
+	return ""
 }
 
 // allow unsafe for replset and mongos when the configured replicas fall below the
@@ -399,8 +431,13 @@ func StatusPSMDB(c *controller.Context) (controller.Status, error) {
 	// state, override the phase to Restoring so users can see the Instance
 	// is being populated. ConditionDataSourceReady carries the detailed
 	// reason/message.
-	if ds := c.GetDataSourceStatus(); ds != nil && !ds.Done {
-		return controller.Restoring(ds.Message), nil
+	if ds := c.GetDataSourceStatus(); ds != nil {
+		if !ds.Done {
+			return controller.Restoring(ds.Message), nil
+		}
+		if ds.State == controller.DataSourceStateFailed {
+			return controller.Failed(ds.Message), nil
+		}
 	}
 
 	// A restore drives the engine through intermediate and momentarily ready
