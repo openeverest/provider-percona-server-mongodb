@@ -132,13 +132,13 @@ spec:
             file: 70-assert.yaml
       catch:
         - script:
-            content: kubectl -n $NAMESPACE get instance/psmdb-import-wrong-creds psmdb/psmdb-import-wrong-creds -o yaml
+            content: kubectl -n $NAMESPACE get instance/psmdb-wrong-creds psmdb/psmdb-wrong-creds -o yaml
 
     - name: cleanup
       try:
         - script:
             content: |
-              kubectl delete instance/psmdb-import-wrong-creds -n $NAMESPACE --ignore-not-found || true
+              kubectl delete instance/psmdb-wrong-creds -n $NAMESPACE --ignore-not-found || true
               kubectl delete instance/psmdb-import-test -n $NAMESPACE --ignore-not-found || true
               kubectl delete pod/psmdb-client -n $NAMESPACE --wait=false || true
               kubectl delete backup --all -n $NAMESPACE --wait=false || true
