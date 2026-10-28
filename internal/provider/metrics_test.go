@@ -126,7 +126,7 @@ func TestConfigureMetricsExporter(t *testing.T) {
 
 		pmmOnly := []client.Object{
 			acceptedBinding("pmm", "pmm-dst", "pmm", corev1alpha1.MonitoringExecutionModeProviderManaged),
-			destination("pmm-dst", "pmm", `{"url":"https://pmm.example.com"}`, "pmm-token"),
+			destination("pmm-dst", "pmm", "https://pmm.example.com", "pmm-token"),
 			pmmClass("percona/pmm-client:3.8.0"),
 		}
 		for name, tc := range map[string]struct {

@@ -226,10 +226,13 @@ The provider declares its monitoring contract in
 `mongodb_exporter` metrics endpoint on every `mongod` component.
 
 - **PMM** (the `pmm` class, installed by the `monitoring-pmm` extension) is rendered by the
-  provider into the operator's `spec.pmm`: the server from the destination's `url`, the
-  token from the `apiKey` key of its credentials Secret, the PMM client image from the
-  class. The instance's metrics in PMM carry `namespace` and `core_openeverest_io_instance`
-  labels, plus `core_openeverest_io_component=proxy` on mongos.
+  provider into the operator's `spec.pmm`: the server from the destination's `spec.url`, the
+  token from the `token` key of its `ServiceAccountToken` credentials Secret, the PMM client
+  image from the class. The instance's metrics in PMM carry `namespace` and
+  `core_openeverest_io_instance` labels, plus `core_openeverest_io_component=proxy` on mongos.
+  The operator runs the PMM client without verifying the server certificate, whatever the
+  destination's `spec.tls` says, so the binding reports `Configured` with reason
+  `AgentTLSNotVerified`.
 - **Metrics backends** (for example the `prometheus` and `victoriametrics` classes) run a
   `mongodb_exporter` sidecar next to every mongod and mongos while one of the instance's
   destinations requires metrics. The sidecar serves on the `metrics` port (9216) and logs in

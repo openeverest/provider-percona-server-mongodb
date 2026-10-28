@@ -147,6 +147,7 @@ func metricsClass(name string) *monitoringv1alpha1.MonitoringClass {
 	return &monitoringv1alpha1.MonitoringClass{
 		ObjectMeta: metav1.ObjectMeta{Name: name},
 		Spec: monitoringv1alpha1.MonitoringClassSpec{
+			AuthModes: []commonv1alpha1.AuthMode{{Name: commonv1alpha1.AuthModeAnonymous}},
 			ExtensionManaged: &monitoringv1alpha1.ExtensionManagedFulfilment{
 				Requires: monitoringv1alpha1.SourceRequirements{Metrics: true},
 			},
@@ -158,6 +159,11 @@ func pmmClass(agentImage string) *monitoringv1alpha1.MonitoringClass {
 	return &monitoringv1alpha1.MonitoringClass{
 		ObjectMeta: metav1.ObjectMeta{Name: "pmm"},
 		Spec: monitoringv1alpha1.MonitoringClassSpec{
+			AuthModes: []commonv1alpha1.AuthMode{{
+				Name:        "ServiceAccountToken",
+				Credentials: &commonv1alpha1.CredentialKeys{Required: []string{"token"}},
+			}},
+			URLPolicy: monitoringv1alpha1.URLPolicyRequired,
 			ProviderManaged: &monitoringv1alpha1.ProviderManagedFulfilment{
 				Integration: pmmIntegration,
 				AgentImage:  agentImage,
@@ -166,16 +172,22 @@ func pmmClass(agentImage string) *monitoringv1alpha1.MonitoringClass {
 	}
 }
 
-func destination(name, class string, parameters string, secret string) *monitoringv1alpha1.MonitoringDestination {
+// destination authenticates with a ServiceAccountToken from secret, or as
+// Anonymous without one.
+func destination(name, class, url, secret string) *monitoringv1alpha1.MonitoringDestination {
 	d := &monitoringv1alpha1.MonitoringDestination{
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: bindingTestNS},
-		Spec:       monitoringv1alpha1.MonitoringDestinationSpec{ClassRef: commonv1alpha1.ObjectRef{Name: class}},
-	}
-	if parameters != "" {
-		d.Spec.Parameters = &runtime.RawExtension{Raw: []byte(parameters)}
+		Spec: monitoringv1alpha1.MonitoringDestinationSpec{
+			ClassRef:       commonv1alpha1.ObjectRef{Name: class},
+			URL:            url,
+			Authentication: commonv1alpha1.Authentication{Mode: commonv1alpha1.AuthModeAnonymous},
+		},
 	}
 	if secret != "" {
-		d.Spec.CredentialsSecretRef = &commonv1alpha1.SecretRef{Name: secret}
+		d.Spec.Authentication = commonv1alpha1.Authentication{
+			Mode:                 "ServiceAccountToken",
+			CredentialsSecretRef: &commonv1alpha1.SecretRef{Name: secret},
+		}
 	}
 	return d
 }
@@ -249,7 +261,7 @@ func TestMetricsExporterRequired(t *testing.T) {
 
 		c, _ := bindingContext(t, []corev1alpha1.InstanceMonitoringDestination{entry("pmm", "pmm-dst")},
 			acceptedBinding("pmm", "pmm-dst", "pmm", corev1alpha1.MonitoringExecutionModeProviderManaged),
-			destination("pmm-dst", "pmm", `{"url":"https://pmm.example.com"}`, "pmm-token"),
+			destination("pmm-dst", "pmm", "https://pmm.example.com", "pmm-token"),
 			pmmClass("percona/pmm-client:3.8.0"),
 			livePSMDB(psmdbv1.AppStateReady, false, true),
 		)

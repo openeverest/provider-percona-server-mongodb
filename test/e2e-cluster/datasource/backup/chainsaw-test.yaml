@@ -90,7 +90,7 @@ spec:
               test -n "${TOKEN}"
 
               kubectl -n ${NAMESPACE} create secret generic pmm-token \
-                --from-literal=apiKey="${TOKEN}" \
+                --from-literal=token="${TOKEN}" \
                 --dry-run=client -o yaml | kubectl apply -f -
       catch:
         - script:

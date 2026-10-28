@@ -9,15 +9,11 @@ spec:
     integration: pmm
     agentImage: percona/pmm-client:3.8.0
     agentVersion: 3.8.0
-  destinationParametersSchema:
-    openAPIV3Schema:
-      type: object
-      required: [url]
-      properties:
-        url:
-          type: string
-        verifyTLS:
-          type: boolean
+  authModes:
+    - name: ServiceAccountToken
+      credentials:
+        required: [token]
+  urlPolicy: Required
   instanceParametersSchema:
     openAPIV3Schema:
       type: object
@@ -33,8 +29,6 @@ spec:
               type: object
               additionalProperties:
                 type: string
-  credentialsSchema:
-    required: [apiKey]
 ---
 # A minimal prometheus class, under a test-local name.
 apiVersion: monitoring.openeverest.io/v1alpha1
@@ -45,6 +39,8 @@ spec:
   extensionManaged:
     requires:
       metrics: true
+  authModes:
+    - name: Anonymous
   destinationParametersSchema:
     openAPIV3Schema:
       type: object
@@ -63,6 +59,8 @@ spec:
   extensionManaged:
     requires:
       metrics: true
+  authModes:
+    - name: Anonymous
   destinationParametersSchema:
     openAPIV3Schema:
       type: object
@@ -78,7 +76,7 @@ metadata:
   name: pmm-it-token
 type: Opaque
 data:
-  apiKey: YWJjZGVm
+  token: YWJjZGVm
 ---
 apiVersion: monitoring.openeverest.io/v1alpha1
 kind: MonitoringDestination
@@ -87,11 +85,11 @@ metadata:
 spec:
   classRef:
     name: pmm-it
-  credentialsSecretRef:
-    name: pmm-it-token
-  parameters:
-    url: http://pmm-it.example.com
-    verifyTLS: false
+  url: http://pmm-it.example.com
+  authentication:
+    mode: ServiceAccountToken
+    credentialsSecretRef:
+      name: pmm-it-token
 ---
 apiVersion: monitoring.openeverest.io/v1alpha1
 kind: MonitoringDestination
@@ -100,6 +98,8 @@ metadata:
 spec:
   classRef:
     name: prometheus-it
+  authentication:
+    mode: Anonymous
   parameters:
     podMonitorLabels:
       release: kps
@@ -111,6 +111,8 @@ metadata:
 spec:
   classRef:
     name: victoriametrics-it
+  authentication:
+    mode: Anonymous
   parameters:
     vmPodScrapeLabels:
       release: vm

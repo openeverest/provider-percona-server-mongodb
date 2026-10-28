@@ -8,7 +8,7 @@ metadata:
 status:
   (conditions[?type == 'Accepted'].status | [0]): "True"
   (conditions[?type == 'Configured'].status | [0]): "True"
-  (conditions[?type == 'Configured'].reason | [0]): Configured
+  (conditions[?type == 'Configured'].reason | [0]): AgentTLSNotVerified
 ---
 apiVersion: psmdb.percona.com/v1
 kind: PerconaServerMongoDB

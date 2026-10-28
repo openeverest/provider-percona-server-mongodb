@@ -49,30 +49,7 @@ func prometheusLabelName(key string) string {
 	return invalidPrometheusLabelChars.ReplaceAllString(key, "_")
 }
 
-// copySecretData copies the value of a source key from the secret
-// and applies it to the destination secret with the destination key.
-// A missing source secret or key is a renderFailure.
-func copySecretData(c *controller.Context, source, dest, sourceKey, destKey string) error {
-	sourceSecret := &corev1.Secret{}
-	if err := c.Get(sourceSecret, source); apierrors.IsNotFound(err) {
-		return renderFailedf("secret %s not found", source)
-	} else if err != nil {
-		return fmt.Errorf("failed to get secret %s: %w", source, err)
-	}
-
-	apiKey, ok := sourceSecret.Data[sourceKey]
-	if !ok {
-		return renderFailedf("failed to get key %s from secret %s", sourceKey, source)
-	}
-
-	// Server-side apply owns only destKey; the operator's user keys are left alone.
-	return c.Apply(&corev1.Secret{
-		ObjectMeta: c.ObjectMeta(dest),
-		Data:       map[string][]byte{destKey: apiKey},
-	})
-}
-
-// removeSecretData removes the key copySecretData applied to the secret by
+// removeSecretData removes the key the provider applied to the secret by
 // applying the secret without it, which leaves every other key alone.
 func removeSecretData(c *controller.Context, name, key string) error {
 	secret := &corev1.Secret{}
