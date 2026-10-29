@@ -106,8 +106,6 @@ metadata:
 spec:
   classRef:
     name: prometheus-it
-  authentication:
-    mode: Anonymous
   parameters:
     podMonitorLabels:
       release: kps
@@ -119,8 +117,6 @@ metadata:
 spec:
   classRef:
     name: victoriametrics-it
-  authentication:
-    mode: Anonymous
   parameters:
     vmPodScrapeLabels:
       release: vm

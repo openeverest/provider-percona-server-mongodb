@@ -50,7 +50,13 @@ spec:
     - name: ServiceAccountToken
       credentials:
         required: [token]
-  urlPolicy: Required
+  destinationParametersSchema:
+    openAPIV3Schema:
+      type: object
+      required: [url]
+      properties:
+        url:
+          type: string
 ---
 apiVersion: monitoring.openeverest.io/v1alpha1
 kind: MonitoringDestination
@@ -59,7 +65,8 @@ metadata:
 spec:
   classRef:
     name: pmm-e2e
-  url: https://pmm-server.pmm.svc
+  parameters:
+    url: https://pmm-server.pmm.svc
   tls:
     insecureSkipVerify: true
   # The credentials Secret is created dynamically in the deploy-pmm step,
