@@ -27,8 +27,9 @@ env:
 jobs:
   run:
     name: ${{ inputs.suite }}
-    # mongod 8.0.32 refuses to start on the ubuntu-26.04 kernel (SERVER-131779).
-    runs-on: ubuntu-24.04
+    # mongod 8.0.32 refuses to start on the ubuntu-26.04 kernel (SERVER-131779)
+    # and on ubuntu-24.04 version 20261025.353.1.
+    runs-on: cncf-ubuntu-16-64-x86
     timeout-minutes: 45
 
     steps:
