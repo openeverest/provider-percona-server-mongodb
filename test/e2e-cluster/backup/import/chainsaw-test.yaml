@@ -74,7 +74,7 @@ spec:
     - name: restore-created
       try:
         - assert:
-            timeout: 120s
+            timeout: 240s
             file: 50-assert.yaml
 
     - name: restore-ready

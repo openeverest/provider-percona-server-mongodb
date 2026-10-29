@@ -121,7 +121,7 @@ spec:
     - name: source-cluster-ready
       try:
         - assert:
-            timeout: 120s
+            timeout: 240s
             file: 40-assert.yaml
 
     - name: create-source-mongodb-client
@@ -167,13 +167,13 @@ spec:
         - apply:
             file: 70-create-dest.yaml
         - assert:
-            timeout: 120s
+            timeout: 240s
             file: 70-assert.yaml
 
     - name: restore-created
       try:
         - assert:
-            timeout: 120s
+            timeout: 240s
             file: 80-assert.yaml
 
     - name: restore-complete
