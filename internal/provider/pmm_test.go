@@ -64,7 +64,7 @@ func TestApplyPMMBindings(t *testing.T) {
 		require.NoError(t, applyPMMBindings(c, psmdb, metricsTestUsersSecret))
 
 		assert.True(t, psmdb.Spec.PMM.Enabled)
-		assert.Equal(t, "pmm.example.com:8443", psmdb.Spec.PMM.ServerHost, "the host of spec.url")
+		assert.Equal(t, "pmm.example.com:8443", psmdb.Spec.PMM.ServerHost, "the host of parameters.url")
 		assert.Equal(t, "percona/pmm-client:3.8.0", psmdb.Spec.PMM.Image, "the class owns the agent image")
 		assert.Equal(t, pmmResourcesSmall, psmdb.Spec.PMM.Resources, "1G engine memory is the small tier")
 		assert.Equal(t, "--custom-labels=namespace=db,core_openeverest_io_instance=my-mongo", psmdb.Spec.PMM.MongodParams)
@@ -181,8 +181,8 @@ func TestApplyPMMBindings(t *testing.T) {
 			message string
 		}{
 			"relative url": {
-				func(o *objects) { o.dst.Spec.URL = "pmm.example.com" },
-				`spec.url "pmm.example.com": not an absolute URL`,
+				func(o *objects) { o.dst.Spec.Parameters = &runtime.RawExtension{Raw: []byte(`{"url":"pmm.example.com"}`)} },
+				`parameters.url "pmm.example.com": not an absolute URL`,
 			},
 			"no credentials Secret reference": {
 				func(o *objects) { o.dst.Spec.Authentication.CredentialsSecretRef = nil },

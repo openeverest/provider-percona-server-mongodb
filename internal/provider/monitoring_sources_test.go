@@ -163,7 +163,6 @@ func pmmClass(agentImage string) *monitoringv1alpha1.MonitoringClass {
 				Name:        "ServiceAccountToken",
 				Credentials: &commonv1alpha1.CredentialKeys{Required: []string{"token"}},
 			}},
-			URLPolicy: monitoringv1alpha1.URLPolicyRequired,
 			ProviderManaged: &monitoringv1alpha1.ProviderManagedFulfilment{
 				Integration: pmmIntegration,
 				AgentImage:  agentImage,
@@ -179,9 +178,11 @@ func destination(name, class, url, secret string) *monitoringv1alpha1.Monitoring
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: bindingTestNS},
 		Spec: monitoringv1alpha1.MonitoringDestinationSpec{
 			ClassRef:       commonv1alpha1.ObjectRef{Name: class},
-			URL:            url,
 			Authentication: commonv1alpha1.Authentication{Mode: commonv1alpha1.AuthModeAnonymous},
 		},
+	}
+	if url != "" {
+		d.Spec.Parameters = &runtime.RawExtension{Raw: []byte(`{"url":"` + url + `"}`)}
 	}
 	if secret != "" {
 		d.Spec.Authentication = commonv1alpha1.Authentication{

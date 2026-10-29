@@ -183,6 +183,12 @@ func mergeResourceList(requested, defaultResources corev1.ResourceList) corev1.R
 	return merged
 }
 
+// pmmDestinationParameters is the shape of MonitoringDestination.spec.parameters
+// for the pmm class.
+type pmmDestinationParameters struct {
+	URL string `json:"url"`
+}
+
 // pmmInstanceParameters is the shape of
 // Instance.spec.monitoring.destinations[].parameters for the pmm class.
 type pmmInstanceParameters struct {
@@ -246,7 +252,7 @@ func applyPMMBindings(c *controller.Context, psmdb *psmdbv1.PerconaServerMongoDB
 }
 
 // renderPMMBinding sets spec.pmm from one Apply-able pmm binding: the server
-// from the destination's spec.url, the token from the destination credentials,
+// from the destination's url parameter, the token from the destination credentials,
 // the image from the class and the resources from the size tier and the entry
 // parameters.
 func renderPMMBinding(c *controller.Context, psmdb *psmdbv1.PerconaServerMongoDB, usersSecretName string, rb controller.ResolvedBinding) error {
@@ -255,9 +261,15 @@ func renderPMMBinding(c *controller.Context, psmdb *psmdbv1.PerconaServerMongoDB
 		return renderFailedf("MonitoringClass %q sets no providerManaged.agentImage", rb.Class.Name)
 	}
 
-	u, err := url.Parse(rb.Destination.Spec.URL)
+	dstParams := pmmDestinationParameters{}
+	if rb.Destination.Spec.Parameters != nil {
+		if err := json.Unmarshal(rb.Destination.Spec.Parameters.Raw, &dstParams); err != nil {
+			return renderFailedf("decode MonitoringDestination %q parameters: %w", rb.Destination.Name, err)
+		}
+	}
+	u, err := url.Parse(dstParams.URL)
 	if err != nil || u.Host == "" {
-		return renderFailedf("MonitoringDestination %q spec.url %q: not an absolute URL", rb.Destination.Name, rb.Destination.Spec.URL)
+		return renderFailedf("MonitoringDestination %q parameters.url %q: not an absolute URL", rb.Destination.Name, dstParams.URL)
 	}
 	// A missing Secret or key is a renderFailure; other API errors are retried.
 	_, credentials, err := c.MonitoringCredentials(rb)
