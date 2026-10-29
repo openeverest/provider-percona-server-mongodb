@@ -352,7 +352,7 @@ func SyncPSMDB(c *controller.Context) error {
 			c.SetDataSourceStatus(controller.DataSourceStatus{
 				Done:    true,
 				State:   controller.DataSourceStateFailed,
-				Reason:  corev1alpha1.ReasonUserSecretMismatch,
+				Reason:  corev1alpha1.ReasonDataSourceUserSecretMismatch,
 				Message: "restore failed: supplied credentials do not match the users in the source backup: " + authErr,
 			})
 			return nil
@@ -378,8 +378,15 @@ func SyncPSMDB(c *controller.Context) error {
 // the users secret credentials are rejected by mongod (retrying cannot
 // fix that). The operator's state flaps between error and
 // initializing while it retries, so every True condition is checked.
+// It also checks status.Message for authentication error to capture
+// cases when error condition is already set with other unrelated errors.
 // Other errors are ignored; they may be transient.
 func unrecoverableAuthError(psmdb *psmdbv1.PerconaServerMongoDB) string {
+	if psmdb.Status.State == psmdbv1.AppStateError &&
+		strings.Contains(psmdb.Status.Message, "AuthenticationFailed") {
+		return psmdb.Status.Message
+	}
+
 	for _, cond := range psmdb.Status.Conditions {
 		if cond.Status == psmdbv1.ConditionTrue &&
 			cond.Type == psmdbv1.AppStateError &&
