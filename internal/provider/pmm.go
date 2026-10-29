@@ -22,6 +22,7 @@ import (
 
 	psmdbv1 "github.com/percona/percona-server-mongodb-operator/pkg/apis/psmdb/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
@@ -208,7 +209,8 @@ func renderFailedf(format string, args ...any) error {
 // server token from the users secret once the live cluster has PMM off.
 //
 // A binding that cannot be rendered as configured is reported through
-// SetMonitoringBindingResult and keeps the live rendering.
+// SetMonitoringBindingResult and keeps the live rendering; a rendered one is
+// reported as AgentTLSNotVerified.
 func applyPMMBindings(c *controller.Context, psmdb *psmdbv1.PerconaServerMongoDB, usersSecretName string) error {
 	req, err := c.RequiredSources()
 	if err != nil {
@@ -233,9 +235,13 @@ func applyPMMBindings(c *controller.Context, psmdb *psmdbv1.PerconaServerMongoDB
 				log.FromContext(c.Context()).Error(err, "PMM binding could not be rendered", "binding", rb.Binding.Name)
 				c.SetMonitoringBindingResult(rb.Binding.Name, monitoringv1alpha1.ReasonRenderFailed, err.Error())
 				psmdb.Spec.PMM = *live.Spec.PMM.DeepCopy()
-			} else if err != nil {
+				continue
+			}
+			if err != nil {
 				return fmt.Errorf("render PMM binding %s: %w", rb.Binding.Name, err)
 			}
+			c.SetMonitoringBindingResult(rb.Binding.Name, monitoringv1alpha1.ReasonAgentTLSNotVerified,
+				"pmm-client does not verify the PMM server certificate, whatever spec.tls says: the Percona operator runs it with PMM_AGENT_SERVER_INSECURE_TLS=1")
 		}
 	case pmm.Else(live.Spec.PMM.Enabled):
 		psmdb.Spec.PMM = *live.Spec.PMM.DeepCopy()
@@ -246,8 +252,8 @@ func applyPMMBindings(c *controller.Context, psmdb *psmdbv1.PerconaServerMongoDB
 }
 
 // renderPMMBinding sets spec.pmm from one Apply-able pmm binding: the server
-// from the destination URL, the token from the destination credentials, the
-// image from the class and the resources from the size tier and the entry
+// from the destination's url parameter, the token from the destination credentials,
+// the image from the class and the resources from the size tier and the entry
 // parameters.
 func renderPMMBinding(c *controller.Context, psmdb *psmdbv1.PerconaServerMongoDB, usersSecretName string, rb controller.ResolvedBinding) error {
 	image := rb.Class.Spec.ProviderManaged.AgentImage
@@ -265,8 +271,17 @@ func renderPMMBinding(c *controller.Context, psmdb *psmdbv1.PerconaServerMongoDB
 	if err != nil || u.Host == "" {
 		return renderFailedf("MonitoringDestination %q parameters.url %q: not an absolute URL", rb.Destination.Name, dstParams.URL)
 	}
-	if rb.Destination.Spec.CredentialsSecretRef == nil {
-		return renderFailedf("MonitoringDestination %q has no credentialsSecretRef", rb.Destination.Name)
+	// A missing Secret or key is a renderFailure; other API errors are retried.
+	_, credentials, err := c.MonitoringCredentials(rb)
+	if _, isAPIErr := errors.AsType[*apierrors.StatusError](err); isAPIErr && !apierrors.IsNotFound(err) {
+		return fmt.Errorf("read PMM credentials: %w", err)
+	}
+	if err != nil {
+		return renderFailure{err}
+	}
+	token := credentials["token"]
+	if len(token) == 0 {
+		return renderFailedf("MonitoringDestination %q credentials carry no token", rb.Destination.Name)
 	}
 
 	entryParams := pmmInstanceParameters{}
@@ -280,8 +295,12 @@ func renderPMMBinding(c *controller.Context, psmdb *psmdbv1.PerconaServerMongoDB
 		return renderFailedf("binding parameters: %w", err)
 	}
 
-	// The operator reads the server token from the users secret.
-	if err := copySecretData(c, rb.Destination.Spec.CredentialsSecretRef.Name, usersSecretName, "apiKey", psmdbv1.PMMServerToken); err != nil {
+	// The operator reads the server token from the users secret; server-side
+	// apply owns only that key and leaves the operator's user keys alone.
+	if err := c.Apply(&corev1.Secret{
+		ObjectMeta: c.ObjectMeta(usersSecretName),
+		Data:       map[string][]byte{psmdbv1.PMMServerToken: token},
+	}); err != nil {
 		return fmt.Errorf("copy PMM token to users secret: %w", err)
 	}
 

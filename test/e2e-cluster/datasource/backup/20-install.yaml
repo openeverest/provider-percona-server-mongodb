@@ -46,6 +46,10 @@ spec:
     integration: pmm
     agentImage: percona/pmm-client:3.9.1
     agentVersion: 3.9.1
+  authModes:
+    - name: ServiceAccountToken
+      credentials:
+        required: [token]
   destinationParametersSchema:
     openAPIV3Schema:
       type: object
@@ -53,10 +57,6 @@ spec:
       properties:
         url:
           type: string
-        verifyTLS:
-          type: boolean
-  credentialsSchema:
-    required: [apiKey]
 ---
 apiVersion: monitoring.openeverest.io/v1alpha1
 kind: MonitoringDestination
@@ -65,10 +65,13 @@ metadata:
 spec:
   classRef:
     name: pmm-e2e
-  # The credentials Secret is created dynamically in the deploy-pmm step,
-  # since the PMM service-account token is generated at runtime.
-  credentialsSecretRef:
-    name: pmm-token
   parameters:
     url: https://pmm-server.pmm.svc
-    verifyTLS: false
+  tls:
+    insecureSkipVerify: true
+  # The credentials Secret is created dynamically in the deploy-pmm step,
+  # since the PMM service-account token is generated at runtime.
+  authentication:
+    mode: ServiceAccountToken
+    credentialsSecretRef:
+      name: pmm-token

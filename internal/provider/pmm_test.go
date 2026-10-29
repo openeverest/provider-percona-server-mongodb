@@ -29,6 +29,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
+	commonv1alpha1 "github.com/openeverest/openeverest/v2/api/common/v1alpha1"
 	corev1alpha1 "github.com/openeverest/openeverest/v2/api/core/v1alpha1"
 	monitoringv1alpha1 "github.com/openeverest/openeverest/v2/api/monitoring/v1alpha1"
 	"github.com/openeverest/openeverest/v2/provider-runtime/controller"
@@ -40,7 +41,7 @@ func TestApplyPMMBindings(t *testing.T) {
 	pmmToken := func() *corev1.Secret {
 		return &corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{Name: "pmm-token", Namespace: bindingTestNS},
-			Data:       map[string][]byte{"apiKey": []byte("secret-token")},
+			Data:       map[string][]byte{"token": []byte("secret-token")},
 		}
 	}
 	pmmEntry := []corev1alpha1.InstanceMonitoringDestination{entry("pmm", "pmm-dst")}
@@ -50,16 +51,20 @@ func TestApplyPMMBindings(t *testing.T) {
 
 		c, _ := bindingContext(t, pmmEntry,
 			acceptedBinding("pmm", "pmm-dst", "pmm", corev1alpha1.MonitoringExecutionModeProviderManaged),
-			destination("pmm-dst", "pmm", `{"url":"https://pmm.example.com:8443/graph","verifyTLS":false}`, "pmm-token"),
+			destination("pmm-dst", "pmm", "https://pmm.example.com:8443/graph", "pmm-token"),
 			pmmClass("percona/pmm-client:3.8.0"),
 			pmmToken(),
+			&corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Name: metricsTestUsersSecret, Namespace: bindingTestNS},
+				Data:       map[string][]byte{psmdbv1.EnvMongoDBDatabaseAdminPassword: []byte("pw")},
+			},
 		)
 		psmdb := &psmdbv1.PerconaServerMongoDB{}
 
 		require.NoError(t, applyPMMBindings(c, psmdb, metricsTestUsersSecret))
 
 		assert.True(t, psmdb.Spec.PMM.Enabled)
-		assert.Equal(t, "pmm.example.com:8443", psmdb.Spec.PMM.ServerHost)
+		assert.Equal(t, "pmm.example.com:8443", psmdb.Spec.PMM.ServerHost, "the host of parameters.url")
 		assert.Equal(t, "percona/pmm-client:3.8.0", psmdb.Spec.PMM.Image, "the class owns the agent image")
 		assert.Equal(t, pmmResourcesSmall, psmdb.Spec.PMM.Resources, "1G engine memory is the small tier")
 		assert.Equal(t, "--custom-labels=namespace=db,core_openeverest_io_instance=my-mongo", psmdb.Spec.PMM.MongodParams)
@@ -67,10 +72,15 @@ func TestApplyPMMBindings(t *testing.T) {
 
 		users := &corev1.Secret{}
 		require.NoError(t, c.Get(users, metricsTestUsersSecret))
-		assert.Equal(t, []byte("secret-token"), users.Data["PMM_SERVER_TOKEN"], "the operator reads the token from the users secret")
+		assert.Equal(t, map[string][]byte{
+			psmdbv1.EnvMongoDBDatabaseAdminPassword: []byte("pw"),
+			psmdbv1.PMMServerToken:                  []byte("secret-token"),
+		}, users.Data, "the operator reads the token from the users secret, whose other keys stay")
 
-		_, _, staged := c.MonitoringBindingResult(bindingTestInstance + "-pmm")
-		assert.False(t, staged, "a clean render leaves Configured to the runtime")
+		reason, message, staged := c.MonitoringBindingResult(bindingTestInstance + "-pmm")
+		require.True(t, staged)
+		assert.Equal(t, monitoringv1alpha1.ReasonAgentTLSNotVerified, reason)
+		assert.Contains(t, message, "PMM_AGENT_SERVER_INSECURE_TLS=1")
 	})
 
 	t.Run("binding parameters override the size tier resources", func(t *testing.T) {
@@ -79,7 +89,7 @@ func TestApplyPMMBindings(t *testing.T) {
 		b := acceptedBinding("pmm", "pmm-dst", "pmm", corev1alpha1.MonitoringExecutionModeProviderManaged)
 		b.Spec.Parameters = &runtime.RawExtension{Raw: []byte(`{"resources":{"limits":{"memory":"1Gi"},"requests":{"cpu":"250m"}}}`)}
 		c, _ := bindingContext(t, pmmEntry, b,
-			destination("pmm-dst", "pmm", `{"url":"https://pmm.example.com"}`, "pmm-token"),
+			destination("pmm-dst", "pmm", "https://pmm.example.com", "pmm-token"),
 			pmmClass("percona/pmm-client:3.8.0"),
 			pmmToken(),
 		)
@@ -98,7 +108,7 @@ func TestApplyPMMBindings(t *testing.T) {
 		b := acceptedBinding("pmm", "pmm-dst", "pmm", corev1alpha1.MonitoringExecutionModeProviderManaged)
 		b.Spec.Parameters = &runtime.RawExtension{Raw: []byte(`{"resources":{"limits":{"cpu":"50m","memory":"64Mi"}}}`)}
 		c, _ := bindingContext(t, pmmEntry, b,
-			destination("pmm-dst", "pmm", `{"url":"https://pmm.example.com"}`, "pmm-token"),
+			destination("pmm-dst", "pmm", "https://pmm.example.com", "pmm-token"),
 			pmmClass("percona/pmm-client:3.8.0"),
 			pmmToken(),
 		)
@@ -126,7 +136,7 @@ func TestApplyPMMBindings(t *testing.T) {
 
 				c, _ := bindingContextWith(t, interceptor.Funcs{}, engineMemory, pmmEntry,
 					acceptedBinding("pmm", "pmm-dst", "pmm", corev1alpha1.MonitoringExecutionModeProviderManaged),
-					destination("pmm-dst", "pmm", `{"url":"https://pmm.example.com"}`, "pmm-token"),
+					destination("pmm-dst", "pmm", "https://pmm.example.com", "pmm-token"),
 					pmmClass("percona/pmm-client:3.8.0"),
 					pmmToken(),
 				)
@@ -145,7 +155,7 @@ func TestApplyPMMBindings(t *testing.T) {
 		b.Status.Conditions = nil
 		live := livePSMDB(psmdbv1.AppStateReady, false, false)
 		c, _ := bindingContext(t, pmmEntry, b,
-			destination("pmm-dst", "pmm", `{"url":"https://pmm.example.com"}`, "pmm-token"),
+			destination("pmm-dst", "pmm", "https://pmm.example.com", "pmm-token"),
 			pmmClass("percona/pmm-client:3.8.0"),
 			pmmToken(),
 			live,
@@ -171,12 +181,18 @@ func TestApplyPMMBindings(t *testing.T) {
 			message string
 		}{
 			"relative url": {
-				func(o *objects) { o.dst.Spec.Parameters.Raw = []byte(`{"url":"pmm.example.com"}`) },
+				func(o *objects) { o.dst.Spec.Parameters = &runtime.RawExtension{Raw: []byte(`{"url":"pmm.example.com"}`)} },
 				`parameters.url "pmm.example.com": not an absolute URL`,
 			},
-			"no credentials": {
-				func(o *objects) { o.dst.Spec.CredentialsSecretRef = nil },
-				"has no credentialsSecretRef",
+			"no credentials Secret reference": {
+				func(o *objects) { o.dst.Spec.Authentication.CredentialsSecretRef = nil },
+				`MonitoringDestination "pmm-dst" credentials carry no token`,
+			},
+			"authentication mode the class does not list": {
+				func(o *objects) {
+					o.dst.Spec.Authentication = commonv1alpha1.Authentication{Mode: commonv1alpha1.AuthModeAnonymous}
+				},
+				`MonitoringClass "pmm" has no authentication mode "Anonymous"`,
 			},
 			"no agent image": {
 				func(o *objects) { o.class.Spec.ProviderManaged.AgentImage = "" },
@@ -190,15 +206,11 @@ func TestApplyPMMBindings(t *testing.T) {
 			},
 			"credentials Secret missing": {
 				func(o *objects) { o.token = nil },
-				"secret pmm-token not found",
+				`get credentials Secret "pmm-token" of MonitoringDestination "pmm-dst"`,
 			},
-			"credentials Secret without apiKey": {
-				func(o *objects) { o.token.Data = map[string][]byte{"token": []byte("secret-token")} },
-				"failed to get key apiKey from secret pmm-token",
-			},
-			"undecodable destination parameters": {
-				func(o *objects) { o.dst.Spec.Parameters.Raw = []byte(`{"url":42}`) },
-				`decode MonitoringDestination "pmm-dst" parameters`,
+			"credentials Secret without token": {
+				func(o *objects) { o.token.Data = map[string][]byte{"apiKey": []byte("secret-token")} },
+				`missing key "token" required by authentication mode "ServiceAccountToken"`,
 			},
 			"undecodable binding parameters": {
 				func(o *objects) {
@@ -212,7 +224,7 @@ func TestApplyPMMBindings(t *testing.T) {
 
 				o := objects{
 					binding: acceptedBinding("pmm", "pmm-dst", "pmm", corev1alpha1.MonitoringExecutionModeProviderManaged),
-					dst:     destination("pmm-dst", "pmm", `{"url":"https://pmm.example.com"}`, "pmm-token"),
+					dst:     destination("pmm-dst", "pmm", "https://pmm.example.com", "pmm-token"),
 					class:   pmmClass("percona/pmm-client:3.8.0"),
 					token:   pmmToken(),
 				}
@@ -259,7 +271,7 @@ func TestApplyPMMBindings(t *testing.T) {
 
 				c, _ := bindingContextWith(t, funcs, "1G", pmmEntry,
 					acceptedBinding("pmm", "pmm-dst", "pmm", corev1alpha1.MonitoringExecutionModeProviderManaged),
-					destination("pmm-dst", "pmm", `{"url":"https://pmm.example.com"}`, "pmm-token"),
+					destination("pmm-dst", "pmm", "https://pmm.example.com", "pmm-token"),
 					pmmClass("percona/pmm-client:3.8.0"),
 					pmmToken(),
 					livePSMDB(psmdbv1.AppStateReady, false, false),
@@ -279,7 +291,7 @@ func TestApplyPMMBindings(t *testing.T) {
 
 		c, _ := bindingContext(t, pmmEntry,
 			acceptedBinding("pmm", "pmm-dst", "pmm", corev1alpha1.MonitoringExecutionModeProviderManaged),
-			destination("pmm-dst", "pmm", `{"url":"pmm.example.com"}`, "pmm-token"),
+			destination("pmm-dst", "pmm", "pmm.example.com", "pmm-token"),
 			pmmClass("percona/pmm-client:3.8.0"),
 			pmmToken(),
 		)
@@ -298,7 +310,7 @@ func TestApplyPMMBindings(t *testing.T) {
 
 		c, _ := bindingContext(t, nil,
 			acceptedBinding("pmm", "pmm-dst", "pmm", corev1alpha1.MonitoringExecutionModeProviderManaged),
-			destination("pmm-dst", "pmm", `{"url":"https://pmm.example.com"}`, "pmm-token"),
+			destination("pmm-dst", "pmm", "https://pmm.example.com", "pmm-token"),
 			pmmClass("percona/pmm-client:3.8.0"),
 			pmmToken(),
 			livePSMDB(psmdbv1.AppStateReady, false, false),
@@ -317,7 +329,7 @@ func TestApplyPMMBindings(t *testing.T) {
 
 		c, _ := bindingContext(t, []corev1alpha1.InstanceMonitoringDestination{entry("pmm", "pmm-dst"), entry("prom", "prom-dst")},
 			acceptedBinding("pmm", "pmm-dst", "pmm", corev1alpha1.MonitoringExecutionModeProviderManaged),
-			destination("pmm-dst", "pmm", `{"url":"https://pmm.example.com"}`, "pmm-token"),
+			destination("pmm-dst", "pmm", "https://pmm.example.com", "pmm-token"),
 			pmmClass("percona/pmm-client:3.8.0"),
 			pmmToken(),
 			livePSMDB(psmdbv1.AppStateReady, false, false),
@@ -350,7 +362,7 @@ func TestApplyPMMBindings(t *testing.T) {
 		operatorKeys := map[string][]byte{psmdbv1.EnvMongoDBDatabaseAdminPassword: []byte("pw")}
 		c, cl := bindingContext(t, pmmEntry,
 			acceptedBinding("pmm", "pmm-dst", "pmm", corev1alpha1.MonitoringExecutionModeProviderManaged),
-			destination("pmm-dst", "pmm", `{"url":"https://pmm.example.com"}`, "pmm-token"),
+			destination("pmm-dst", "pmm", "https://pmm.example.com", "pmm-token"),
 			pmmClass("percona/pmm-client:3.8.0"),
 			pmmToken(),
 			&corev1.Secret{

@@ -5,8 +5,9 @@ metadata:
 spec:
   classRef:
     name: pmm-it
-  credentialsSecretRef:
-    name: pmm-it-token
   parameters:
     url: http://pmm-it.example.com
-    verifyTLS: false
+  authentication:
+    mode: ServiceAccountToken
+    credentialsSecretRef:
+      name: pmm-it-token

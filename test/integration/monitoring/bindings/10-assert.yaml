@@ -1,5 +1,6 @@
 # Core materialises one binding per entry; the pmm one resolves to
-# ProviderManaged and the provider reports it Configured.
+# ProviderManaged and the provider reports it Configured, flagged because
+# pmm-client does not verify the PMM server certificate.
 apiVersion: monitoring.openeverest.io/v1alpha1
 kind: MonitoringBinding
 metadata:
@@ -25,7 +26,7 @@ spec:
 status:
   (conditions[?type == 'Accepted'].status | [0]): "True"
   (conditions[?type == 'Configured'].status | [0]): "True"
-  (conditions[?type == 'Configured'].reason | [0]): Configured
+  (conditions[?type == 'Configured'].reason | [0]): AgentTLSNotVerified
 ---
 # The prometheus entry resolves to ExtensionManaged because mongod declares
 # metrics: Exporter; its Configured condition belongs to the class controller,
@@ -50,7 +51,7 @@ kind: PerconaServerMongoDB
 metadata:
   name: psmdb-bindings
 spec:
-  # spec.pmm comes from the binding: server from the destination URL, image
+  # spec.pmm comes from the binding: server from the destination url, image
   # from the class, limits from the entry parameters over the size tier.
   pmm:
     enabled: true

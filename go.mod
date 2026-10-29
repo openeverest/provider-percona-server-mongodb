@@ -8,7 +8,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.113.4
 	github.com/cert-manager/cert-manager v1.21.0
 	github.com/hashicorp/go-version v1.9.0
-	github.com/openeverest/openeverest/v2 v2.0.0-dev.2.0.20261029005338-372ede252c67
+	github.com/openeverest/openeverest/v2 v2.0.0-dev.2.0.20261029121954-02a02d35d69a
 	github.com/percona/percona-server-mongodb-operator v1.23.1
 	github.com/stretchr/testify v1.12.1
 	k8s.io/api v0.37.1
@@ -217,7 +217,7 @@ require (
 	github.com/nunnatsa/ginkgolinter v0.24.0 // indirect
 	github.com/oasdiff/yaml v0.1.1 // indirect
 	github.com/oasdiff/yaml3 v0.0.14 // indirect
-	github.com/openeverest/provider-sdk v0.3.1-0.20261027204428-af9c51d03896 // indirect
+	github.com/openeverest/provider-sdk v0.3.1-0.20261029143042-fb6c17862872 // indirect
 	github.com/pelletier/go-toml/v2 v2.4.3 // indirect
 	github.com/percona/percona-backup-mongodb v1.8.1-0.20260617122520-9641a911c853 // indirect
 	github.com/pierrec/lz4 v2.6.1+incompatible // indirect

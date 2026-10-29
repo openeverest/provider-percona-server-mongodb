@@ -19,11 +19,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
-	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	corev1alpha1 "github.com/openeverest/openeverest/v2/api/core/v1alpha1"
 	"github.com/openeverest/openeverest/v2/provider-runtime/controller"
@@ -41,33 +37,4 @@ func TestPMMAdminParamsLabelTheInstance(t *testing.T) {
 	assert.Equal(t,
 		"--custom-labels=namespace=db,core_openeverest_io_instance=my-mongo,core_openeverest_io_component=proxy",
 		pmmAdminParams(c, "proxy"))
-}
-
-func TestCopySecretDataKeepsExistingKeys(t *testing.T) {
-	t.Parallel()
-
-	scheme := runtime.NewScheme()
-	require.NoError(t, corev1alpha1.AddToScheme(scheme))
-	require.NoError(t, corev1.AddToScheme(scheme))
-
-	in := &corev1alpha1.Instance{ObjectMeta: metav1.ObjectMeta{Name: "my-mongo", Namespace: "db", UID: "uid"}}
-	pmmCreds := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{Name: "pmm-creds", Namespace: "db"},
-		Data:       map[string][]byte{"apiKey": []byte("token")},
-	}
-	users := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{Name: "everest-secrets-my-mongo", Namespace: "db"},
-		Data:       map[string][]byte{"MONGODB_DATABASE_ADMIN_PASSWORD": []byte("pw")},
-	}
-	cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(in, pmmCreds, users).Build()
-	c := controller.NewContext(context.Background(), cl, in, "psmdb")
-
-	require.NoError(t, copySecretData(c, "pmm-creds", "everest-secrets-my-mongo", "apiKey", "PMM_SERVER_TOKEN"))
-
-	got := &corev1.Secret{}
-	require.NoError(t, c.Get(got, "everest-secrets-my-mongo"))
-	assert.Equal(t, map[string][]byte{
-		"MONGODB_DATABASE_ADMIN_PASSWORD": []byte("pw"),
-		"PMM_SERVER_TOKEN":                []byte("token"),
-	}, got.Data)
 }
