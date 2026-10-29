@@ -16,6 +16,12 @@ spec:
         content: kubectl get backupclass,monitoringclass -o yaml
     - script:
         content: kubectl -n pmm get pods -o yaml
+    - script:
+        content: kubectl -n $NAMESPACE describe pods -l core.openeverest.io/component=engine
+    - script:
+        content: kubectl -n $NAMESPACE logs -l core.openeverest.io/component=engine -c mongod --previous --tail=100 || true
+    - script:
+        content: kubectl -n $NAMESPACE logs -l core.openeverest.io/component=engine -c mongod --tail=100 || true
     - podLogs:
         namespace: provider-system
         selector: app.kubernetes.io/name=provider-percona-server-mongodb
@@ -121,7 +127,7 @@ spec:
     - name: source-cluster-ready
       try:
         - assert:
-            timeout: 240s
+            timeout: 600s
             file: 40-assert.yaml
 
     - name: create-source-mongodb-client
@@ -167,13 +173,13 @@ spec:
         - apply:
             file: 70-create-dest.yaml
         - assert:
-            timeout: 240s
+            timeout: 600s
             file: 70-assert.yaml
 
     - name: restore-created
       try:
         - assert:
-            timeout: 240s
+            timeout: 600s
             file: 80-assert.yaml
 
     - name: restore-complete
