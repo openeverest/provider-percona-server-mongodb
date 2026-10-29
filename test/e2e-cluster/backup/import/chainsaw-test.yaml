@@ -16,12 +16,6 @@ spec:
         content: kubectl -n $NAMESPACE get instance,psmdb,psmdb-restore,backupimport,backup,restore,backupstorage -o yaml
     - script:
         content: kubectl get backupclass -o yaml
-    - script:
-        content: kubectl -n $NAMESPACE describe pods -l core.openeverest.io/component=engine
-    - script:
-        content: kubectl -n $NAMESPACE logs -l core.openeverest.io/component=engine -c mongod --previous --tail=100 || true
-    - script:
-        content: kubectl -n $NAMESPACE logs -l core.openeverest.io/component=engine -c mongod --tail=100 || true
     - podLogs:
         namespace: provider-system
         selector: app.kubernetes.io/name=provider-percona-server-mongodb
@@ -80,7 +74,7 @@ spec:
     - name: restore-created
       try:
         - assert:
-            timeout: 600s
+            timeout: 120s
             file: 50-assert.yaml
 
     - name: restore-ready
