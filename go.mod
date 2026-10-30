@@ -324,3 +324,7 @@ require (
 	sigs.k8s.io/randfill v1.0.0 // indirect
 	sigs.k8s.io/structured-merge-diff/v6 v6.4.2 // indirect
 )
+
+replace github.com/openeverest/openeverest/v2 => ../openeverest
+
+replace github.com/openeverest/provider-sdk => ../provider-sdk
