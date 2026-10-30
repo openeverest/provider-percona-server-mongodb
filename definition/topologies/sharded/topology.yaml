@@ -183,8 +183,6 @@ ui:
                         disabled: true
                       restore:
                         disabled: true
-                  validation:
-                    required: true
                   dataSource:
                     provider: storageClasses
               componentsOrder:
