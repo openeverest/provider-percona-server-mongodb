@@ -24,5 +24,9 @@ metadata:
   name: psmdb-dest-datasource
 spec:
   clusterName: psmdb-dest
+  # The restore reads where the source Instance wrote the backup.
+  (storageName == null): true
   backupSource:
     storageName: seaweedfs-storage
+    minio:
+      (starts_with(prefix, join('/', ['backups', $namespace, 'psmdb-src', '']))): true
