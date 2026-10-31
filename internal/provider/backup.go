@@ -292,21 +292,20 @@ func buildPSMDBStorages(
 			}
 			return nil, err
 		}
-		if bs.Spec.S3 == nil {
-			// Skip non-S3 storages; PSMDB only supports S3-compatible backends.
-			continue
+		s3, _, err := c.BackupStorageS3(bs)
+		if err != nil {
+			return nil, err
 		}
-		s3 := bs.Spec.S3
 		out[entry.StorageRef.Name] = psmdbv1.BackupStorageSpec{
 			Type: psmdbv1.BackupStorageS3,
 			Main: entry.StorageRef.Name == mainName,
 			S3: psmdbv1.BackupStorageS3Spec{
-				Bucket:                s3.Bucket,
+				Bucket:                bs.Spec.Location.Bucket,
 				Region:                s3.Region,
 				EndpointURL:           s3.EndpointURL,
-				CredentialsSecret:     s3.CredentialsSecretRef.Name,
-				InsecureSkipTLSVerify: !pointer.Get(s3.VerifyTLS),
-				ForcePathStyle:        s3.ForcePathStyle,
+				CredentialsSecret:     bs.Spec.Authentication.CredentialsSecretRef.Name,
+				InsecureSkipTLSVerify: bs.Spec.TLS != nil && bs.Spec.TLS.InsecureSkipVerify,
+				ForcePathStyle:        &s3.ForcePathStyle,
 			},
 		}
 	}
@@ -561,14 +560,13 @@ func buildExternalBackupSource(
 		return nil, controller.RestoreExecutionStatus{}, fmt.Errorf("get BackupStorage: %w", err)
 	}
 
-	if bs.Spec.S3 == nil {
+	s3, _, err := c.BackupStorageS3(bs)
+	if err != nil {
 		return nil, controller.RestoreExecutionStatus{
 			State:   backupv1alpha1.RestoreStateFailed,
-			Message: fmt.Sprintf("Only S3 storage is supported: %q", bs.Name),
+			Message: err.Error(),
 		}, nil
 	}
-
-	s3 := bs.Spec.S3
 
 	var prefix string
 	trimmedPath := strings.Trim(external.Path, "/")
@@ -577,16 +575,16 @@ func buildExternalBackupSource(
 	}
 
 	return &psmdbv1.PerconaServerMongoDBBackupStatus{
-		Destination: "s3://" + s3.Bucket + "/" + trimmedPath,
+		Destination: "s3://" + bs.Spec.Location.Bucket + "/" + trimmedPath,
 		StorageName: sourceBackup.Spec.StorageRef.Name,
 		S3: &psmdbv1.BackupStorageS3Spec{
-			Bucket:                s3.Bucket,
+			Bucket:                bs.Spec.Location.Bucket,
 			Prefix:                prefix,
 			Region:                s3.Region,
 			EndpointURL:           s3.EndpointURL,
-			CredentialsSecret:     s3.CredentialsSecretRef.Name,
-			InsecureSkipTLSVerify: !pointer.Get(s3.VerifyTLS),
-			ForcePathStyle:        s3.ForcePathStyle,
+			CredentialsSecret:     bs.Spec.Authentication.CredentialsSecretRef.Name,
+			InsecureSkipTLSVerify: bs.Spec.TLS != nil && bs.Spec.TLS.InsecureSkipVerify,
+			ForcePathStyle:        &s3.ForcePathStyle,
 		},
 	}, controller.RestoreExecutionStatus{}, nil
 }

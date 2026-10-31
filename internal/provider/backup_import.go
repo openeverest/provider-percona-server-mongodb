@@ -101,7 +101,7 @@ func (p *PSMDBProvider) ImportBackups(
 		return controller.BackupImportExecutionStatus{}, fmt.Errorf("build S3 client: %w", err)
 	}
 
-	bucket := storage.Spec.S3.Bucket
+	bucket := storage.Spec.Location.Bucket
 
 	var backups []*backupv1alpha1.Backup
 
