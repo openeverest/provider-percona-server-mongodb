@@ -16,7 +16,10 @@ package provider
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"path"
+	"slices"
 	"strings"
 	"time"
 
@@ -32,6 +35,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	backupv1alpha1 "github.com/openeverest/openeverest/v2/api/backup/v1alpha1"
+	"github.com/openeverest/openeverest/v2/api/backup/v1alpha1/storageclasses"
 	commonv1alpha1 "github.com/openeverest/openeverest/v2/api/common/v1alpha1"
 	corev1alpha1 "github.com/openeverest/openeverest/v2/api/core/v1alpha1"
 	"github.com/openeverest/openeverest/v2/provider-runtime/controller"
@@ -107,13 +111,6 @@ func buildBackupSpec(c *controller.Context) (psmdbv1.BackupSpec, error) {
 		return bs, nil
 	}
 
-	storages, err := buildPSMDBStorages(c, backupCfg.Storages)
-	if err != nil {
-		return psmdbv1.BackupSpec{}, &controller.BackupConfigError{
-			Reason:  "StorageResolutionFailed",
-			Message: err.Error(),
-		}
-	}
 	pitrSpec, err := buildPSMDBPITRSpec(backupCfg.Storages)
 	if err != nil {
 		return psmdbv1.BackupSpec{}, &controller.BackupConfigError{
@@ -128,6 +125,35 @@ func buildBackupSpec(c *controller.Context) (psmdbv1.BackupSpec, error) {
 			Message: err.Error(),
 		}
 	}
+
+	live, err := liveEngine(c)
+	if err != nil {
+		return psmdbv1.BackupSpec{}, err
+	}
+	storages, err := buildPSMDBStorages(c, live.Spec.Backup.Storages)
+	if err != nil {
+		return psmdbv1.BackupSpec{}, err
+	}
+	// Schedules, PITR and the main storage only reach the storages the engine
+	// gets: a task naming a missing storage stops the operator's reconcile.
+	rendered := make([]corev1alpha1.InstanceBackupStorage, 0, len(storages))
+	for _, s := range backupCfg.Storages {
+		if _, ok := storages[s.StorageRef.Name]; ok {
+			rendered = append(rendered, s)
+		}
+	}
+	mainName := selectMainStorageName(rendered)
+	for name, s := range storages {
+		s.Main = name == mainName
+		storages[name] = s
+	}
+	tasks = slices.DeleteFunc(tasks, func(t psmdbv1.BackupTaskSpec) bool {
+		_, ok := storages[t.StorageName]
+		return !ok
+	})
+	pitrSpec.Enabled = pitrSpec.Enabled && slices.ContainsFunc(rendered, func(s corev1alpha1.InstanceBackupStorage) bool {
+		return s.PITR != nil && s.PITR.Enabled
+	})
 	bs.Enabled = true
 	bs.Storages = storages
 	bs.Tasks = tasks
@@ -273,43 +299,94 @@ func selectMainStorageName(storages []corev1alpha1.InstanceBackupStorage) string
 	return ""
 }
 
-// buildPSMDBStorages resolves each storage entry on the Instance into a
-// psmdbv1.BackupStorageSpec keyed by the BackupStorage CR name. The main
-// storage is inferred via selectMainStorageName: the PITR-enabled storage wins;
-// the first entry is used as fallback when no storage has PITR enabled.
+// buildPSMDBStorages renders the Instance's backup storages as the engine's
+// storages, keyed by BackupStorage name, each writing under the Instance's
+// path in its storage. An entry that must not or cannot be rendered keeps what
+// the live engine has for it, and stays out while the engine has nothing.
 func buildPSMDBStorages(
 	c *controller.Context,
-	storages []corev1alpha1.InstanceBackupStorage,
+	live map[string]psmdbv1.BackupStorageSpec,
 ) (map[string]psmdbv1.BackupStorageSpec, error) {
-	out := make(map[string]psmdbv1.BackupStorageSpec, len(storages))
-	mainName := selectMainStorageName(storages)
-	for _, entry := range storages {
-		bs, err := c.BackupStorage(entry.StorageRef.Name)
-		if err != nil {
-			if apierrors.IsNotFound(err) {
-				return nil, controller.WaitFor(fmt.Sprintf(
-					"BackupStorage %q not yet present", entry.StorageRef.Name))
+	resolved, err := c.BackupStorages()
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]psmdbv1.BackupStorageSpec, len(resolved))
+	for _, s := range resolved {
+		if s.Apply() {
+			spec, err := psmdbStorage(c, s.Storage, s.Path)
+			if err == nil {
+				out[s.Name()] = spec
+				continue
 			}
-			return nil, err
+			c.RejectBackupStorage(s.Name(), err)
 		}
-		s3, _, err := c.BackupStorageS3(bs)
-		if err != nil {
-			return nil, err
-		}
-		out[entry.StorageRef.Name] = psmdbv1.BackupStorageSpec{
-			Type: psmdbv1.BackupStorageS3,
-			Main: entry.StorageRef.Name == mainName,
-			S3: psmdbv1.BackupStorageS3Spec{
-				Bucket:                bs.Spec.Location.Bucket,
-				Region:                s3.Region,
-				EndpointURL:           s3.EndpointURL,
-				CredentialsSecret:     bs.Spec.Authentication.CredentialsSecretRef.Name,
-				InsecureSkipTLSVerify: bs.Spec.TLS != nil && bs.Spec.TLS.InsecureSkipVerify,
-				ForcePathStyle:        &s3.ForcePathStyle,
-			},
+		if held, ok := live[s.Name()]; ok {
+			out[s.Name()] = held
 		}
 	}
 	return out, nil
+}
+
+// psmdbStorage renders an s3 BackupStorage as a PBM storage writing under
+// prefix in its bucket. Amazon S3 uses PBM's s3 type; S3-compatible stores,
+// and a custom CA which the s3 type cannot carry, use its minio type.
+func psmdbStorage(c *controller.Context, bs *backupv1alpha1.BackupStorage, prefix string) (psmdbv1.BackupStorageSpec, error) {
+	s3, _, err := c.BackupStorageS3(bs)
+	if err != nil {
+		return psmdbv1.BackupStorageSpec{}, err
+	}
+	implementation := s3.EffectiveImplementation()
+	if implementation == storageclasses.S3ImplementationGCS {
+		return psmdbv1.BackupStorageSpec{}, fmt.Errorf("PBM cannot use GCS through its S3 client: %w", controller.ErrImplementationUnsupported)
+	}
+	tls, err := c.BackupStorageTLS(bs, controller.TLSSupport{CustomCA: true, SkipVerify: true})
+	if err != nil {
+		return psmdbv1.BackupStorageSpec{}, err
+	}
+	// PBM reads the AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY of the storage's Secret.
+	credentials := bs.Spec.Authentication.CredentialsSecretRef.Name
+
+	if implementation == storageclasses.S3ImplementationAWS && tls.CASecretKeyRef == nil {
+		return psmdbv1.BackupStorageSpec{
+			Type: psmdbv1.BackupStorageS3,
+			S3: psmdbv1.BackupStorageS3Spec{
+				Bucket:                bs.Spec.Location.Bucket,
+				Prefix:                prefix,
+				Region:                s3.Region,
+				EndpointURL:           s3.EndpointURL,
+				CredentialsSecret:     credentials,
+				InsecureSkipTLSVerify: tls.InsecureSkipVerify,
+				ForcePathStyle:        &s3.ForcePathStyle,
+			},
+		}, nil
+	}
+
+	endpoint, err := s3.Endpoint()
+	if err != nil {
+		return psmdbv1.BackupStorageSpec{}, err
+	}
+	spec := psmdbv1.BackupStorageSpec{
+		Type: psmdbv1.BackupStorageMinio,
+		Minio: psmdbv1.BackupStorageMinioSpec{
+			Bucket: bs.Spec.Location.Bucket,
+			Prefix: prefix,
+			Region: s3.Region,
+			// The minio client takes host:port and the scheme as Secure.
+			EndpointURL:           endpoint.HostPort(),
+			Secure:                endpoint.Secure,
+			CredentialsSecret:     credentials,
+			InsecureSkipTLSVerify: tls.InsecureSkipVerify,
+			ForcePathStyle:        &s3.ForcePathStyle,
+		},
+	}
+	if ref := tls.CASecretKeyRef; ref != nil {
+		spec.Minio.CABundle = &corev1.SecretKeySelector{
+			LocalObjectReference: corev1.LocalObjectReference{Name: ref.Name},
+			Key:                  ref.Key,
+		}
+	}
+	return spec, nil
 }
 
 // SyncBackup creates or updates a PerconaServerMongoDBBackup that references
@@ -390,9 +467,7 @@ func (p *PSMDBProvider) SyncBackup(c *controller.Context, backup *backupv1alpha1
 //     Instance's Backup via .spec.dataSource): the source operator backup
 //     belongs to a different PSMDB CR. The PSMDB operator cannot resolve it
 //     by name on this cluster, so we copy its .status into
-//     .spec.backupSource and set .spec.storageName to the target Instance's
-//     matching storage entry so credentials are taken from the target
-//     cluster's registered storages.
+//     .spec.backupSource, which records where the source wrote it.
 func (p *PSMDBProvider) SyncRestore(c *controller.Context, restore *backupv1alpha1.Restore) (controller.RestoreExecutionStatus, error) {
 	sourceBackup, desiredPITR, exec, err := resolveRestoreSource(c, restore)
 	if err != nil {
@@ -471,20 +546,17 @@ func (p *PSMDBProvider) SyncRestore(c *controller.Context, restore *backupv1alph
 			// PSMDB reads the dump straight from the storage descriptor built
 			// from the Backup's storageRef and external path. spec.storageName is
 			// deliberately left empty: when set, the operator resolves the
-			// cluster's registered storage (whose prefix is empty) instead
-			// of the spec.backupSource S3 spec, so its psmdb prefix would be
-			// lost and PBM would look for the backup metadata at the bucket root.
+			// cluster's registered storage, which writes under this Instance's
+			// own path, instead of the spec.backupSource descriptor.
 			psmdbRestore.Spec.BackupSource = externalSource
 			psmdbRestore.Spec.StorageName = ""
 			psmdbRestore.Spec.BackupName = ""
 		case crossCluster:
 			// Copy the source operator backup's storage descriptor verbatim
 			// (Destination + S3/Azure/GCS/Minio/Filesystem spec) so PSMDB can
-			// read the dump without consulting its own backup list. The
-			// StorageName on the restore selects credentials from this
-			// cluster's registered storages, which the runtime guarantees
-			// includes a matching entry (validated upstream by
-			// ReconcileDataSource).
+			// read the dump without consulting its own backup list. As for
+			// external backups, spec.storageName stays empty: this cluster's
+			// storage of the same name writes under another path.
 			src := sourceOpBackup.Status
 			psmdbRestore.Spec.BackupSource = &psmdbv1.PerconaServerMongoDBBackupStatus{
 				Destination: src.Destination,
@@ -497,7 +569,7 @@ func (p *PSMDBProvider) SyncRestore(c *controller.Context, restore *backupv1alph
 				Type:        src.Type,
 				PBMname:     src.PBMname,
 			}
-			psmdbRestore.Spec.StorageName = sourceBackup.Spec.StorageRef.Name
+			psmdbRestore.Spec.StorageName = ""
 			psmdbRestore.Spec.BackupName = ""
 		default:
 			psmdbRestore.Spec.BackupName = operatorBackupName
@@ -533,9 +605,9 @@ func (p *PSMDBProvider) SyncRestore(c *controller.Context, restore *backupv1alph
 }
 
 // buildExternalBackupSource builds the PSMDB restore BackupSource for an
-// external Backup (origin.type External). The data already lives in the
-// referenced BackupStorage at origin.external.path, so the descriptor is
-// assembled directly from the storage's S3 spec.
+// external Backup (origin.type External). The data already lives at
+// origin.external.path within the referenced BackupStorage's location, so the
+// descriptor is rendered from the storage like an Instance's storages are.
 func buildExternalBackupSource(
 	c *controller.Context,
 	sourceBackup *backupv1alpha1.Backup,
@@ -560,33 +632,40 @@ func buildExternalBackupSource(
 		return nil, controller.RestoreExecutionStatus{}, fmt.Errorf("get BackupStorage: %w", err)
 	}
 
-	s3, _, err := c.BackupStorageS3(bs)
+	key := path.Join(bs.Spec.Location.Prefix, strings.Trim(external.Path, "/"))
+	var prefix string
+	if i := strings.LastIndex(key, "/"); i >= 0 {
+		prefix = key[:i]
+	}
+
+	spec, err := psmdbStorage(c, bs, prefix)
 	if err != nil {
+		var apiErr apierrors.APIStatus
+		switch {
+		case apierrors.IsNotFound(err):
+			return nil, controller.RestoreExecutionStatus{
+				State:   backupv1alpha1.RestoreStatePending,
+				Message: fmt.Sprintf("Waiting for BackupStorage %q: %v", bs.Name, err),
+			}, nil
+		case errors.As(err, &apiErr):
+			return nil, controller.RestoreExecutionStatus{}, fmt.Errorf("render BackupStorage %q: %w", bs.Name, err)
+		}
 		return nil, controller.RestoreExecutionStatus{
 			State:   backupv1alpha1.RestoreStateFailed,
-			Message: err.Error(),
+			Message: fmt.Sprintf("BackupStorage %q cannot be used: %v", bs.Name, err),
 		}, nil
 	}
 
-	var prefix string
-	trimmedPath := strings.Trim(external.Path, "/")
-	if i := strings.LastIndex(trimmedPath, "/"); i >= 0 {
-		prefix = trimmedPath[:i]
-	}
-
-	return &psmdbv1.PerconaServerMongoDBBackupStatus{
-		Destination: "s3://" + bs.Spec.Location.Bucket + "/" + trimmedPath,
+	source := &psmdbv1.PerconaServerMongoDBBackupStatus{
+		Destination: "s3://" + bs.Spec.Location.Bucket + "/" + key,
 		StorageName: sourceBackup.Spec.StorageRef.Name,
-		S3: &psmdbv1.BackupStorageS3Spec{
-			Bucket:                bs.Spec.Location.Bucket,
-			Prefix:                prefix,
-			Region:                s3.Region,
-			EndpointURL:           s3.EndpointURL,
-			CredentialsSecret:     bs.Spec.Authentication.CredentialsSecretRef.Name,
-			InsecureSkipTLSVerify: bs.Spec.TLS != nil && bs.Spec.TLS.InsecureSkipVerify,
-			ForcePathStyle:        &s3.ForcePathStyle,
-		},
-	}, controller.RestoreExecutionStatus{}, nil
+	}
+	if spec.Type == psmdbv1.BackupStorageMinio {
+		source.Minio = &spec.Minio
+	} else {
+		source.S3 = &spec.S3
+	}
+	return source, controller.RestoreExecutionStatus{}, nil
 }
 
 // resolveRestoreSource translates the Restore's data source into the operator

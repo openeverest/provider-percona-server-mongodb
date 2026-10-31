@@ -102,11 +102,17 @@ func (p *PSMDBProvider) ImportBackups(
 	}
 
 	bucket := storage.Spec.Location.Bucket
+	// Backup paths are relative to the storage's location.
+	var prefix string
+	if storage.Spec.Location.Prefix != "" {
+		prefix = storage.Spec.Location.Prefix + "/"
+	}
 
 	var backups []*backupv1alpha1.Backup
 
 	paginator := s3.NewListObjectsV2Paginator(s3c, &s3.ListObjectsV2Input{
 		Bucket: aws.String(bucket),
+		Prefix: aws.String(prefix),
 	})
 
 	for paginator.HasMorePages() {
@@ -126,7 +132,7 @@ func (p *PSMDBProvider) ImportBackups(
 				return controller.BackupImportExecutionStatus{}, fmt.Errorf("read %q: %w", key, err)
 			}
 
-			backup, err := parsePBM(imp, key, data)
+			backup, err := parsePBM(imp, strings.TrimPrefix(key, prefix), data)
 			if err != nil {
 				l.Error(err, "skipping unparseable PBM metadata", "key", key)
 
