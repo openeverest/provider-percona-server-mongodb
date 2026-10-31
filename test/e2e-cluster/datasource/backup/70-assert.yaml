@@ -47,11 +47,14 @@ spec:
     enabled: true
     storages:
       seaweedfs-storage:
-        type: s3
-        s3:
+        type: minio
+        minio:
           bucket: everest-operator
+          (starts_with(prefix, join('/', ['backups', $namespace, 'psmdb-dest', '']))): true
+          (ends_with(prefix, '/seaweedfs-storage')): true
           credentialsSecret: seaweedfs-credentials
-          endpointUrl: https://seaweedfs.seaweedfs.svc
+          endpointUrl: seaweedfs.seaweedfs.svc:443
+          secure: true
           insecureSkipTLSVerify: true
           region: us-east-1
 status:
