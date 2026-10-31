@@ -39,7 +39,9 @@ spec:
         type: s3
         s3:
           bucket: test-backup-bucket
+          (starts_with(prefix, join('/', ['backups', $namespace, 'src-psmdb-cluster', '']))): true
+          (ends_with(prefix, '/test-storage-s3')): true
           credentialsSecret: backup-storage-credentials
           endpointUrl: http://fake
-          insecureSkipTLSVerify: true
+          forcePathStyle: true
           region: us-east-1
