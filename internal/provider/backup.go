@@ -57,6 +57,23 @@ const (
 // BACKUP SPEC — complete engine configuration built at Sync time
 // =============================================================================
 
+// backupAgentImage returns the PBM image of the Instance's version bundle, so
+// a provider release with a newer PBM does not restart running instances. The
+// runtime resolves versions only for components present on the Instance, and
+// backups do not need the backupAgent component.
+func backupAgentImage(spec *corev1alpha1.ProviderSpec, in *corev1alpha1.Instance) string {
+	version := in.Spec.Components[common.ComponentBackupAgent].Version
+	if version == "" {
+		if bundle, err := controller.ResolveVersionBundle(spec, controller.EffectiveVersionBundleName(spec, in)); err == nil {
+			version = bundle.Components[common.ComponentBackupAgent]
+		}
+	}
+	if image := controller.GetImageForVersion(spec, common.ComponentBackupAgent, version); image != "" {
+		return image
+	}
+	return controller.GetDefaultImageForComponent(spec, common.ComponentBackupAgent)
+}
+
 // buildBackupSpec returns the complete psmdbv1.BackupSpec that SyncPSMDB
 // stamps onto every PerconaServerMongoDB in a single Apply call. The PSMDB
 // operator requires Backup.Image to be set even when backups are disabled
@@ -71,7 +88,7 @@ func buildBackupSpec(c *controller.Context) (psmdbv1.BackupSpec, error) {
 		return psmdbv1.BackupSpec{}, fmt.Errorf("get provider spec: %w", err)
 	}
 	bs := psmdbv1.BackupSpec{
-		Image: controller.GetDefaultImageForComponent(spec, common.ComponentBackupAgent),
+		Image: backupAgentImage(spec, c.Instance()),
 		Configuration: psmdbv1.BackupConfig{
 			BackupOptions: &psmdbv1.BackupOptions{
 				Timeouts: &psmdbv1.BackupTimeouts{Starting: pointer.ToUint32(defaultBackupStartingTimeout)},

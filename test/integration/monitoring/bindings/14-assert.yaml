@@ -1,0 +1,10 @@
+# A rotated destination token reaches the users secret the operator reads it
+# from.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: everest-secrets-psmdb-bindings
+type: Opaque
+data:
+  MONGODB_DATABASE_ADMIN_USER: dGVzdC11c2Vy
+  PMM_SERVER_TOKEN: cm90YXRlZA==

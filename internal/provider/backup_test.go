@@ -30,7 +30,56 @@ import (
 	commonv1alpha1 "github.com/openeverest/openeverest/v2/api/common/v1alpha1"
 	corev1alpha1 "github.com/openeverest/openeverest/v2/api/core/v1alpha1"
 	"github.com/openeverest/openeverest/v2/provider-runtime/controller"
+
+	"github.com/openeverest/provider-percona-server-mongodb/internal/common"
 )
+
+func TestBackupAgentImage(t *testing.T) {
+	t.Parallel()
+	spec := &corev1alpha1.ProviderSpec{
+		Components: map[string]corev1alpha1.Component{common.ComponentBackupAgent: {Type: "backup"}},
+		ComponentTypes: map[string]corev1alpha1.ComponentType{"backup": {
+			DefaultVersion: "new",
+			Versions:       []corev1alpha1.ComponentVersion{{Version: "old", Image: "pbm:old"}, {Version: "new", Image: "pbm:new"}},
+		}},
+		DefaultVersion: "latest",
+		Versions: []corev1alpha1.VersionBundle{
+			{Name: "latest", Components: map[string]string{common.ComponentBackupAgent: "new"}},
+			{Name: "previous", Components: map[string]string{common.ComponentBackupAgent: "old"}},
+		},
+	}
+	tests := map[string]struct {
+		instance corev1alpha1.Instance
+		want     string
+	}{
+		"default bundle": {want: "pbm:new"},
+		"bundle frozen in status": {
+			instance: corev1alpha1.Instance{Status: corev1alpha1.InstanceStatus{Version: "previous"}},
+			want:     "pbm:old",
+		},
+		"bundle chosen in spec": {
+			instance: corev1alpha1.Instance{Spec: corev1alpha1.InstanceSpec{Version: "previous"}},
+			want:     "pbm:old",
+		},
+		"version resolved on the component": {
+			instance: corev1alpha1.Instance{Spec: corev1alpha1.InstanceSpec{
+				Version:    "latest",
+				Components: map[string]corev1alpha1.ComponentSpec{common.ComponentBackupAgent: {Version: "old"}},
+			}},
+			want: "pbm:old",
+		},
+		"unknown bundle falls back to the default": {
+			instance: corev1alpha1.Instance{Spec: corev1alpha1.InstanceSpec{Version: "gone"}},
+			want:     "pbm:new",
+		},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, tc.want, backupAgentImage(spec, &tc.instance))
+		})
+	}
+}
 
 func TestSelectMainStorageName(t *testing.T) {
 	tests := []struct {

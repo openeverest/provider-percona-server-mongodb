@@ -5,7 +5,7 @@ kind: PerconaServerMongoDB
 metadata:
   name: test-psmdb-cluster
 spec:
-  crVersion: 1.22.0
+  crVersion: 1.23.1
 ---
 apiVersion: core.openeverest.io/v1alpha1
 kind: Instance

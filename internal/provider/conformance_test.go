@@ -23,6 +23,11 @@ import (
 func TestUISchemaIsReconciled(t *testing.T) {
 	conformance.UISchemaIsReconciled(t, conformance.Config{
 		Provider: NewPSMDBProviderInterface(),
+		Unverifiable: map[string]string{
+			// The harness sets one field at a time; the kind takes effect only
+			// together with issuer.name (TestConfigureTLS covers it).
+			"spec.parameters.tls.issuer.kind": "applies only with issuer.name set",
+		},
 	})
 }
 

@@ -42,13 +42,5 @@ type MongosParameters struct {
 	Configuration string `json:"configuration,omitempty"`
 }
 
-// PMMParameters defines structured parameters for PMM monitoring.
-type PMMParameters struct {
-	// MonitoringConfigName specifies the name of the MonitoringConfig resource
-	// to use for configuring PMM monitoring.
-	// If not specified, monitoring will not be configured.
-	MonitoringConfigName *string `json:"monitoringConfigName,omitempty"`
-}
-
 // BackupParameters defines structured parameters for backup agents.
 type BackupParameters struct{}

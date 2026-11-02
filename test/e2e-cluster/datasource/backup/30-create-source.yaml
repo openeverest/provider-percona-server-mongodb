@@ -27,7 +27,8 @@ spec:
         requests:
           cpu: 600m
           memory: 512Mi
-    monitoring:
-      type: pmm
-      parameters:
-        monitoringConfigName: mc-pmm
+  monitoring:
+    destinations:
+      - name: pmm
+        destinationRef:
+          name: pmm

@@ -1,0 +1,24 @@
+# Once the cluster serves, the provider publishes where the exporter listens;
+# the runtime stamps the identity labels.
+apiVersion: core.openeverest.io/v1alpha1
+kind: Instance
+metadata:
+  name: psmdb-bindings
+status:
+  phase: Ready
+  monitoring:
+    sources:
+      identity:
+        labels:
+          openeverest_instance: psmdb-bindings
+          openeverest_namespace: ($namespace)
+          openeverest_provider: percona-server-mongodb
+      metrics:
+        - component: engine
+          kind: mongodb
+          podSelector:
+            core.openeverest.io/instance: psmdb-bindings
+            core.openeverest.io/component: engine
+          port: metrics
+          path: /metrics
+          scheme: http

@@ -1,0 +1,9 @@
+apiVersion: core.openeverest.io/v1alpha1
+kind: Instance
+metadata:
+  name: psmdb-tls
+spec:
+  parameters:
+    tls:
+      mode: preferTLS
+      certificateSecretName: my-tls

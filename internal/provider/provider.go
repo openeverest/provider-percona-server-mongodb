@@ -16,6 +16,7 @@ package provider
 
 import (
 	"fmt"
+	"strings"
 
 	goversion "github.com/hashicorp/go-version"
 	psmdbv1 "github.com/percona/percona-server-mongodb-operator/pkg/apis/psmdb/v1"
@@ -88,7 +89,7 @@ func defaultSpec() psmdbv1.PerconaServerMongoDBSpec {
 		Sharding: psmdbv1.Sharding{
 			Enabled: false,
 		},
-		VolumeExpansionEnabled: true, //nolint:staticcheck // operator v1.22 still honours it; moving to StorageScaling is separate
+		VolumeExpansionEnabled: true, //nolint:staticcheck // operator v1.23 still honours it; moving to StorageScaling is separate
 	}
 }
 
@@ -168,6 +169,11 @@ func ValidatePSMDB(c *controller.Context) error {
 	if err := validateDataSource(c); err != nil {
 		l.Error(err, "DataSource validation failed", "cluster", c.Name())
 		return fmt.Errorf("dataSource validation failed: %w", err)
+	}
+
+	if err := validateTLS(c); err != nil {
+		l.Error(err, "TLS validation failed", "cluster", c.Name())
+		return fmt.Errorf("tls validation failed: %w", err)
 	}
 
 	if err := validateUserSecret(c); err != nil {
@@ -262,7 +268,25 @@ func SyncPSMDB(c *controller.Context) error {
 
 	usersSecretName := "everest-secrets-" + c.Name()
 
-	// Ensuring user secret MUST run before configureMonitoring: when PMM
+	tls, err := tlsParameters(c)
+	if err != nil {
+		return err
+	}
+	keep, err := keepCertificates(c, tls)
+	if err != nil {
+		return err
+	}
+	configureTLS(psmdb, tls, keep)
+	psmdb.Spec.Unsafe.TLS = !tlsEnabled(tls.Mode)
+	if err := acceptClientsWithoutCertificates(c, psmdb, tls); err != nil {
+		return fmt.Errorf("configure TLS: %w", err)
+	}
+
+	if err := configureMetricsExporter(c, psmdb, usersSecretName); err != nil {
+		return fmt.Errorf("configure metrics exporter: %w", err)
+	}
+
+	// Ensuring user secret MUST run before applyPMMBindings: when PMM
 	// is enabled, it creates or updates the user secret to hold
 	// PMM_SERVER_TOKEN, which would make ensureUserSecret and
 	// ensureDataSourceCredentials treat the secret as already provisioned and
@@ -287,21 +311,19 @@ func SyncPSMDB(c *controller.Context) error {
 		}
 	}
 
-	// Configure monitoring after ensuring data source user credentials.
-	// Configure monitoring adds PMM_SERVER_TOKEN to the users secret
-	// or creates user secret if none exists.
-	pmmSpec, err := configureMonitoring(c, usersSecretName)
-	if err != nil {
+	// Configure PMM after ensuring data source user credentials: it adds
+	// PMM_SERVER_TOKEN to the users secret or creates the users secret if
+	// none exists.
+	if err := applyPMMBindings(c, psmdb, usersSecretName); err != nil {
 		return err
-	}
-	if pmmSpec != nil {
-		psmdb.Spec.PMM = *pmmSpec
 	}
 
 	psmdb.Spec.Secrets = &psmdbv1.SecretsSpec{
 		Users:         usersSecretName,
 		EncryptionKey: c.Name() + "-mongodb-encryption-key",
-		SSLInternal:   c.Name() + "-ssl-internal",
+		// Left empty, the operator names the secret it generates itself.
+		SSL:         tls.CertificateSecretName,
+		SSLInternal: internalCertificateSecretName(c, tls),
 	}
 
 	if err := c.Apply(psmdb); err != nil {
@@ -321,6 +343,20 @@ func SyncPSMDB(c *controller.Context) error {
 			// reconcile after the PSMDB CR appears will re-enter this branch.
 			return nil
 		}
+
+		if authErr := unrecoverableAuthError(current); authErr != "" {
+			// The users secret does not match the credentials the engine
+			// expects (e.g. a wrong userSecretRef or credentials that differ
+			// from the backup's origin). The operator retries, but it's
+			// a terminal failure: as instance sets immutable userSecretRef.
+			c.SetDataSourceStatus(controller.DataSourceStatus{
+				Done:    true,
+				State:   controller.DataSourceStateFailed,
+				Reason:  corev1alpha1.ReasonDataSourceUserSecretMismatch,
+				Message: "restore failed: supplied credentials do not match the users in the source backup: " + authErr,
+			})
+			return nil
+		}
 		if current.Status.State != psmdbv1.AppStateReady || current.Status.BackupVersion == "" {
 			c.SetDataSourceStatus(controller.DataSourceStatus{
 				Done:    false,
@@ -336,6 +372,30 @@ func SyncPSMDB(c *controller.Context) error {
 	}
 
 	return nil
+}
+
+// unrecoverableAuthError returns the operator's error message when
+// the users secret credentials are rejected by mongod (retrying cannot
+// fix that). The operator's state flaps between error and
+// initializing while it retries, so every True condition is checked.
+// It also checks status.Message for authentication error to capture
+// cases when error condition is already set with other unrelated errors.
+// Other errors are ignored; they may be transient.
+func unrecoverableAuthError(psmdb *psmdbv1.PerconaServerMongoDB) string {
+	if psmdb.Status.State == psmdbv1.AppStateError &&
+		strings.Contains(psmdb.Status.Message, "AuthenticationFailed") {
+		return psmdb.Status.Message
+	}
+
+	for _, cond := range psmdb.Status.Conditions {
+		if cond.Status == psmdbv1.ConditionTrue &&
+			cond.Type == psmdbv1.AppStateError &&
+			strings.Contains(cond.Message, "AuthenticationFailed") {
+			return cond.Message
+		}
+	}
+
+	return ""
 }
 
 // allow unsafe for replset and mongos when the configured replicas fall below the
@@ -378,8 +438,13 @@ func StatusPSMDB(c *controller.Context) (controller.Status, error) {
 	// state, override the phase to Restoring so users can see the Instance
 	// is being populated. ConditionDataSourceReady carries the detailed
 	// reason/message.
-	if ds := c.GetDataSourceStatus(); ds != nil && !ds.Done {
-		return controller.Restoring(ds.Message), nil
+	if ds := c.GetDataSourceStatus(); ds != nil {
+		if !ds.Done {
+			return controller.Restoring(ds.Message), nil
+		}
+		if ds.State == controller.DataSourceStateFailed {
+			return controller.Failed(ds.Message), nil
+		}
 	}
 
 	// A restore drives the engine through intermediate and momentarily ready
@@ -424,15 +489,27 @@ func buildConnectionDetails(c *controller.Context, psmdb *psmdbv1.PerconaServerM
 	username := string(secret.Data[psmdbv1.EnvMongoDBDatabaseAdminUser])
 	password := string(secret.Data[psmdbv1.EnvMongoDBDatabaseAdminPassword])
 
-	return controller.ConnectionDetails{
+	ca, tlsRequired, err := tlsConnection(c)
+	if err != nil {
+		return controller.ConnectionDetails{}, err
+	}
+
+	details := controller.ConnectionDetails{
 		Type:     "mongodb",
 		Provider: "percona-server-mongodb",
 		Host:     host,
 		Port:     port,
 		Username: username,
 		Password: password,
-		URI:      fmt.Sprintf("mongodb://%s:%s@%s/admin?ssl=false", username, password, host),
-	}, nil
+		URI:      fmt.Sprintf("mongodb://%s:%s@%s/admin?tls=%t", username, password, host, tlsRequired),
+	}
+	if len(ca) > 0 {
+		// Clients verify the instance's certificate against this CA
+		// (tlsCAFile); the operator's own CA is not publicly trusted.
+		details.AdditionalProperties = map[string]string{caKey: string(ca)}
+	}
+
+	return details, nil
 }
 
 // ensureUserSecret copies the user-supplied credentials secret
@@ -601,7 +678,7 @@ func (p *PSMDBProvider) SetClient(c client.Client) {
 // The provider name must match the Provider CR name so the runtime
 // can automatically fetch schemas and version metadata from it.
 // Call SetClient on the returned provider before starting the reconciler
-// so the MonitoringConfig watch handler can list referencing Instances.
+// so backup imports can read the BackupStorage credentials.
 func NewPSMDBProviderInterface() *PSMDBProvider {
 	p := &PSMDBProvider{}
 
@@ -609,6 +686,7 @@ func NewPSMDBProviderInterface() *PSMDBProvider {
 		ProviderName: "percona-server-mongodb",
 		SchemeFuncs: []func(*runtime.Scheme) error{
 			psmdbv1.SchemeBuilder.AddToScheme,
+			// Sync lists MonitoringBindings and the conformance harness's scheme has only these.
 			monitoringv1alpha1.SchemeBuilder.AddToScheme,
 			// Deployments are read to discover the running operator version.
 			appsv1.AddToScheme,
@@ -636,16 +714,6 @@ func NewPSMDBProviderInterface() *PSMDBProvider {
 			controller.WatchExternal(&psmdbv1.PerconaServerMongoDBBackup{},
 				handler.EnqueueRequestsFromMapFunc(enqueueOperatorBackupInstance()),
 			),
-			controller.WatchExternal(&monitoringv1alpha1.MonitoringConfig{},
-				handler.EnqueueRequestsFromMapFunc(enqueueMonitoringConfig(p)),
-				monitoringConfigPredicate(),
-			),
-			// Watch secrets referenced by MonitoringConfig resources
-			// TODO: Can this watch removed? After all, MontoringConfig owns this secret.
-			controller.WatchExternal(&corev1.Secret{},
-				handler.EnqueueRequestsFromMapFunc(enqueueMonitoringConfigSecret(p)),
-				monitoringConfigPredicate(),
-			),
 		},
 	}
 
@@ -672,23 +740,6 @@ func (p *PSMDBProvider) Cleanup(c *controller.Context) error {
 	return CleanupPSMDB(c)
 }
 
-// FieldIndexes implements controller.FieldIndexProvider.
-// It registers indexes used by watchers.
-func (p *PSMDBProvider) FieldIndexes() []controller.FieldIndex {
-	return []controller.FieldIndex{
-		{
-			Object:    &corev1alpha1.Instance{},
-			FieldPath: monitoringConfigPath,
-			Extractor: extractMonitoringConfigName,
-		},
-		{
-			Object:    &monitoringv1alpha1.MonitoringConfig{},
-			FieldPath: credentialsSecretPath,
-			Extractor: extractMonitoringConfigSecretName,
-		},
-	}
-}
-
 // BackupWatches implements controller.BackupWatcher. The runtime's Backup
 // reconciler watches PerconaServerMongoDBBackup CRs as owned resources so
 // operator status changes are routed directly to the parent Backup CR via
@@ -713,7 +764,6 @@ func (p *PSMDBProvider) RestoreWatches() []controller.WatchConfig {
 // Compile-time interface checks
 var _ controller.ProviderInterface = (*PSMDBProvider)(nil)
 var _ controller.WatchProvider = (*PSMDBProvider)(nil)
-var _ controller.FieldIndexProvider = (*PSMDBProvider)(nil)
 var _ controller.BackupProvider = (*PSMDBProvider)(nil)
 var _ controller.BackupWatcher = (*PSMDBProvider)(nil)
 var _ controller.RestoreWatcher = (*PSMDBProvider)(nil)

@@ -83,10 +83,12 @@ spec:
   - arbiter:
       enabled: false
       size: 0
-    configuration: |2
-
-            operationProfiling:
-              mode: slowOp
+    configuration: |
+      net:
+        tls:
+          allowConnectionsWithoutCertificates: true
+      operationProfiling:
+        mode: slowOp
     expose:
       enabled: false
       type: ClusterIP
@@ -115,10 +117,12 @@ spec:
   - arbiter:
       enabled: false
       size: 0
-    configuration: |2
-
-            operationProfiling:
-              mode: slowOp
+    configuration: |
+      net:
+        tls:
+          allowConnectionsWithoutCertificates: true
+      operationProfiling:
+        mode: slowOp
     expose:
       enabled: false
       type: ClusterIP
@@ -147,10 +151,12 @@ spec:
   - arbiter:
       enabled: false
       size: 0
-    configuration: |2
-
-            operationProfiling:
-              mode: slowOp
+    configuration: |
+      net:
+        tls:
+          allowConnectionsWithoutCertificates: true
+      operationProfiling:
+        mode: slowOp
     expose:
       enabled: false
       type: ClusterIP

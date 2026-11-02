@@ -12,9 +12,6 @@ RELEASE_FULLCOMMIT ?= $(shell git rev-parse HEAD)
 # tools. (i.e. podman)
 CONTAINER_TOOL ?= docker
 
-# OpenEverest branch to use for OpenEverest CRD installation.
-OPENEVEREST_BRANCH ?= main
-
 # Image URL to use all building/pushing image targets
 IMG ?= ghcr.io/openeverest/provider-percona-server-mongodb-dev:latest
 
@@ -40,7 +37,7 @@ CHART_DIR ?= charts/provider-percona-server-mongodb
 K3D_CLUSTER_NAME ?= provider-psmdb-test
 
 # PSMDB operator version used for CRD installation in CI
-PSMDB_OPERATOR_VERSION ?= 1.22.0
+PSMDB_OPERATOR_VERSION ?= 1.23.1
 
 .PHONY: help
 help: ## Display this help.
@@ -62,6 +59,10 @@ run: generate ## Run the provider locally.
 manifests: controller-gen ## Generate RBAC manifests using controller-gen from kubebuilder markers.
 	$(CONTROLLER_GEN) rbac:roleName=manager-role paths="./..." output:rbac:dir=config/rbac
 
+.PHONY: operator-crds
+operator-crds: ## Copy the CRDs of the Percona Operator for MongoDB version pinned in go.mod.
+	@install -m 0644 "$$(go list -m -f '{{.Dir}}' github.com/percona/percona-server-mongodb-operator)/deploy/crd.yaml" internal/operatorcrds/crd.yaml
+
 .PHONY: helm-sync-rbac
 helm-sync-rbac: yq ## Sync generated RBAC rules into the Helm chart.
 	@echo "Syncing RBAC rules from config/rbac/role.yaml to Helm chart..."
@@ -69,18 +70,19 @@ helm-sync-rbac: yq ## Sync generated RBAC rules into the Helm chart.
 	@echo "Done."
 
 .PHONY: generate
-generate: manifests helm-sync-rbac ## Run all code generation (RBAC + Helm sync + provider spec from definition/).
+generate: manifests operator-crds helm-sync-rbac ## Run all code generation (RBAC + operator CRDs + Helm sync + provider spec from definition/).
 	go generate ./...
 	@echo "All generation complete."
 
 .PHONY: verify
 verify: ## Verify that generated files are up-to-date (for CI).
 	@$(MAKE) generate
-	@if git diff --quiet -- config/ $(CHART_DIR)/generated/; then \
+	@if git diff --quiet -- config/ internal/operatorcrds/ $(CHART_DIR)/generated/; then \
 		echo "Generated files are up-to-date."; \
 	else \
 		echo "ERROR: Generated files are out of date. Run 'make generate' and commit the changes."; \
 		git diff -- config/ $(CHART_DIR)/generated/; \
+		git diff --stat -- internal/operatorcrds/; \
 		exit 1; \
 	fi
 
@@ -106,13 +108,17 @@ test-integration-core-replicaset: ## Run core replicaset integration tests.
 test-integration-core-sharded: ## Run core sharded integration tests.
 	. ./test/vars.sh && chainsaw test --config ./test/integration/.chainsaw.yaml ./test/integration/core/sharded
 
+.PHONY: test-integration-core-tls
+test-integration-core-tls: ## Run core TLS integration tests.
+	. ./test/vars.sh && chainsaw test --config ./test/integration/.chainsaw.yaml ./test/integration/core/tls
+
 .PHONY: test-integration-core-maintenance
 test-integration-core-maintenance: ## Run maintenance (crVersion convergence) integration tests.
 	. ./test/vars.sh && chainsaw test --config ./test/integration/.chainsaw.yaml ./test/integration/core/maintenance
 
-.PHONY: test-integration-monitoring-pmm
-test-integration-monitoring-pmm: ## Run PMM integration tests.
-	. ./test/vars.sh && chainsaw test --config ./test/integration/.chainsaw.yaml ./test/integration/monitoring/pmm
+.PHONY: test-integration-monitoring-bindings
+test-integration-monitoring-bindings: ## Run MonitoringBinding (spec.monitoring.destinations) integration tests.
+	. ./test/vars.sh && chainsaw test --config ./test/integration/.chainsaw.yaml ./test/integration/monitoring/bindings
 
 .PHONY: test-integration-backup
 test-integration-backup: ## Run backup integration tests.
@@ -147,16 +153,9 @@ load-openeverest-controller-image: ## Import the OpenEverest controller image in
 	k3d image import ${OPENEVEREST_CONTROLLER_IMG} -c ${K3D_CLUSTER_NAME}
 
 .PHONY: install-crds
-install-crds: ## Install OpenEverest and PSMDB CRDs into the cluster.
-	kubectl apply -f https://raw.githubusercontent.com/openeverest/openeverest/$(OPENEVEREST_BRANCH)/config/crd/bases/core.openeverest.io_providers.yaml
-	kubectl apply -f https://raw.githubusercontent.com/openeverest/openeverest/$(OPENEVEREST_BRANCH)/config/crd/bases/core.openeverest.io_instances.yaml
-	kubectl apply -f https://raw.githubusercontent.com/openeverest/openeverest/$(OPENEVEREST_BRANCH)/config/crd/bases/monitoring.openeverest.io_monitoringconfigs.yaml
-	kubectl apply -f https://raw.githubusercontent.com/openeverest/openeverest/$(OPENEVEREST_BRANCH)/config/crd/bases/backup.openeverest.io_backupclasses.yaml
-	kubectl apply -f https://raw.githubusercontent.com/openeverest/openeverest/$(OPENEVEREST_BRANCH)/config/crd/bases/backup.openeverest.io_backups.yaml
-	kubectl apply -f https://raw.githubusercontent.com/openeverest/openeverest/$(OPENEVEREST_BRANCH)/config/crd/bases/backup.openeverest.io_restores.yaml
-	kubectl apply -f https://raw.githubusercontent.com/openeverest/openeverest/$(OPENEVEREST_BRANCH)/config/crd/bases/backup.openeverest.io_backupstorages.yaml
-	kubectl apply -f https://raw.githubusercontent.com/openeverest/openeverest/$(OPENEVEREST_BRANCH)/config/crd/bases/core.openeverest.io_instancepresets.yaml
-	kubectl apply -f https://raw.githubusercontent.com/openeverest/openeverest/$(OPENEVEREST_BRANCH)/config/crd/bases/backup.openeverest.io_backupimports.yaml
+install-crds: ## Install the OpenEverest CRDs of the core version pinned in go.mod, and the PSMDB CRDs.
+	go mod download github.com/openeverest/openeverest/v2
+	kubectl apply --server-side --force-conflicts -f "$$(go list -m -f '{{.Dir}}' github.com/openeverest/openeverest/v2)/config/crd/bases"
 	curl -fsSL https://raw.githubusercontent.com/percona/percona-server-mongodb-operator/v$(PSMDB_OPERATOR_VERSION)/deploy/crd.yaml \
 		| kubectl apply --server-side -f -
 

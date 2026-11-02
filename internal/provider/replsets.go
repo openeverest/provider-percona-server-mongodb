@@ -19,6 +19,7 @@ import (
 
 	psmdbv1 "github.com/percona/percona-server-mongodb-operator/pkg/apis/psmdb/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 
 	corev1alpha1 "github.com/openeverest/openeverest/v2/api/core/v1alpha1"
@@ -188,5 +189,34 @@ func configureConfigServerReplset(c *controller.Context) (*psmdbv1.ReplsetSpec, 
 	// TODO: check if this is okay. It adds the configuration, expose.type,
 	// name, podDisruptionBudget that we didn't have in the everest operator
 	// Config servers should never be exposed directly - they are internal infrastructure
-	return configureReplset("configsvr", cfgSrv.Replicas, cfgSrv.Resources, cfgSrv.Storage, false, config, nil), nil
+	rs := configureReplset("configsvr", cfgSrv.Replicas, cfgSrv.Resources, cfgSrv.Storage, false, config, nil)
+	if err := keepCurrentConfigServerStorageClass(c, rs); err != nil {
+		return nil, err
+	}
+
+	return rs, nil
+}
+
+// keepCurrentConfigServerStorageClass pins the config server storage class to
+// the one the running cluster was created with. The operator cannot apply a
+// change to it (StatefulSet volumeClaimTemplates are immutable), and instances
+// created before the UI started writing the field have none set, so a later
+// edit that fills it in must not wedge the operator.
+func keepCurrentConfigServerStorageClass(c *controller.Context, rs *psmdbv1.ReplsetSpec) error {
+	current := &psmdbv1.PerconaServerMongoDB{}
+	if err := c.Get(current, c.Name()); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil
+		}
+		return fmt.Errorf("fetching current PSMDB CR: %w", err)
+	}
+
+	currentCfg := current.Spec.Sharding.ConfigsvrReplSet
+	if !current.Spec.Sharding.Enabled || currentCfg == nil || currentCfg.VolumeSpec == nil ||
+		currentCfg.VolumeSpec.PersistentVolumeClaim.PersistentVolumeClaimSpec == nil {
+		return nil
+	}
+
+	rs.VolumeSpec.PersistentVolumeClaim.StorageClassName = currentCfg.VolumeSpec.PersistentVolumeClaim.StorageClassName
+	return nil
 }

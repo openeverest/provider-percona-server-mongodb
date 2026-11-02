@@ -49,6 +49,7 @@ manages pods directly — all lifecycle work is delegated to the operator.
 
 | provider-percona-server-mongodb | OpenEverest | Percona Operator for MongoDB | Kubernetes |
 |---|---|---|---|
+| `0.5.x` | `2.0.0-dev.4` | `1.23.x` | `1.30` – `1.34` |
 | `0.4.x` | `2.0.0-dev.4` | `1.22.x` | `1.30` – `1.34` |
 | `0.3.x` | `2.0.0-dev.3` | `1.22.x` | `1.30` – `1.34` |
 | `0.2.x` | `2.0.0-dev.2` | `1.22.x` | `1.30` – `1.34` |
@@ -66,8 +67,9 @@ provider itself is covered under [Installation](#installation).
 | Vertical scaling (CPU / memory) | ✅ | `spec.components.<name>.resources` |
 | Version upgrades | ✅ | of the deployed MongoDB version — change `spec.version`; see [Versions](#versions) |
 | Custom configuration | ✅ | `mongod` / `mongos` config via the component's `configuration` parameter |
-| Monitoring | ✅ | PMM, via the optional `monitoring` component |
-| TLS | ✅ | operator-managed certificates; unsafe TLS is never enabled |
+| Monitoring | ✅ | PMM, and any metrics backend through mongodb_exporter, via `spec.monitoring.destinations` — see [Monitoring](#monitoring) |
+| TLS | ✅ | on by default; generated, cert-manager or your own certificates — see [TLS](#tls) |
+| Pod scheduling | ✅ | affinity and topology spread per component — see [Pod scheduling](#pod-scheduling) |
 
 Stateful workloads additionally report:
 
@@ -87,7 +89,7 @@ The provider chart is published as an OCI artifact to GitHub Container Registry:
 ```bash
 helm install provider-percona-server-mongodb \
   oci://ghcr.io/openeverest/charts/provider-percona-server-mongodb \
-  --version 0.4.0 \
+  --version 0.5.0 \
   --namespace everest-system
 ```
 
@@ -98,10 +100,12 @@ Upgrade and uninstall:
 
 ```bash
 helm upgrade provider-percona-server-mongodb \
-  oci://ghcr.io/openeverest/charts/provider-percona-server-mongodb --version 0.4.0
+  oci://ghcr.io/openeverest/charts/provider-percona-server-mongodb --version 0.5.0
 helm uninstall provider-percona-server-mongodb --namespace everest-system
 ```
 
+A pre-upgrade hook checks that every Instance can follow the new bundled operator, then
+upgrades the operator's CRDs — Helm itself installs the CRDs of a chart dependency only once.
 Uninstalling the chart does **not** delete running `Instance` resources or their data.
 
 ## Usage
@@ -156,19 +160,22 @@ Credentials are in the secret named by `.status.connection.credentialsSecretRef`
 | `sharded` | | Sharded cluster: `engine` shards, `configServer`, and `mongos` routers (`proxy`); shard count via the topology's `numShards` parameter |
 <!-- END GENERATED: topologies -->
 
-The `backupAgent` and `monitoring` components are optional in both topologies.
+The `backupAgent` component is optional in both topologies.
 
 ## Versions
 
 <!-- BEGIN GENERATED: versions -->
-| Version bundle | Default | mongod | backup | pmm |
-|---|---|---|---|---|
-| `8.0.12` | ✅ | `8.0.12-4` | `2.12.0` | `3.7.0` |
-| `8.0.8` | | `8.0.8-3` | `2.12.0` | `3.7.0` |
-| `8.0.4` | | `8.0.4-1` | `2.12.0` | `3.7.0` |
-| `7.0.18` | | `7.0.18-11` | `2.12.0` | `3.7.0` |
-| `6.0.21` | | `6.0.21-18` | `2.12.0` | `3.7.0` |
-| `6.0.19` | | `6.0.19-16` | `2.12.0` | `3.7.0` |
+| Version bundle | Default | mongod | backup |
+|---|---|---|---|
+| `8.0.32` | ✅ | `8.0.32-14` | `2.15.0` |
+| `8.0.12` | | `8.0.12-4` | `2.12.0` |
+| `8.0.8` | | `8.0.8-3` | `2.12.0` |
+| `8.0.4` | | `8.0.4-1` | `2.12.0` |
+| `7.0.43` | | `7.0.43-23` | `2.15.0` |
+| `7.0.18` | | `7.0.18-11` | `2.12.0` |
+| `6.0.29` | | `6.0.29-23` | `2.15.0` |
+| `6.0.21` | | `6.0.21-18` | `2.12.0` |
+| `6.0.19` | | `6.0.19-16` | `2.12.0` |
 <!-- END GENERATED: versions -->
 
 Source of truth: [definition/versions.yaml](definition/versions.yaml).
@@ -189,12 +196,134 @@ The technology-specific knobs worth knowing about:
 | Parameter | Applies to | Purpose |
 |---|---|---|
 | `configuration` | `engine`, `configServer`, `proxy` | Raw `mongod` / `mongos` configuration passed to the operator |
-| `monitoringConfigName` | `monitoring` | PMM configuration to attach the instance to |
 | `numShards` | `sharded` topology | Number of shards to provision |
 
-With `monitoring` enabled, the instance's metrics in PMM carry `namespace` and
-`core_openeverest_io_instance` labels, plus `core_openeverest_io_component=proxy` on mongos,
-so they can be queried per instance.
+### Monitoring
+
+Monitoring is configured through `MonitoringDestination`s: each entry of
+`spec.monitoring.destinations` sends the instance's monitoring data to one destination.
+
+```yaml
+spec:
+  monitoring:
+    destinations:
+      - name: pmm
+        destinationRef:
+          name: pmm-prod
+        # Optional; merged over the PMM client resources sized from the engine. A request
+        # left unset never exceeds the limit set here.
+        parameters:
+          resources:
+            limits:
+              memory: 256Mi
+      - name: prometheus
+        destinationRef:
+          name: prometheus
+```
+
+The provider declares its monitoring contract in
+[definition/monitoring.yaml](definition/monitoring.yaml): the `pmm` integration, and a
+`mongodb_exporter` metrics endpoint on every `mongod` component.
+
+- **PMM** (the `pmm` class, installed by the `monitoring-pmm` extension) is rendered by the
+  provider into the operator's `spec.pmm`: the server from the destination's `parameters.url`, the
+  token from the `token` key of its `ServiceAccountToken` credentials Secret, the PMM client
+  image from the class. The instance's metrics in PMM carry `namespace` and
+  `core_openeverest_io_instance` labels, plus `core_openeverest_io_component=proxy` on mongos.
+  The operator runs the PMM client without verifying the server certificate, whatever the
+  destination's `spec.tls` says, so the binding reports `Configured` with reason
+  `AgentTLSNotVerified`.
+- **Metrics backends** (for example the `prometheus` and `victoriametrics` classes) run a
+  `mongodb_exporter` sidecar next to every mongod and mongos while one of the instance's
+  destinations requires metrics. The sidecar serves on the `metrics` port (9216) and logs in
+  as the operator's cluster monitor user; its image is pinned by the `mongodbExporter`
+  component type in [definition/versions.yaml](definition/versions.yaml). The provider
+  publishes each component's endpoint in `status.monitoring.sources` once it has a ready
+  pod, and the class's extension creates the scrape resources. Adding or removing the
+  sidecar restarts the pods one at a time.
+
+`kubectl get monitoringbindings` lists one binding per destination entry, and the
+instance's `MonitoringConfigured` condition reports whether every entry is configured.
+
+### TLS
+
+TLS is on by default. Configure it with the instance-wide `tls` parameter:
+
+```yaml
+spec:
+  parameters:
+    tls:
+      mode: requireTLS                 # preferTLS (default) | requireTLS | disabled
+      # Pick one certificate source, or neither to have certificates issued:
+      certificateSecretName: my-tls    # tls.crt, tls.key and ca.crt
+      internalCertificateSecretName: my-tls-internal  # optional; members only
+      issuer:                          # cert-manager
+        name: corp-ca
+        kind: ClusterIssuer            # Issuer (default) | ClusterIssuer
+```
+
+- **`preferTLS`** encrypts traffic between members and lets clients choose; **`requireTLS`**
+  rejects clients without TLS. The two can be switched on a running instance (a rolling
+  restart). **`disabled`** turns TLS off and can only be chosen at creation: turning TLS on
+  or off changes how members authenticate each other.
+- **Certificates** are, in order of precedence:
+  1. your secrets: `certificateSecretName` (and optionally `internalCertificateSecretName`).
+     Their subject alternative names must cover `localhost` and the instance's service and
+     pod names (`<instance>-rs0`, `*.<instance>-rs0.<namespace>.svc.cluster.local`, plus the
+     `-cfg` and `-mongos` names when sharded). A cert-manager `Certificate` writing such a
+     secret works, and renewals roll out automatically; the operator never replaces the
+     secrets with its own;
+  2. a cert-manager `issuer` — a `ClusterIssuer` requires cert-manager in the
+     `cert-manager` namespace;
+  3. otherwise the operator issues them: through cert-manager with a CA of its own when
+     cert-manager is installed (renewed automatically), or else from a CA it generates once,
+     valid without expiry. Such an instance keeps its certificates if cert-manager is
+     installed later: the operator's migration to cert-manager does not complete.
+
+  The certificate source can't be changed after creation.
+- **Clients** authenticate with their password and need only the CA to verify the instance:
+  the connection secret (`<instance>-conn`) carries it as `ca.crt`, and its `uri` sets `tls`
+  to match the mode. TLS clients don't need a client certificate; on instances created
+  before this was supported, accepting them waits for the
+  `tls-clients-without-certificates` maintenance approval (a rolling restart).
+
+### Pod scheduling
+
+Each component's `schedulingPolicy` accepts `affinity` and `topologySpreadConstraints`;
+the UI edits affinity under **Advanced configuration → Pod scheduling policy**, one tab per
+component:
+
+```yaml
+spec:
+  components:
+    engine:
+      schedulingPolicy:
+        affinity:
+          nodeAffinity:
+            requiredDuringSchedulingIgnoredDuringExecution:
+              nodeSelectorTerms:
+                - matchExpressions:
+                    - {key: node-pool, operator: In, values: [databases]}
+          podAntiAffinity:
+            requiredDuringSchedulingIgnoredDuringExecution:
+              - topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels:
+                    core.openeverest.io/instance: my-mongodb
+                    core.openeverest.io/component: engine
+                matchLabelKeys: [app.kubernetes.io/replset]
+```
+
+- **By default** the members of every replica set — each shard and the config servers — are
+  required to run on separate nodes; `mongos` routers hold no data and are not constrained.
+- **An `affinity` replaces that default** for its component, so add a pod anti-affinity like
+  the one above to keep members apart. Pods carry the `core.openeverest.io/instance` and
+  `core.openeverest.io/component` labels. All shards share one `engine` affinity;
+  `matchLabelKeys` narrows the selector to the pod's own replica set (Kubernetes 1.31+;
+  without it, members of all shards are kept apart). An empty affinity (`{}`) sets no
+  constraints.
+- **`topologySpreadConstraints`** without a `labelSelector` count the component's own pods.
+- `nodeSelector`, `tolerations` and `schedulerName` are not supported yet.
 
 ## Development
 
@@ -240,7 +369,7 @@ code generation, and the backup/restore interfaces are documented once for all p
 - **Unit tests** — `make test-unit`.
 - **Integration tests** — chainsaw suites under [test/integration/](test/integration/).
   Individual suites are also exposed as make targets (`make test-integration-core`,
-  `make test-integration-backup`, `make test-integration-monitoring-pmm`, …).
+  `make test-integration-backup`, `make test-integration-monitoring-bindings`, …).
 - **End-to-end tests** — `make test-e2e` drives the Everest UI with Playwright.
 - **CI** — [.github/workflows/ci.yaml](.github/workflows/ci.yaml) runs lint, build, unit
   tests, generated-file verification, Helm lint, and each integration suite on every pull

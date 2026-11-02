@@ -76,10 +76,6 @@ func validateComponents(c *controller.Context) error {
 		}
 	}
 
-	if err := validateMonitoring(c); err != nil {
-		return fmt.Errorf("monitoring validation failed: %w", err)
-	}
-
 	return nil
 }
 

@@ -47,7 +47,7 @@ spec:
   pmm:
     enabled: true
     serverHost: pmm-server.pmm.svc
-    image: percona/pmm-client:3.7.0
+    image: percona/pmm-client:3.9.1
     resources:
       requests:
         memory: 99604Ki

@@ -1,0 +1,11 @@
+apiVersion: core.openeverest.io/v1alpha1
+kind: Instance
+metadata:
+  name: psmdb-wrong-creds
+status:
+  phase: Failed
+  (conditions[?type == 'DataSourceReady']):
+    - status: "False"
+      reason: UserSecretMismatch
+  (conditions[?type == 'Ready']):
+    - status: "False"

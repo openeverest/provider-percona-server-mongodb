@@ -35,11 +35,6 @@ spec:
       # version: 2.9.1
       replicas: 1
 
-    # Optional: monitoring
-    # monitoring:
-    #   type: pmm
-    #   version: 2.44.1
-
 # status:
 #   phase: Ready
 #   connectionURL: mongodb://psmdb-simple:27017

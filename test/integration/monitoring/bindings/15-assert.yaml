@@ -1,0 +1,51 @@
+# The victoriametrics entry resolves to ExtensionManaged like the prometheus
+# entry it replaces.
+apiVersion: monitoring.openeverest.io/v1alpha1
+kind: MonitoringBinding
+metadata:
+  labels:
+    core.openeverest.io/instance: psmdb-bindings
+    monitoring.openeverest.io/entry: victoriametrics
+spec:
+  destinationRef:
+    name: victoriametrics-it
+  classRef:
+    name: victoriametrics-it
+  executionMode: ExtensionManaged
+status:
+  (conditions[?type == 'Accepted'].status | [0]): "True"
+---
+# Both classes require metrics: the exporter sidecar stays.
+apiVersion: psmdb.percona.com/v1
+kind: PerconaServerMongoDB
+metadata:
+  name: psmdb-bindings
+spec:
+  replsets:
+    - name: rs0
+      sidecars:
+        - name: mongodb-exporter
+          ports:
+            - name: metrics
+              containerPort: 9216
+---
+# The published endpoints are the ones the prometheus entry was scraping.
+apiVersion: core.openeverest.io/v1alpha1
+kind: Instance
+metadata:
+  name: psmdb-bindings
+status:
+  monitoring:
+    (length(destinations)): 2
+    (destinations[?name == 'victoriametrics'] | [0]):
+      mode: ExtensionManaged
+    sources:
+      metrics:
+        - component: engine
+          kind: mongodb
+          podSelector:
+            core.openeverest.io/instance: psmdb-bindings
+            core.openeverest.io/component: engine
+          port: metrics
+          path: /metrics
+          scheme: http

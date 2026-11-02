@@ -1,0 +1,33 @@
+# With its destination gone core revokes Accepted; the hold rule keeps the
+# live PMM rendering and the runtime reports it Retained.
+apiVersion: monitoring.openeverest.io/v1alpha1
+kind: MonitoringBinding
+metadata:
+  labels:
+    core.openeverest.io/instance: psmdb-bindings
+    monitoring.openeverest.io/entry: pmm
+status:
+  (conditions[?type == 'Accepted'].status | [0]): "False"
+  (conditions[?type == 'Accepted'].reason | [0]): DestinationNotFound
+  (conditions[?type == 'Configured'].status | [0]): Unknown
+  (conditions[?type == 'Configured'].reason | [0]): Retained
+---
+apiVersion: psmdb.percona.com/v1
+kind: PerconaServerMongoDB
+metadata:
+  name: psmdb-bindings
+spec:
+  pmm:
+    enabled: true
+    serverHost: pmm-it.example.com
+    image: percona/pmm-client:3.8.0
+---
+apiVersion: core.openeverest.io/v1alpha1
+kind: Instance
+metadata:
+  name: psmdb-bindings
+status:
+  monitoring:
+    (destinations[?name == 'pmm'] | [0]):
+      configured: "False"
+      reason: DestinationNotFound

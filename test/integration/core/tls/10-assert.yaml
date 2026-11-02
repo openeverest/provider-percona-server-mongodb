@@ -1,0 +1,17 @@
+apiVersion: psmdb.percona.com/v1
+kind: PerconaServerMongoDB
+metadata:
+  name: psmdb-tls
+spec:
+  tls:
+    mode: requireTLS
+    # The user's certificates are never replaced.
+    certManagementPolicy: userProvidedOnly
+  secrets:
+    ssl: my-tls
+    sslInternal: psmdb-tls-ssl-internal
+  (unsafeFlags.tls == `true`): false
+  replsets:
+    - name: rs0
+      # TLS clients need no client certificate.
+      "(contains(configuration, 'allowConnectionsWithoutCertificates: true'))": true

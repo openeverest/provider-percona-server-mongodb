@@ -21,6 +21,7 @@ import (
 	"testing"
 
 	"github.com/AlekSi/pointer"
+	psmdbv1 "github.com/percona/percona-server-mongodb-operator/pkg/apis/psmdb/v1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
@@ -818,6 +819,7 @@ func TestValidatePSMDB(t *testing.T) {
 			require.NoError(t, corev1.AddToScheme(scheme))
 			require.NoError(t, corev1alpha1.AddToScheme(scheme))
 			require.NoError(t, backupv1alpha1.AddToScheme(scheme))
+			require.NoError(t, psmdbv1.SchemeBuilder.AddToScheme(scheme))
 
 			provider := &corev1alpha1.Provider{
 				ObjectMeta: metav1.ObjectMeta{Name: "psmdb"},

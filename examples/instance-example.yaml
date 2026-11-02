@@ -85,12 +85,6 @@ spec:
       type: backup
       replicas: 1
 
-    # Monitoring (optional)
-    # monitoring:
-    #   type: pmm
-    #   parameters:
-    #     monitoringConfigName: pmm-config
-
 # status:
 #   phase: Ready
 #   connectionURL: mongodb://psmdb-cluster:27017
