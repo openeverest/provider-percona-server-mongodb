@@ -22,6 +22,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
+	commonv1alpha1 "github.com/openeverest/openeverest/v2/api/common/v1alpha1"
 	corev1alpha1 "github.com/openeverest/openeverest/v2/api/core/v1alpha1"
 	"github.com/openeverest/openeverest/v2/provider-runtime/controller"
 
@@ -48,6 +49,17 @@ func (p *PSMDBProvider) MonitoringSources(c *controller.Context) (*corev1alpha1.
 		return nil, err
 	}
 	s := &corev1alpha1.MonitoringSources{}
+	published, err := monitorCredentialPublished(c)
+	if err != nil {
+		return nil, err
+	}
+	if published {
+		s.Credentials = []corev1alpha1.MonitoringCredential{{
+			Profile:   corev1alpha1.CredentialProfileMonitor,
+			SecretRef: commonv1alpha1.SecretRef{Name: monitorSecretName(c)},
+		}}
+		s.Connections = connectionSources(c, psmdb)
+	}
 	if !hasMetricsExporter(psmdb) {
 		return s, nil
 	}

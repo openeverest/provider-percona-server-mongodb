@@ -259,6 +259,9 @@ func SyncPSMDB(c *controller.Context) error {
 	}
 	applyScheduling(c, psmdb)
 	labelPods(c, psmdb)
+	if err := renderMonitoringPodAnnotations(c, psmdb); err != nil {
+		return fmt.Errorf("render monitoring pod annotations: %w", err)
+	}
 
 	backupSpec, err := buildBackupSpec(c)
 	if err != nil {
@@ -284,6 +287,9 @@ func SyncPSMDB(c *controller.Context) error {
 
 	if err := configureMetricsExporter(c, psmdb, usersSecretName); err != nil {
 		return fmt.Errorf("configure metrics exporter: %w", err)
+	}
+	if err := syncMonitorCredential(c, usersSecretName); err != nil {
+		return fmt.Errorf("sync monitor credential: %w", err)
 	}
 
 	// Ensuring user secret MUST run before applyPMMBindings: when PMM
