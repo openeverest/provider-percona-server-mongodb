@@ -44,22 +44,10 @@ func configureReplset(name string, replicas *int32, resources *corev1.ResourceRe
 			PodDisruptionBudget: &psmdbv1.PodDisruptionBudgetSpec{
 				MaxUnavailable: &maxUnavailable,
 			},
-			Resources: corev1.ResourceRequirements{
-				Limits: corev1.ResourceList{},
-			},
+			Resources: mongodResources(resources),
 		},
-		Size: 3,
-		VolumeSpec: &psmdbv1.VolumeSpec{
-			PersistentVolumeClaim: psmdbv1.PVCSpec{
-				PersistentVolumeClaimSpec: &corev1.PersistentVolumeClaimSpec{
-					Resources: corev1.VolumeResourceRequirements{
-						Requests: corev1.ResourceList{
-							corev1.ResourceStorage: resource.MustParse("10Gi"),
-						},
-					},
-				},
-			},
-		},
+		Size:       3,
+		VolumeSpec: mongodVolume(storageSize),
 		Expose: psmdbv1.ExposeTogglable{
 			Enabled: expose,
 			Expose:  configureExpose(service),
@@ -70,36 +58,59 @@ func configureReplset(name string, replicas *int32, resources *corev1.ResourceRe
 		rsSpec.Size = *replicas
 	}
 
-	if resources != nil {
-		if resources.Limits != nil {
-			if !resources.Limits.Cpu().IsZero() {
-				rsSpec.Resources.Limits[corev1.ResourceCPU] = *resources.Limits.Cpu()
-			}
-			if !resources.Limits.Memory().IsZero() {
-				rsSpec.Resources.Limits[corev1.ResourceMemory] = *resources.Limits.Memory()
-			}
-		}
-		if resources.Requests != nil {
-			rsSpec.Resources.Requests = corev1.ResourceList{}
-			if !resources.Requests.Cpu().IsZero() {
-				rsSpec.Resources.Requests[corev1.ResourceCPU] = *resources.Requests.Cpu()
-			}
-			if !resources.Requests.Memory().IsZero() {
-				rsSpec.Resources.Requests[corev1.ResourceMemory] = *resources.Requests.Memory()
-			}
-		}
-	}
-
-	if storageSize != nil {
-		if !storageSize.Size.IsZero() {
-			rsSpec.VolumeSpec.PersistentVolumeClaim.Resources.Requests[corev1.ResourceStorage] = storageSize.Size
-		}
-		if storageSize.StorageClass != nil {
-			rsSpec.VolumeSpec.PersistentVolumeClaim.StorageClassName = storageSize.StorageClass
-		}
-	}
-
 	return rsSpec
+}
+
+// mongodResources keeps the CPU and memory of the requested resources.
+func mongodResources(resources *corev1.ResourceRequirements) corev1.ResourceRequirements {
+	out := corev1.ResourceRequirements{Limits: corev1.ResourceList{}}
+	if resources == nil {
+		return out
+	}
+	if resources.Limits != nil {
+		if !resources.Limits.Cpu().IsZero() {
+			out.Limits[corev1.ResourceCPU] = *resources.Limits.Cpu()
+		}
+		if !resources.Limits.Memory().IsZero() {
+			out.Limits[corev1.ResourceMemory] = *resources.Limits.Memory()
+		}
+	}
+	if resources.Requests != nil {
+		out.Requests = corev1.ResourceList{}
+		if !resources.Requests.Cpu().IsZero() {
+			out.Requests[corev1.ResourceCPU] = *resources.Requests.Cpu()
+		}
+		if !resources.Requests.Memory().IsZero() {
+			out.Requests[corev1.ResourceMemory] = *resources.Requests.Memory()
+		}
+	}
+	return out
+}
+
+// mongodVolume builds the data volume of mongod pods, 10Gi on the default
+// storage class unless the storage says otherwise.
+func mongodVolume(storage *corev1alpha1.Storage) *psmdbv1.VolumeSpec {
+	volume := &psmdbv1.VolumeSpec{
+		PersistentVolumeClaim: psmdbv1.PVCSpec{
+			PersistentVolumeClaimSpec: &corev1.PersistentVolumeClaimSpec{
+				Resources: corev1.VolumeResourceRequirements{
+					Requests: corev1.ResourceList{
+						corev1.ResourceStorage: resource.MustParse("10Gi"),
+					},
+				},
+			},
+		},
+	}
+	if storage == nil {
+		return volume
+	}
+	if !storage.Size.IsZero() {
+		volume.PersistentVolumeClaim.Resources.Requests[corev1.ResourceStorage] = storage.Size
+	}
+	if storage.StorageClass != nil {
+		volume.PersistentVolumeClaim.StorageClassName = storage.StorageClass
+	}
+	return volume
 }
 
 // configureExpose configures the Expose configuration from a Service spec.
@@ -148,9 +159,11 @@ func configureReplsets(c *controller.Context) ([]*psmdbv1.ReplsetSpec, error) {
 
 	// TODO: implement disabling
 	if spec.Topology == nil || spec.Topology.Type != "sharded" {
-		return []*psmdbv1.ReplsetSpec{
-			configureReplset(rsName(0), engine.Replicas, engine.Resources, engine.Storage, true, config, engine.Service),
-		}, nil
+		rs := configureReplset(rsName(0), engine.Replicas, engine.Resources, engine.Storage, true, config, engine.Service)
+		if err := configureHidden(c, rs); err != nil {
+			return nil, err
+		}
+		return []*psmdbv1.ReplsetSpec{rs}, nil
 	}
 
 	numShards := 2 // default

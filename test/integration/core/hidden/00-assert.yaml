@@ -1,0 +1,17 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: provider-percona-server-mongodb-operator
+  namespace: provider-system
+spec:
+  replicas: 0
+# ---
+# apiVersion: everest.percona.com/v1alpha1
+# kind: DatabaseEngine
+# metadata:
+#   name: percona-server-mongodb-operator
+# spec:
+#   type: psmdb
+# status:
+#   status: installed
+

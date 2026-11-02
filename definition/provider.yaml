@@ -19,6 +19,10 @@ components:
   engine:
     type: mongod
     parametersSchema: MongodParameters
+  # Hidden replica set members. They run the engine's image and mongod
+  # configuration, so they take no version, image or parameters of their own.
+  hidden:
+    type: mongod
   configServer:
     type: mongod
     parametersSchema: MongodParameters

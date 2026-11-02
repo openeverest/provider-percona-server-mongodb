@@ -70,6 +70,7 @@ provider itself is covered under [Installation](#installation).
 | Monitoring | ✅ | PMM, and any metrics backend through mongodb_exporter, via `spec.monitoring.destinations` — see [Monitoring](#monitoring) |
 | TLS | ✅ | on by default; generated, cert-manager or your own certificates — see [TLS](#tls) |
 | Pod scheduling | ✅ | affinity and topology spread per component — see [Pod scheduling](#pod-scheduling) |
+| Hidden members | ✅ | `replicaSet` topology: `spec.components.hidden` — see [Hidden members](#hidden-members) |
 
 Stateful workloads additionally report:
 
@@ -160,7 +161,8 @@ Credentials are in the secret named by `.status.connection.credentialsSecretRef`
 | `sharded` | | Sharded cluster: `engine` shards, `configServer`, and `mongos` routers (`proxy`); shard count via the topology's `numShards` parameter |
 <!-- END GENERATED: topologies -->
 
-The `backupAgent` component is optional in both topologies.
+The `backupAgent` component is optional in both topologies, and the `hidden` component
+(see [Hidden members](#hidden-members)) in `replicaSet`.
 
 ## Versions
 
@@ -315,7 +317,8 @@ spec:
 ```
 
 - **By default** the members of every replica set — each shard and the config servers — are
-  required to run on separate nodes; `mongos` routers hold no data and are not constrained.
+  required to run on separate nodes, and so are hidden members among themselves; `mongos`
+  routers hold no data and are not constrained.
 - **An `affinity` replaces that default** for its component, so add a pod anti-affinity like
   the one above to keep members apart. Pods carry the `core.openeverest.io/instance` and
   `core.openeverest.io/component` labels. All shards share one `engine` affinity;
@@ -324,6 +327,46 @@ spec:
   constraints.
 - **`topologySpreadConstraints`** without a `labelSelector` count the component's own pods.
 - `nodeSelector`, `tolerations` and `schedulerName` are not supported yet.
+
+### Hidden members
+
+Hidden members hold a full copy of the data and vote in elections, but applications never
+reach them and they never become primary. Use them to run backups, analytics or reporting
+without loading the members that serve the application. Available in the `replicaSet`
+topology; the UI has a **Hidden nodes** switch under **Resources**.
+
+```yaml
+spec:
+  components:
+    engine:
+      replicas: 3
+      # ...
+    hidden:
+      replicas: 2
+      resources:          # optional, defaults to the engine's
+        limits: {cpu: "2", memory: 8Gi}
+      storage:            # optional, defaults to the engine's
+        size: 100Gi
+        storageClass: standard
+      schedulingPolicy:   # optional, e.g. place them on an analytics node pool
+        affinity: {}
+```
+
+- **Voting:** hidden members vote, so `replicas` must be even (the engine's is odd) and the
+  engine and hidden replicas together at most 7, MongoDB's limit on voting members.
+- **Turning them off:** remove the component or its `replicas`. The provider deletes the
+  hidden members' volumes once their pods are gone — also those left by scaling down — so
+  hidden members added later start from a fresh copy. Hidden members turned on again before
+  that start once the old volumes are deleted.
+- **Storage class:** can't change while hidden members run (their StatefulSet's volumes are
+  immutable); the provider keeps the current class. Turn them off and on again to change it.
+- **Configuration:** they run the engine's image and `mongod` configuration. Resources and
+  storage fall back to the engine's field by field.
+- **Monitoring:** they carry the same metrics exporter, published as their own `hidden`
+  metrics endpoint.
+- **Clients:** the connection details list only the data-bearing members.
+- **Backups:** Percona Backup for MongoDB takes backups from a hidden member when one is
+  available (they get backup priority 2.0; the others the default 1.0, the primary included).
 
 ## Development
 

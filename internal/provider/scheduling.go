@@ -30,6 +30,9 @@ func applyScheduling(c *controller.Context, psmdb *psmdbv1.PerconaServerMongoDB)
 	components := c.Instance().Spec.Components
 	for _, rs := range psmdb.Spec.Replsets {
 		scheduleMultiAZ(&rs.MultiAZ, components[common.ComponentEngine].SchedulingPolicy, naming.MongodLabels(psmdb, rs), corev1.LabelHostname)
+		if rs.Hidden.Enabled {
+			scheduleMultiAZ(&rs.Hidden.MultiAZ, components[common.ComponentHidden].SchedulingPolicy, naming.HiddenLabels(psmdb, rs), corev1.LabelHostname)
+		}
 	}
 	if !psmdb.Spec.Sharding.Enabled {
 		return
@@ -59,6 +62,9 @@ func scheduleMultiAZ(az *psmdbv1.MultiAZ, policy *commonv1alpha1.SchedulingPolic
 func labelPods(c *controller.Context, psmdb *psmdbv1.PerconaServerMongoDB) {
 	for _, rs := range psmdb.Spec.Replsets {
 		rs.Labels = c.PodLabels(common.ComponentEngine)
+		if rs.Hidden.Enabled {
+			rs.Hidden.Labels = c.PodLabels(common.ComponentHidden)
+		}
 	}
 	if !psmdb.Spec.Sharding.Enabled {
 		return

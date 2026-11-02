@@ -1,0 +1,105 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: core-hidden
+spec:
+  description: |
+    Hidden members of a replica-set Instance: rendered with their own resources
+    and storage, inheriting the engine's when unset, preferred for backups,
+    removed when turned off, and rejected when they would break the voting
+    majority.
+  catch:
+    - script:
+        content: kubectl -n $NAMESPACE get instance,psmdb -o yaml
+    - podLogs:
+        namespace: provider-system
+        selector: app.kubernetes.io/name=provider-percona-server-mongodb
+        tail: 100
+  steps:
+    - name: provider-operator-installed
+      try:
+        - assert:
+            file: 00-assert.yaml
+
+    - name: create-with-hidden
+      try:
+        - apply:
+            file: 10-create-cluster.yaml
+        - assert:
+            file: 10-assert.yaml
+
+    - name: resize-hidden
+      try:
+        - patch:
+            file: 20-resize-hidden.yaml
+        - assert:
+            file: 20-assert.yaml
+
+    # Hidden members with only a count take the engine's resources and storage.
+    - name: hidden-inherit-engine
+      try:
+        - patch:
+            resource:
+              apiVersion: core.openeverest.io/v1alpha1
+              kind: Instance
+              metadata:
+                name: test-psmdb-hidden
+              spec:
+                components:
+                  hidden:
+                    replicas: 2
+                    resources: null
+                    storage: null
+        - assert:
+            file: 30-assert.yaml
+
+    - name: turn-hidden-off
+      try:
+        - patch:
+            resource:
+              apiVersion: core.openeverest.io/v1alpha1
+              kind: Instance
+              metadata:
+                name: test-psmdb-hidden
+              spec:
+                components:
+                  hidden: null
+        - assert:
+            file: 40-assert.yaml
+
+    - name: odd-hidden-rejected
+      try:
+        - patch:
+            resource:
+              apiVersion: core.openeverest.io/v1alpha1
+              kind: Instance
+              metadata:
+                name: test-psmdb-hidden
+              spec:
+                components:
+                  hidden:
+                    type: mongod
+                    replicas: 1
+        - assert:
+            file: 50-assert.yaml
+
+    - name: delete-cluster
+      try:
+        - script:
+            content: |
+              kubectl -n $NAMESPACE delete in/test-psmdb-hidden psmdb/test-psmdb-hidden --wait=false && sleep 5
+              kubectl -n $NAMESPACE delete secret/everest-secrets-test-psmdb-hidden --ignore-not-found
+              # The PSMDB operator is scaled to 0, so nothing processes the psmdb finalizers.
+              kubectl -n $NAMESPACE patch psmdb/test-psmdb-hidden -p '{"metadata":{"finalizers":null}}' --type merge
+        - wait:
+            apiVersion: core.openeverest.io/v1alpha1
+            kind: Instance
+            name: test-psmdb-hidden
+            for:
+              deletion: {}
+        - wait:
+            apiVersion: psmdb.percona.com/v1
+            kind: PerconaServerMongoDB
+            name: test-psmdb-hidden
+            for:
+              deletion: {}

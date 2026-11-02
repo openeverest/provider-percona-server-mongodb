@@ -381,6 +381,56 @@ func TestMonitoringSources(t *testing.T) {
 		assert.Equal(t, []string{common.ComponentEngine}, endpointComponents(s))
 	})
 
+	t.Run("hidden members get their own endpoint once one of them is ready", func(t *testing.T) {
+		t.Parallel()
+
+		withHidden := func() *psmdbv1.PerconaServerMongoDB {
+			psmdb := livePSMDB(psmdbv1.AppStateReady, false, true)
+			psmdb.Spec.Replsets[0].Hidden = psmdbv1.HiddenSpec{Enabled: true, Size: 2}
+			return psmdb
+		}
+		hiddenPod := func(ready corev1.ConditionStatus) *corev1.Pod {
+			return &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      bindingTestInstance + "-rs0-hidden-0",
+					Namespace: bindingTestNS,
+					Labels: map[string]string{
+						controller.InstanceLabel:  bindingTestInstance,
+						controller.ComponentLabel: common.ComponentHidden,
+					},
+				},
+				Status: corev1.PodStatus{Conditions: []corev1.PodCondition{{Type: corev1.PodReady, Status: ready}}},
+			}
+		}
+		for name, tc := range map[string]struct {
+			objs []client.Object
+			want []string
+		}{
+			"ready hidden member": {
+				[]client.Object{withHidden(), hiddenPod(corev1.ConditionTrue)},
+				[]string{common.ComponentEngine, common.ComponentHidden},
+			},
+			"no hidden member ready yet": {
+				[]client.Object{withHidden(), hiddenPod(corev1.ConditionFalse)},
+				[]string{common.ComponentEngine},
+			},
+			"hidden members turned off": {
+				[]client.Object{livePSMDB(psmdbv1.AppStateReady, false, true), hiddenPod(corev1.ConditionTrue)},
+				[]string{common.ComponentEngine},
+			},
+		} {
+			t.Run(name, func(t *testing.T) {
+				t.Parallel()
+
+				c, _ := bindingContext(t, nil, tc.objs...)
+
+				s, err := p.MonitoringSources(c)
+				require.NoError(t, err)
+				assert.Equal(t, tc.want, endpointComponents(s))
+			})
+		}
+	})
+
 	t.Run("nothing is published without the exporter, before a pod is ready or before the CR exists", func(t *testing.T) {
 		t.Parallel()
 

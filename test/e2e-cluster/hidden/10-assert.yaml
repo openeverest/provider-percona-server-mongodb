@@ -1,0 +1,17 @@
+apiVersion: core.openeverest.io/v1alpha1
+kind: Instance
+metadata:
+  name: psmdb-hidden
+status:
+  phase: Ready
+  (components[?name == 'engine'] | [0].readyReplicas): 3
+  (components[?name == 'hidden'] | [0].readyReplicas): 2
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mongod-data-psmdb-hidden-rs0-hidden-1
+spec:
+  resources:
+    requests:
+      storage: 3Gi

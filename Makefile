@@ -112,6 +112,10 @@ test-integration-core-sharded: ## Run core sharded integration tests.
 test-integration-core-tls: ## Run core TLS integration tests.
 	. ./test/vars.sh && chainsaw test --config ./test/integration/.chainsaw.yaml ./test/integration/core/tls
 
+.PHONY: test-integration-core-hidden
+test-integration-core-hidden: ## Run core hidden members integration tests.
+	. ./test/vars.sh && chainsaw test --config ./test/integration/.chainsaw.yaml ./test/integration/core/hidden
+
 .PHONY: test-integration-core-maintenance
 test-integration-core-maintenance: ## Run maintenance (crVersion convergence) integration tests.
 	. ./test/vars.sh && chainsaw test --config ./test/integration/.chainsaw.yaml ./test/integration/core/maintenance
@@ -139,6 +143,10 @@ test-e2e-cluster-datasource-backup: ## Run backup datasource (seed from Backup C
 .PHONY: test-e2e-cluster-backup-import
 test-e2e-cluster-backup-import: ## Run backup import test.
 	. ./test/vars.sh && chainsaw test --config ./test/e2e-cluster/.chainsaw.yaml ./test/e2e-cluster/backup/import
+
+.PHONY: test-e2e-cluster-hidden
+test-e2e-cluster-hidden: ## Run hidden members e2e-cluster test (requires a running PSMDB operator).
+	. ./test/vars.sh && chainsaw test --config ./test/e2e-cluster/.chainsaw.yaml ./test/e2e-cluster/hidden
 
 .PHONY: test-e2e
 test-e2e: ## Run Playwright E2E tests against a running Everest UI (http://localhost:8080).

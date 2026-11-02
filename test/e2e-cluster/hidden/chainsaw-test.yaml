@@ -1,0 +1,102 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: hidden-members
+spec:
+  description: |
+    Hidden members on a running replica set: they join as hidden, voting,
+    never-primary members that clients are not pointed at, and turning them
+    off removes them from the replica set together with their volumes.
+  catch:
+    - script:
+        content: kubectl -n $NAMESPACE get instance,psmdb,pods,pvc -o wide
+    - podLogs:
+        namespace: provider-system
+        selector: app.kubernetes.io/name=provider-percona-server-mongodb
+        tail: 100
+  steps:
+    - name: provider-operator-installed
+      try:
+        - assert:
+            file: 00-assert.yaml
+
+    - name: create-with-hidden
+      try:
+        - apply:
+            file: 10-create-instance.yaml
+        - assert:
+            timeout: 10m
+            file: 10-assert.yaml
+
+    - name: hidden-members-in-replica-set
+      try:
+        - script:
+            timeout: 2m
+            content: |
+              set -e
+              secret=everest-secrets-psmdb-hidden
+              user=$(kubectl -n $NAMESPACE get secret $secret -o jsonpath='{.data.MONGODB_CLUSTER_ADMIN_USER}' | base64 -d)
+              pass=$(kubectl -n $NAMESPACE get secret $secret -o jsonpath='{.data.MONGODB_CLUSTER_ADMIN_PASSWORD}' | base64 -d)
+              mongo() {
+                kubectl -n $NAMESPACE exec psmdb-hidden-rs0-0 -c mongod -- \
+                  mongosh --quiet "mongodb://$user:$pass@localhost:27017/admin" --eval "$1"
+              }
+
+              # Two hidden members: voting, never primary.
+              hidden=$(mongo 'rs.conf().members.filter(m => m.hidden && m.priority === 0 && m.votes === 1).length')
+              echo "hidden voting members: $hidden"
+              test "$hidden" = 2
+
+              # Clients discover only the three data-bearing members.
+              hosts=$(mongo 'db.hello().hosts.length')
+              echo "hosts in hello: $hosts"
+              test "$hosts" = 3
+
+              # The connection details leave the hidden members out.
+              conn=$(kubectl -n $NAMESPACE get instance psmdb-hidden -o jsonpath='{.status.connectionSecretRef.name}')
+              host=$(kubectl -n $NAMESPACE get secret $conn -o jsonpath='{.data.host}' | base64 -d)
+              echo "connection host: $host"
+              case "$host" in *-rs0-hidden-*) exit 1;; esac
+
+    - name: turn-hidden-off
+      try:
+        - patch:
+            resource:
+              apiVersion: core.openeverest.io/v1alpha1
+              kind: Instance
+              metadata:
+                name: psmdb-hidden
+              spec:
+                components:
+                  hidden: null
+        - assert:
+            timeout: 5m
+            file: 30-assert.yaml
+        - script:
+            timeout: 5m
+            content: |
+              set -e
+              secret=everest-secrets-psmdb-hidden
+              user=$(kubectl -n $NAMESPACE get secret $secret -o jsonpath='{.data.MONGODB_CLUSTER_ADMIN_USER}' | base64 -d)
+              pass=$(kubectl -n $NAMESPACE get secret $secret -o jsonpath='{.data.MONGODB_CLUSTER_ADMIN_PASSWORD}' | base64 -d)
+
+              # The hidden pods and their volumes go away.
+              for i in $(seq 1 60); do
+                pods=$(kubectl -n $NAMESPACE get pods -l app.kubernetes.io/component=hidden --no-headers 2>/dev/null | wc -l)
+                pvcs=$(kubectl -n $NAMESPACE get pvc -l app.kubernetes.io/component=hidden --no-headers 2>/dev/null | wc -l)
+                [ "$pods" -eq 0 ] && [ "$pvcs" -eq 0 ] && break
+                sleep 5
+              done
+              echo "hidden pods: $pods, hidden volumes: $pvcs"
+              test "$pods" -eq 0
+              test "$pvcs" -eq 0
+
+              # Only the three data-bearing members remain in the replica set.
+              for i in $(seq 1 30); do
+                members=$(kubectl -n $NAMESPACE exec psmdb-hidden-rs0-0 -c mongod -- \
+                  mongosh --quiet "mongodb://$user:$pass@localhost:27017/admin" --eval 'rs.conf().members.length')
+                [ "$members" = 3 ] && break
+                sleep 5
+              done
+              echo "replica set members: $members"
+              test "$members" = 3

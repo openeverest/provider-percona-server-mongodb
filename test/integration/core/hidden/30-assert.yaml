@@ -1,0 +1,19 @@
+apiVersion: psmdb.percona.com/v1
+kind: PerconaServerMongoDB
+metadata:
+  name: test-psmdb-hidden
+spec:
+  replsets:
+    - name: rs0
+      hidden:
+        enabled: true
+        size: 2
+        resources:
+          limits:
+            cpu: "1"
+            memory: 4Gi
+        volumeSpec:
+          persistentVolumeClaim:
+            resources:
+              requests:
+                storage: 25Gi

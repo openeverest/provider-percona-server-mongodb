@@ -265,6 +265,7 @@ func SyncPSMDB(c *controller.Context) error {
 		return err
 	}
 	psmdb.Spec.Backup = backupSpec
+	preferHiddenForBackups(psmdb)
 
 	usersSecretName := "everest-secrets-" + c.Name()
 
@@ -285,6 +286,7 @@ func SyncPSMDB(c *controller.Context) error {
 	if err := configureMetricsExporter(c, psmdb, usersSecretName); err != nil {
 		return fmt.Errorf("configure metrics exporter: %w", err)
 	}
+	mirrorReplsetOntoHidden(psmdb)
 
 	// Ensuring user secret MUST run before applyPMMBindings: when PMM
 	// is enabled, it creates or updates the user secret to hold
@@ -330,6 +332,11 @@ func SyncPSMDB(c *controller.Context) error {
 		return err
 	}
 
+	if err := deleteUnusedHiddenVolumes(c); err != nil {
+		return err
+	}
+	hiddenPending := hiddenStartPending(c, psmdb)
+
 	// Initial seeding from .spec.dataSource: gated on the engine being Ready
 	// AND PSMDB having published a BackupVersion. Issuing the Restore before
 	// the operator has selected a backup-agent image causes the restore to
@@ -371,6 +378,9 @@ func SyncPSMDB(c *controller.Context) error {
 		}
 	}
 
+	if hiddenPending {
+		return controller.WaitFor("hidden members start once the volumes of earlier ones are deleted")
+	}
 	return nil
 }
 
@@ -483,7 +493,10 @@ func buildConnectionDetails(c *controller.Context, psmdb *psmdbv1.PerconaServerM
 		return controller.ConnectionDetails{}, fmt.Errorf("failed to get credentials secret %s: %w", secretName, err)
 	}
 
-	host := psmdb.Status.Host
+	host, err := withoutHiddenHosts(c, psmdb, psmdb.Status.Host)
+	if err != nil {
+		return controller.ConnectionDetails{}, err
+	}
 	port := "27017"
 
 	username := string(secret.Data[psmdbv1.EnvMongoDBDatabaseAdminUser])

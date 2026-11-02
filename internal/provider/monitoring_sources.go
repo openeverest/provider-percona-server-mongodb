@@ -39,9 +39,10 @@ func (p *PSMDBProvider) MonitoringIntegrations() []string {
 
 // MonitoringSources implements controller.MonitoringSourcesProvider. Every
 // mongod and mongos pod carries a mongodb_exporter sidecar while a bound class
-// requires metrics, so one endpoint per component is published: engine, and
-// for sharded clusters configServer and proxy, each selected by the component
-// labels labelPods sets, once that component has a ready pod.
+// requires metrics, so one endpoint per component is published: engine, hidden
+// members when the replica set has them, and for sharded clusters configServer
+// and proxy, each selected by the component labels labelPods sets, once that
+// component has a ready pod.
 func (p *PSMDBProvider) MonitoringSources(c *controller.Context) (*corev1alpha1.MonitoringSources, error) {
 	psmdb, err := liveEngine(c)
 	if err != nil {
@@ -51,7 +52,15 @@ func (p *PSMDBProvider) MonitoringSources(c *controller.Context) (*corev1alpha1.
 	if !hasMetricsExporter(psmdb) {
 		return s, nil
 	}
-	for _, component := range servingComponents(psmdb) {
+	components := servingComponents(psmdb)
+	hiddenServing, err := hiddenMembersServing(c, psmdb)
+	if err != nil {
+		return nil, err
+	}
+	if hiddenServing {
+		components = append(components, common.ComponentHidden)
+	}
+	for _, component := range components {
 		s.Metrics = append(s.Metrics, corev1alpha1.MetricsEndpoint{
 			Component: component,
 			Kind:      "mongodb",
