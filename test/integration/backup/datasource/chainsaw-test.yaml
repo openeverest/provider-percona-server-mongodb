@@ -40,10 +40,13 @@ spec:
       try:
         - apply:
             file: 11-cluster-ready.yaml
+        # Like the operator, report the latest generation as observed: the
+        # provider requests backups only after the cluster has rolled out.
         - script:
             content: |
+              generation=$(kubectl get psmdb/src-psmdb-cluster -n $NAMESPACE -o jsonpath='{.metadata.generation}')
               kubectl patch psmdb/src-psmdb-cluster --subresource status -n $NAMESPACE \
-                -p '{"status":{"state":"ready","size":3,"ready":3,"host":"src-psmdb-cluster-rs0.default.svc.cluster.local","backupVersion":"2.9.0"}}' --type=merge
+                -p "{\"status\":{\"state\":\"ready\",\"observedGeneration\":${generation},\"size\":3,\"ready\":3,\"host\":\"src-psmdb-cluster-rs0.default.svc.cluster.local\",\"backupVersion\":\"2.9.0\"}}" --type=merge
         - assert:
             file: 11-assert.yaml
 
