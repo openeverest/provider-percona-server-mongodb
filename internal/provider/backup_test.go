@@ -22,11 +22,13 @@ import (
 	psmdbv1 "github.com/percona/percona-server-mongodb-operator/pkg/apis/psmdb/v1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
+	backupv1alpha1 "github.com/openeverest/openeverest/v2/api/backup/v1alpha1"
 	commonv1alpha1 "github.com/openeverest/openeverest/v2/api/common/v1alpha1"
 	corev1alpha1 "github.com/openeverest/openeverest/v2/api/core/v1alpha1"
 	"github.com/openeverest/openeverest/v2/provider-runtime/controller"
@@ -374,4 +376,85 @@ func assertTimeEqual(t *testing.T, want, got *metav1.Time, msgAndArgs ...any) {
 	}
 	require.NotNil(t, got, msgAndArgs...)
 	assert.True(t, want.Equal(got), msgAndArgs...)
+}
+
+func TestSyncBackupWaitsForClusterRollout(t *testing.T) {
+	const ns, cluster, storage = "db", "my-mongo", "s3"
+
+	psmdbCluster := func(generation, observed int64, state psmdbv1.AppState) *psmdbv1.PerconaServerMongoDB {
+		return &psmdbv1.PerconaServerMongoDB{
+			ObjectMeta: metav1.ObjectMeta{Name: cluster, Namespace: ns, Generation: generation},
+			Spec: psmdbv1.PerconaServerMongoDBSpec{Backup: psmdbv1.BackupSpec{
+				Enabled:  true,
+				Storages: map[string]psmdbv1.BackupStorageSpec{storage: {Type: psmdbv1.BackupStorageS3}},
+			}},
+			Status: psmdbv1.PerconaServerMongoDBStatus{ObservedGeneration: observed, State: state},
+		}
+	}
+	runningOperatorBackup := &psmdbv1.PerconaServerMongoDBBackup{
+		ObjectMeta: metav1.ObjectMeta{Name: "b1", Namespace: ns},
+		Spec:       psmdbv1.PerconaServerMongoDBBackupSpec{ClusterName: cluster, StorageName: storage},
+		Status:     psmdbv1.PerconaServerMongoDBBackupStatus{State: psmdbv1.BackupStateRunning},
+	}
+
+	tests := []struct {
+		name          string
+		cluster       *psmdbv1.PerconaServerMongoDB
+		existing      []client.Object
+		wantState     backupv1alpha1.BackupState
+		wantRequested bool
+	}{
+		{
+			name:      "backups just enabled: operator has not observed the change",
+			cluster:   psmdbCluster(3, 2, psmdbv1.AppStateReady),
+			wantState: backupv1alpha1.BackupStatePending,
+		},
+		{
+			name:      "backup agent rollout pending (SmartUpdate)",
+			cluster:   psmdbCluster(3, 3, psmdbv1.AppStateInit),
+			wantState: backupv1alpha1.BackupStatePending,
+		},
+		{
+			name:          "rolled out and ready",
+			cluster:       psmdbCluster(3, 3, psmdbv1.AppStateReady),
+			wantState:     backupv1alpha1.BackupStatePending,
+			wantRequested: true,
+		},
+		{
+			name:          "already requested backup keeps reporting while the cluster is busy",
+			cluster:       psmdbCluster(4, 4, psmdbv1.AppStateInit),
+			existing:      []client.Object{runningOperatorBackup},
+			wantState:     backupv1alpha1.BackupStateRunning,
+			wantRequested: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			scheme := runtime.NewScheme()
+			require.NoError(t, corev1alpha1.AddToScheme(scheme))
+			require.NoError(t, backupv1alpha1.AddToScheme(scheme))
+			require.NoError(t, psmdbv1.SchemeBuilder.AddToScheme(scheme))
+
+			instance := &corev1alpha1.Instance{ObjectMeta: metav1.ObjectMeta{Name: cluster, Namespace: ns}}
+			backup := &backupv1alpha1.Backup{
+				ObjectMeta: metav1.ObjectMeta{Name: "b1", Namespace: ns},
+				Spec:       backupv1alpha1.BackupSpec{StorageRef: commonv1alpha1.ObjectRef{Name: storage}},
+			}
+			objects := append([]client.Object{instance, backup, tc.cluster}, tc.existing...)
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(objects...).Build()
+			c := controller.NewContext(context.Background(), fakeClient, instance, "percona-server-mongodb")
+
+			got, err := (&PSMDBProvider{}).SyncBackup(c, backup)
+			require.NoError(t, err)
+			assert.Equal(t, tc.wantState, got.State)
+
+			err = fakeClient.Get(context.Background(), client.ObjectKey{Namespace: ns, Name: "b1"}, &psmdbv1.PerconaServerMongoDBBackup{})
+			if tc.wantRequested {
+				require.NoError(t, err)
+			} else {
+				assert.True(t, apierrors.IsNotFound(err), "operator backup must not be requested yet, got %v", err)
+			}
+		})
+	}
 }
