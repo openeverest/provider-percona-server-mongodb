@@ -27,9 +27,6 @@ spec:
       replicas: 3
       parameters:
         configuration: |
-          net:
-            tls:
-              allowConnectionsWithoutCertificates: true
           systemLog:
             verbosity: 1
     configServer:
