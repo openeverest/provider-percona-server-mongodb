@@ -813,6 +813,18 @@ spec:
                         int: true
                         min: 1
                         required: true
+                    routersConfiguration:
+                      fieldParams:
+                        label: Custom router configuration
+                        maxRows: 8
+                        minRows: 3
+                        multiline: true
+                        placeholder: |
+                          # mongos configuration snippet
+                          systemLog:
+                            verbosity: 1
+                      path: spec.components.proxy.parameters.configuration
+                      uiType: text
                     routersResources:
                       components:
                         cpu:
@@ -845,6 +857,7 @@ spec:
                   componentsOrder:
                     - numberOfRouters
                     - routersResources
+                    - routersConfiguration
                   uiType: group
               componentsOrder:
                 - routersFields

@@ -363,9 +363,22 @@ ui:
                   componentsOrder:
                     - cpu
                     - memory
+                routersConfiguration:
+                  uiType: text
+                  path: spec.components.proxy.parameters.configuration
+                  fieldParams:
+                    label: "Custom router configuration"
+                    placeholder: |2
+                      # mongos configuration snippet
+                      systemLog:
+                        verbosity: 1
+                    multiline: true
+                    minRows: 3
+                    maxRows: 8
               componentsOrder:
                 - numberOfRouters
                 - routersResources
+                - routersConfiguration
           componentsOrder:
             - routersFields
       componentsOrder:

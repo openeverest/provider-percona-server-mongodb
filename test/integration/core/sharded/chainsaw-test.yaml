@@ -6,7 +6,7 @@ metadata:
 spec:
   description: |
     Lifecycle of a sharded Instance: create, add a shard, affinity and expose
-    updates, and deletion.
+    updates, apply a custom mongos (proxy) configuration, and deletion.
   catch:
     - script:
         content: kubectl -n $NAMESPACE get instance,psmdb -o yaml
@@ -82,6 +82,13 @@ spec:
             file: 24-update-cluster-node-port.yaml
         - assert:
             file: 24-assert.yaml
+
+    - name: update-custom-proxy-config
+      try:
+        - apply:
+            file: 25-update-cluster-proxy-config.yaml
+        - assert:
+            file: 25-assert.yaml
 
     - name: delete-cluster
       try:
