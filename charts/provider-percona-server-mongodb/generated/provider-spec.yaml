@@ -54,6 +54,8 @@ spec:
               type: string
           type: object
       type: mongod
+    hidden:
+      type: mongod
     proxy:
       parametersSchema:
         openAPIV3Schema:
@@ -291,6 +293,20 @@ spec:
                 storage: {}
               required:
                 - storage
+        hidden:
+          optional: true
+          supportedFields:
+            openAPIV3Schema:
+              properties:
+                replicas:
+                  minimum: 2
+                  multipleOf: 2
+                resources: {}
+                schedulingPolicy:
+                  properties:
+                    affinity: {}
+                    topologySpreadConstraints: {}
+                storage: {}
     sharded:
       components:
         backupAgent:
@@ -437,6 +453,93 @@ spec:
           label: Database
         resources:
           components:
+            hiddenNodes:
+              components:
+                numberOfHiddenNodes:
+                  fieldParams:
+                    defaultValue: 2
+                    label: Number of hidden nodes
+                    step: 2
+                  path: spec.components.hidden.replicas
+                  uiType: number
+                  validation:
+                    celExpressions:
+                      - celExpr: spec.components.hidden.replicas % 2 == 0
+                        message: Hidden nodes vote in elections, so add them in pairs to keep an odd number of voters
+                      - celExpr: spec.components.engine.replicas + spec.components.hidden.replicas <= 7
+                        message: Nodes and hidden nodes together can't exceed 7, the maximum number of voting members
+                    int: true
+                    min: 2
+                    required: true
+                resources:
+                  components:
+                    cpu:
+                      fieldParams:
+                        defaultValue: 1
+                        label: Hidden CPU
+                        step: 1
+                      path: spec.components.hidden.resources.limits.cpu
+                      uiType: number
+                      validation:
+                        min: 0.6
+                        required: true
+                    disk:
+                      fieldParams:
+                        badge: Gi
+                        badgeToApi: true
+                        defaultValue: 25
+                        label: Hidden disk
+                      path: spec.components.hidden.storage.size
+                      uiType: number
+                      validation:
+                        int: true
+                        min: 1
+                        modes:
+                          edit:
+                            celExpressions:
+                              - celExpr: '!has(original.spec.components.hidden.storage.size) || spec.components.hidden.storage.size >= original.spec.components.hidden.storage.size'
+                                message: Disk size cannot be decreased
+                        required: true
+                    memory:
+                      fieldParams:
+                        badge: Gi
+                        badgeToApi: true
+                        defaultValue: 4
+                        label: Hidden memory
+                        step: 0.1
+                      path: spec.components.hidden.resources.limits.memory
+                      uiType: number
+                      validation:
+                        min: 0.512
+                        required: true
+                  componentsOrder:
+                    - cpu
+                    - memory
+                    - disk
+                  groupType: line
+                  uiType: group
+                storageClass:
+                  dataSource:
+                    provider: storageClasses
+                  fieldParams:
+                    label: Hidden storage class
+                  path: spec.components.hidden.storage.storageClass
+                  uiType: select
+                  validation:
+                    modes:
+                      edit:
+                        celExpressions:
+                          - celExpr: '!has(original.spec.components.hidden.storage.storageClass) || spec.components.hidden.storage.storageClass == original.spec.components.hidden.storage.storageClass'
+                            message: The storage class of running hidden nodes can't be changed. Turn hidden nodes off and save first.
+                    required: true
+              componentsOrder:
+                - numberOfHiddenNodes
+                - resources
+                - storageClass
+              description: Extra copies of your data that applications never read from. Use them for backups, analytics or reporting without loading the nodes that serve your application. They vote in elections but never become primary.
+              groupType: toggleable
+              label: Hidden nodes
+              uiType: group
             nodes:
               components:
                 numberOfnodes:
@@ -498,6 +601,10 @@ spec:
                       validation:
                         min: 0.512
                         required: true
+                  componentsOrder:
+                    - cpu
+                    - memory
+                    - disk
                   groupType: line
                   uiType: group
               componentsOrder:
@@ -519,6 +626,7 @@ spec:
           componentsOrder:
             - nodes
             - storageClass
+            - hiddenNodes
           description: Configure the resources your new database will have access to.
           label: Resources
         tls:

@@ -20,19 +20,31 @@ import (
 	"github.com/openeverest/openeverest/v2/provider-runtime/conformance"
 )
 
+// hiddenNeedsReplicas covers the hidden members' fields: the harness sets one
+// field at a time, and they apply only once hidden replicas are set
+// (TestConfigureHidden covers them).
+const hiddenNeedsReplicas = "applies only with spec.components.hidden.replicas set"
+
+var unverifiable = map[string]string{
+	// The harness sets one field at a time; the kind takes effect only
+	// together with issuer.name (TestConfigureTLS covers it).
+	"spec.parameters.tls.issuer.kind":                "applies only with issuer.name set",
+	"spec.components.hidden.resources.limits.cpu":    hiddenNeedsReplicas,
+	"spec.components.hidden.resources.limits.memory": hiddenNeedsReplicas,
+	"spec.components.hidden.storage.size":            hiddenNeedsReplicas,
+	"spec.components.hidden.storage.storageClass":    hiddenNeedsReplicas,
+}
+
 func TestUISchemaIsReconciled(t *testing.T) {
 	conformance.UISchemaIsReconciled(t, conformance.Config{
-		Provider: NewPSMDBProviderInterface(),
-		Unverifiable: map[string]string{
-			// The harness sets one field at a time; the kind takes effect only
-			// together with issuer.name (TestConfigureTLS covers it).
-			"spec.parameters.tls.issuer.kind": "applies only with issuer.name set",
-		},
+		Provider:     NewPSMDBProviderInterface(),
+		Unverifiable: unverifiable,
 	})
 }
 
 func TestSupportedFieldsAreReconciled(t *testing.T) {
 	conformance.SupportedFieldsAreReconciled(t, conformance.Config{
-		Provider: NewPSMDBProviderInterface(),
+		Provider:     NewPSMDBProviderInterface(),
+		Unverifiable: unverifiable,
 	})
 }

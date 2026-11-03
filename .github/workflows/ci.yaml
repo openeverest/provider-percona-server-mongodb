@@ -185,6 +185,15 @@ jobs:
       suite: tls
     secrets: inherit
 
+  test-integration-core-hidden:
+    name: Integration / core hidden
+    needs: [lint, build, verify]
+    uses: ./.github/workflows/integration-test.yaml
+    with:
+      make_target: test-integration-core-hidden
+      suite: hidden
+    secrets: inherit
+
   test-integration-monitoring-bindings:
     name: Integration / monitoring bindings
     needs: [lint, build, verify]
@@ -219,4 +228,13 @@ jobs:
     with:
       make_target: test-e2e-cluster-backup-import
       suite: backup
+    secrets: inherit
+
+  test-e2e-cluster-hidden:
+    name: E2E Cluster / hidden members
+    needs: [lint, build, verify]
+    uses: ./.github/workflows/e2e-cluster-test.yaml
+    with:
+      make_target: test-e2e-cluster-hidden
+      suite: hidden
     secrets: inherit

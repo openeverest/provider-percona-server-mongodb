@@ -1,0 +1,18 @@
+# Hidden members vote: an odd count would make the voters even.
+apiVersion: core.openeverest.io/v1alpha1
+kind: Instance
+metadata:
+  name: test-psmdb-hidden
+status:
+  (conditions[?type == 'Ready'] | [0].reason): ValidationFailed
+  (contains(conditions[?type == 'Ready'] | [0].message, 'positive even number')): true
+---
+apiVersion: psmdb.percona.com/v1
+kind: PerconaServerMongoDB
+metadata:
+  name: test-psmdb-hidden
+spec:
+  replsets:
+    - name: rs0
+      hidden:
+        enabled: false

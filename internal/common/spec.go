@@ -20,6 +20,7 @@ package common
 // components by name consistently.
 const (
 	ComponentEngine       = "engine"
+	ComponentHidden       = "hidden"
 	ComponentConfigServer = "configServer"
 	ComponentProxy        = "proxy"
 	ComponentBackupAgent  = "backupAgent"

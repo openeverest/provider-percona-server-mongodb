@@ -1,0 +1,16 @@
+apiVersion: core.openeverest.io/v1alpha1
+kind: Instance
+metadata:
+  name: test-psmdb-hidden
+spec:
+  components:
+    hidden:
+      type: mongod
+      replicas: 4
+      resources:
+        limits:
+          cpu: "3"
+          memory: 6Gi
+      storage:
+        size: 60Gi
+        storageClass: hidden-class

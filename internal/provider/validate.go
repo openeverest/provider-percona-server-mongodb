@@ -70,6 +70,10 @@ func validateComponents(c *controller.Context) error {
 		return fmt.Errorf("engine validation failed: %w", err)
 	}
 
+	if err := validateHidden(c); err != nil {
+		return fmt.Errorf("hidden validation failed: %w", err)
+	}
+
 	if spec.Topology != nil && spec.Topology.Type == "sharded" {
 		if err := validateShardedTopology(c); err != nil {
 			return fmt.Errorf("sharded topology validation failed: %w", err)
@@ -132,6 +136,50 @@ func validateEngine(c *controller.Context) error {
 
 	if err := validateService(c, common.ComponentEngine); err != nil {
 		return fmt.Errorf("engine service validation failed: %w", err)
+	}
+
+	return nil
+}
+
+// maxVotingMembers is MongoDB's limit on voting members in a replica set.
+const maxVotingMembers = 7
+
+// validateHidden validates the hidden members. They vote, so together with
+// the engine's members they must stay an odd number within MongoDB's voting
+// limit; otherwise the operator silently takes the vote and priority from
+// some member, possibly one that should be able to become primary.
+func validateHidden(c *controller.Context) error {
+	replicas := hiddenReplicas(c)
+	if replicas == 0 {
+		return nil
+	}
+
+	spec := c.Instance().Spec
+	if spec.Topology != nil && spec.Topology.Type == "sharded" {
+		return fmt.Errorf("hidden members are supported only in the replica set topology")
+	}
+
+	if replicas < 0 || replicas%2 != 0 {
+		return fmt.Errorf("spec.components.hidden.replicas must be a positive even number, got %d", replicas)
+	}
+
+	engineReplicas := *spec.Components[common.ComponentEngine].Replicas
+	if voting := engineReplicas + replicas; voting > maxVotingMembers {
+		return fmt.Errorf("engine and hidden replicas together must not exceed %d voting members, got %d", maxVotingMembers, voting)
+	}
+
+	hidden := spec.Components[common.ComponentHidden]
+	if hidden.Storage != nil && !hidden.Storage.Size.IsZero() && hidden.Storage.Size.Cmp(minStorage) < 0 {
+		return fmt.Errorf("spec.components.hidden.storage.size must be >= %s", minStorage.String())
+	}
+
+	if hidden.Resources != nil && hidden.Resources.Limits != nil {
+		if cpu := hidden.Resources.Limits.Cpu(); !cpu.IsZero() && cpu.Cmp(minCPU) < 0 {
+			return fmt.Errorf("spec.components.hidden.resources.limits.cpu must be >= %s", minCPU.String())
+		}
+		if mem := hidden.Resources.Limits.Memory(); !mem.IsZero() && mem.Cmp(minMemory) < 0 {
+			return fmt.Errorf("spec.components.hidden.resources.limits.memory must be >= %s", minMemory.String())
+		}
 	}
 
 	return nil

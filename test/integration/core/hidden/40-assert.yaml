@@ -1,0 +1,10 @@
+apiVersion: psmdb.percona.com/v1
+kind: PerconaServerMongoDB
+metadata:
+  name: test-psmdb-hidden
+spec:
+  replsets:
+    - name: rs0
+      size: 3
+      hidden:
+        enabled: false

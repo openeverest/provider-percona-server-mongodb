@@ -1,0 +1,51 @@
+apiVersion: core.openeverest.io/v1alpha1
+kind: Instance
+metadata:
+  name: test-psmdb-hidden
+---
+apiVersion: psmdb.percona.com/v1
+kind: PerconaServerMongoDB
+metadata:
+  name: test-psmdb-hidden
+spec:
+  replsets:
+    - name: rs0
+      size: 3
+      resources:
+        limits:
+          cpu: "1"
+          memory: 4Gi
+      volumeSpec:
+        persistentVolumeClaim:
+          storageClassName: standard
+          resources:
+            requests:
+              storage: 25Gi
+      hidden:
+        enabled: true
+        size: 2
+        resources:
+          limits:
+            cpu: "2"
+            memory: 8Gi
+        volumeSpec:
+          persistentVolumeClaim:
+            storageClassName: hidden-class
+            resources:
+              requests:
+                storage: 50Gi
+        podDisruptionBudget:
+          maxUnavailable: 1
+        affinity:
+          antiAffinityTopologyKey: kubernetes.io/hostname
+        labels:
+          core.openeverest.io/component: hidden
+          core.openeverest.io/instance: test-psmdb-hidden
+        # Hidden members run the replica set's own mongod configuration.
+        "(contains(configuration, 'mode: all'))": true
+  # Backups run on the hidden members first.
+  backup:
+    configuration:
+      backupOptions:
+        (length(priority)): 2
+        (values(priority)): [2, 2]
