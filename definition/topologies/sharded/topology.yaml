@@ -311,80 +311,73 @@ ui:
                 - storageClass
           componentsOrder:
             - configServersFields
-        routers:
-          uiType: group
-          groupType: accordion
-          label: "Routers"
-          components:
-            routersFields:
-              uiType: group
-              components:
-                numberOfRouters:
-                  path: "spec.components.proxy.replicas"
-                  uiType: number
-                  fieldParams:
-                    label: "Nº of routers"
-                    defaultValue: 3
-                  validation:
-                    required: true
-                    min: 1
-                    int: true
-                    celExpressions:
-                      - celExpr: "spec.components.proxy.replicas % 2 == 1"
-                        message: "The number of routers must be odd"
-                      - celExpr: "spec.components.engine.replicas > 1 ? spec.components.proxy.replicas > 1 : true"
-                        message: "Number of routers must be more than 1 if number of nodes is greater than 1"
-                routersResources:
-                  uiType: group
-                  groupType: line
-                  components:
-                    cpu:
-                      path: "spec.components.proxy.resources.limits.cpu"
-                      uiType: number
-                      fieldParams:
-                        label: "CPU"
-                        defaultValue: 1
-                        step: 1
-                      validation:
-                        min: 0
-                        required: true
-                    memory:
-                      path: "spec.components.proxy.resources.limits.memory"
-                      uiType: number
-                      fieldParams:
-                        label: "Memory"
-                        defaultValue: 2
-                        step: 0.1
-                        badge: "Gi"
-                        badgeToApi: true
-                      validation:
-                        min: 0
-                        required: true
-                  componentsOrder:
-                    - cpu
-                    - memory
-                routersConfiguration:
-                  uiType: text
-                  path: spec.components.proxy.parameters.configuration
-                  fieldParams:
-                    label: "Custom router configuration"
-                    placeholder: |2
-                      # mongos configuration snippet
-                      systemLog:
-                        verbosity: 1
-                    multiline: true
-                    minRows: 3
-                    maxRows: 8
-              componentsOrder:
-                - numberOfRouters
-                - routersResources
-                - routersConfiguration
-          componentsOrder:
-            - routersFields
       componentsOrder:
         - shards
         - configServers
-        - routers
+    proxy:
+      label: "Proxy"
+      description: "Configure the mongos routers for the cluster."
+      components:
+        numberOfRouters:
+          path: "spec.components.proxy.replicas"
+          uiType: number
+          fieldParams:
+            label: "Nº of routers"
+            defaultValue: 3
+          validation:
+            required: true
+            min: 1
+            int: true
+            celExpressions:
+              - celExpr: "spec.components.proxy.replicas % 2 == 1"
+                message: "The number of routers must be odd"
+              - celExpr: "spec.components.engine.replicas > 1 ? spec.components.proxy.replicas > 1 : true"
+                message: "Number of routers must be more than 1 if number of nodes is greater than 1"
+        routersResources:
+          uiType: group
+          groupType: line
+          components:
+            cpu:
+              path: "spec.components.proxy.resources.limits.cpu"
+              uiType: number
+              fieldParams:
+                label: "CPU"
+                defaultValue: 1
+                step: 1
+              validation:
+                min: 0
+                required: true
+            memory:
+              path: "spec.components.proxy.resources.limits.memory"
+              uiType: number
+              fieldParams:
+                label: "Memory"
+                defaultValue: 2
+                step: 0.1
+                badge: "Gi"
+                badgeToApi: true
+              validation:
+                min: 0
+                required: true
+          componentsOrder:
+            - cpu
+            - memory
+        routersConfiguration:
+          uiType: text
+          path: spec.components.proxy.parameters.configuration
+          fieldParams:
+            label: "Custom router configuration"
+            placeholder: |2
+              # mongos configuration snippet
+              systemLog:
+                verbosity: 1
+            multiline: true
+            minRows: 3
+            maxRows: 8
+      componentsOrder:
+        - numberOfRouters
+        - routersResources
+        - routersConfiguration
     tls:
       label: "TLS"
       description: "Encrypt connections to your database and between its members."
@@ -520,5 +513,6 @@ ui:
   sectionsOrder:
     - databaseVersion
     - resources
+    - proxy
     - tls
     - advanced
