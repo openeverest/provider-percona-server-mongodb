@@ -48,8 +48,6 @@ spec:
       configuration: |
         systemLog:
           verbosity: 1
-      expose:
-        type: ClusterIP
       size: 3
 status:
   state: ready
