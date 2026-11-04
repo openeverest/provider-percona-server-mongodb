@@ -314,8 +314,8 @@ ui:
       componentsOrder:
         - shards
         - configServers
-    proxy:
-      label: "Proxy"
+    routers:
+      label: "Routers"
       description: "Configure the mongos routers for the cluster."
       components:
         numberOfRouters:
@@ -513,6 +513,6 @@ ui:
   sectionsOrder:
     - databaseVersion
     - resources
-    - proxy
+    - routers
     - tls
     - advanced

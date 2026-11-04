@@ -701,70 +701,6 @@ spec:
             - userSecret
           description: Choose the database version and the credentials of its users.
           label: Database
-        proxy:
-          components:
-            numberOfRouters:
-              fieldParams:
-                defaultValue: 3
-                label: Nº of routers
-              path: spec.components.proxy.replicas
-              uiType: number
-              validation:
-                celExpressions:
-                  - celExpr: spec.components.proxy.replicas % 2 == 1
-                    message: The number of routers must be odd
-                  - celExpr: 'spec.components.engine.replicas > 1 ? spec.components.proxy.replicas > 1 : true'
-                    message: Number of routers must be more than 1 if number of nodes is greater than 1
-                int: true
-                min: 1
-                required: true
-            routersConfiguration:
-              fieldParams:
-                label: Custom router configuration
-                maxRows: 8
-                minRows: 3
-                multiline: true
-                placeholder: |
-                  # mongos configuration snippet
-                  systemLog:
-                    verbosity: 1
-              path: spec.components.proxy.parameters.configuration
-              uiType: text
-            routersResources:
-              components:
-                cpu:
-                  fieldParams:
-                    defaultValue: 1
-                    label: CPU
-                    step: 1
-                  path: spec.components.proxy.resources.limits.cpu
-                  uiType: number
-                  validation:
-                    min: 0
-                    required: true
-                memory:
-                  fieldParams:
-                    badge: Gi
-                    badgeToApi: true
-                    defaultValue: 2
-                    label: Memory
-                    step: 0.1
-                  path: spec.components.proxy.resources.limits.memory
-                  uiType: number
-                  validation:
-                    min: 0
-                    required: true
-              componentsOrder:
-                - cpu
-                - memory
-              groupType: line
-              uiType: group
-          componentsOrder:
-            - numberOfRouters
-            - routersResources
-            - routersConfiguration
-          description: Configure the mongos routers for the cluster.
-          label: Proxy
         resources:
           components:
             configServers:
@@ -970,6 +906,70 @@ spec:
             - configServers
           description: Configure the resources your new database will have access to.
           label: Resources
+        routers:
+          components:
+            numberOfRouters:
+              fieldParams:
+                defaultValue: 3
+                label: Nº of routers
+              path: spec.components.proxy.replicas
+              uiType: number
+              validation:
+                celExpressions:
+                  - celExpr: spec.components.proxy.replicas % 2 == 1
+                    message: The number of routers must be odd
+                  - celExpr: 'spec.components.engine.replicas > 1 ? spec.components.proxy.replicas > 1 : true'
+                    message: Number of routers must be more than 1 if number of nodes is greater than 1
+                int: true
+                min: 1
+                required: true
+            routersConfiguration:
+              fieldParams:
+                label: Custom router configuration
+                maxRows: 8
+                minRows: 3
+                multiline: true
+                placeholder: |
+                  # mongos configuration snippet
+                  systemLog:
+                    verbosity: 1
+              path: spec.components.proxy.parameters.configuration
+              uiType: text
+            routersResources:
+              components:
+                cpu:
+                  fieldParams:
+                    defaultValue: 1
+                    label: CPU
+                    step: 1
+                  path: spec.components.proxy.resources.limits.cpu
+                  uiType: number
+                  validation:
+                    min: 0
+                    required: true
+                memory:
+                  fieldParams:
+                    badge: Gi
+                    badgeToApi: true
+                    defaultValue: 2
+                    label: Memory
+                    step: 0.1
+                  path: spec.components.proxy.resources.limits.memory
+                  uiType: number
+                  validation:
+                    min: 0
+                    required: true
+              componentsOrder:
+                - cpu
+                - memory
+              groupType: line
+              uiType: group
+          componentsOrder:
+            - numberOfRouters
+            - routersResources
+            - routersConfiguration
+          description: Configure the mongos routers for the cluster.
+          label: Routers
         tls:
           components:
             certificates:
@@ -1059,7 +1059,7 @@ spec:
       sectionsOrder:
         - databaseVersion
         - resources
-        - proxy
+        - routers
         - tls
         - advanced
   versions:
