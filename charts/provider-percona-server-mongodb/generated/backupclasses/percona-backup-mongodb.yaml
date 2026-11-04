@@ -5,6 +5,10 @@ kind: BackupClass
 metadata:
   name: percona-backup-mongodb
 spec:
+  backupStorageClasses:
+    - authModes:
+        - AccessKey
+      name: s3
   description: |
     BackupClass for the Percona Server MongoDB provider. Backups are managed
     natively by Percona Backup for MongoDB (PBM) embedded in the PSMDB operator;
