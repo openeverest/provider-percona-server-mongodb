@@ -1,0 +1,32 @@
+apiVersion: core.openeverest.io/v1alpha1
+kind: Instance
+metadata:
+  name: test-psmdb-admission
+spec:
+  providerRef:
+    name: percona-server-mongodb
+  topology:
+    type: sharded
+    parameters:
+      numShards: 2
+  components:
+    engine:
+      type: mongod
+      replicas: 3
+      resources:
+        limits:
+          cpu: "1"
+          memory: 4G
+        requests:
+          cpu: 500m
+          memory: 2G
+      storage:
+        size: 25Gi
+    proxy:
+      type: mongod
+      replicas: 3
+    configServer:
+      type: mongod
+      replicas: 1
+      storage:
+        size: 25Gi

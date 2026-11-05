@@ -38,11 +38,13 @@ func main() {
 	var metricsBindAddress string
 	var preflightSpec string
 	var applyOperatorCRDs bool
+	var admission bool
 
 	flag.IntVar(&serverPort, "server-port", 8082, "The port for the provider HTTP server.")
 	flag.StringVar(&metricsBindAddress, "metrics-bind-address", ":8081", "The address the metrics endpoint binds to. Use 0 to disable.")
 	flag.StringVar(&preflightSpec, "preflight-spec", "", "Run the upgrade preflight against the target Provider spec at this path and exit. Used by the chart's pre-upgrade hook.")
 	flag.BoolVar(&applyOperatorCRDs, "apply-operator-crds", false, "With --preflight-spec, apply the bundled operator's CRDs once the preflight passes. Used by the chart's pre-upgrade hook.")
+	flag.BoolVar(&admission, "admission", true, "Serve the Instance admission webhook, with the serving certificate the chart mounts.")
 	flag.Parse()
 
 	l := ctrl.Log.WithName("setup")
@@ -75,6 +77,10 @@ func main() {
 
 	if metricsBindAddress != "0" {
 		opts = append(opts, reconciler.WithMetrics(metricsBindAddress))
+	}
+
+	if admission {
+		opts = append(opts, reconciler.WithAdmission())
 	}
 
 	r, err := reconciler.New(ctx, provider, opts...)

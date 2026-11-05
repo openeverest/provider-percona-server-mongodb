@@ -1,0 +1,9 @@
+apiVersion: psmdb.percona.com/v1
+kind: PerconaServerMongoDB
+metadata:
+  name: test-psmdb-admission
+spec:
+  sharding:
+    enabled: true
+    configsvrReplSet:
+      size: 3
