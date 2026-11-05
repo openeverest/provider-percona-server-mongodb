@@ -345,6 +345,22 @@ func (p *PSMDBProvider) SyncBackup(c *controller.Context, backup *backupv1alpha1
 		},
 	}
 
+	if err := c.Get(psmdbBackup, backup.Name); err != nil {
+		if !apierrors.IsNotFound(err) {
+			return controller.BackupExecutionStatus{}, fmt.Errorf("get PSMDB backup: %w", err)
+		}
+		// Enabling backups adds the backup-agent container, which the operator
+		// rolls out with SmartUpdate. SmartUpdate waits for running backups, and
+		// a backup requested before the rollout waits for the agent, so the two
+		// deadlock. Request the backup only once the cluster has rolled out.
+		if !psmdbRolledOut(psmdb) {
+			return controller.BackupExecutionStatus{
+				State:   backupv1alpha1.BackupStatePending,
+				Message: "Waiting for the PerconaServerMongoDB cluster to apply its latest configuration",
+			}, nil
+		}
+	}
+
 	if _, err := controllerutil.CreateOrUpdate(c.Context(), c.Client(), psmdbBackup, func() error {
 		psmdbBackup.Spec.ClusterName = c.Name()
 		psmdbBackup.Spec.StorageName = backup.Spec.StorageRef.Name
@@ -375,6 +391,13 @@ func (p *PSMDBProvider) SyncBackup(c *controller.Context, backup *backupv1alpha1
 		exec.State = backupv1alpha1.BackupStatePending
 	}
 	return exec, nil
+}
+
+// psmdbRolledOut reports whether the operator has applied the cluster's latest
+// spec and the cluster is ready, e.g. backup agents are running after backups
+// were enabled.
+func psmdbRolledOut(psmdb *psmdbv1.PerconaServerMongoDB) bool {
+	return psmdb.Status.ObservedGeneration == psmdb.Generation && psmdb.Status.State == psmdbv1.AppStateReady
 }
 
 // SyncRestore creates or updates a PerconaServerMongoDBRestore that points at
