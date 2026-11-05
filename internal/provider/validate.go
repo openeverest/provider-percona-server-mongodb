@@ -17,14 +17,18 @@ package provider
 import (
 	"fmt"
 	"regexp"
+	"strconv"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/apimachinery/pkg/util/validation/field"
 
 	backupv1alpha1 "github.com/openeverest/openeverest/v2/api/backup/v1alpha1"
+	corev1alpha1 "github.com/openeverest/openeverest/v2/api/core/v1alpha1"
 	"github.com/openeverest/openeverest/v2/provider-runtime/controller"
 
-	"github.com/openeverest/provider-percona-server-mongodb/definition/topologies/sharded"
 	"github.com/openeverest/provider-percona-server-mongodb/internal/common"
 )
 
@@ -33,6 +37,9 @@ import (
 // stay under Kubernetes' Pod name 63-character limit.
 const maxInstanceNameLength = 22
 
+// maxVotingMembers is MongoDB's limit on voting members in a replica set.
+const maxVotingMembers = 7
+
 var (
 	// Minimum resource requirements
 	minStorage = resource.MustParse("1Gi")
@@ -40,43 +47,107 @@ var (
 	minMemory  = resource.MustParse("512Mi")
 )
 
+// minLimits are the operator's minimum CPU and memory limits.
+var minLimits = []struct {
+	name corev1.ResourceName
+	min  resource.Quantity
+}{
+	{corev1.ResourceCPU, minCPU},
+	{corev1.ResourceMemory, minMemory},
+}
+
 // rfc1035Regexp validates RFC1035 compatible names.
 // https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#rfc-1035-label-names
 var rfc1035Regexp = regexp.MustCompile("^[a-z]([-a-z0-9]{0,61}[a-z0-9])?$")
 
-// validateMetadata validates the instance metadata.
-func validateMetadata(c *controller.Context) error {
-	name := c.Instance().Name
-	if name == "" {
-		return fmt.Errorf("name cannot be empty")
+// supportedServiceTypes are the service types the operator can expose.
+var supportedServiceTypes = []corev1.ServiceType{
+	corev1.ServiceTypeClusterIP,
+	corev1.ServiceTypeLoadBalancer,
+	corev1.ServiceTypeNodePort,
+}
+
+var componentsPath = field.NewPath("spec", "components")
+
+// Validate checks the rules about the Instance alone. The runtime runs it once
+// the Instance matches the topologies, components, versions and parameter
+// schemas the Provider declares.
+func (p *PSMDBProvider) Validate(in controller.ValidationInput) controller.ValidationResult {
+	instance := in.Instance
+
+	errs := validateName(instance.Name)
+	errs = append(errs, validateDataSource(instance)...)
+	errs = append(errs, validateEngine(instance.Spec.Components)...)
+	errs = append(errs, validateHidden(instance.Spec.Components)...)
+	if instance.GetTopologyType() == "sharded" {
+		errs = append(errs, validateShardedTopology(instance.Spec.Components)...)
+	}
+	errs = append(errs, validateTLS(instance)...)
+	errs = append(errs, validateTLSTransition(instance, in.Old)...)
+
+	return controller.ValidationResult{Errors: errs}
+}
+
+// ValidateReferences checks the rules that read other objects: the user
+// Secret, the source Backup, the TLS certificate Secrets and the running
+// PerconaServerMongoDB.
+func (p *PSMDBProvider) ValidateReferences(c *controller.Context) (field.ErrorList, error) {
+	errs, err := validateUserSecret(c)
+	if err != nil {
+		return nil, err
 	}
 
-	if !rfc1035Regexp.MatchString(name) {
-		return fmt.Errorf("name %q must be RFC-1035 compliant (lowercase alphanumeric or '-', start/end with letter)", name)
+	tlsErrs, err := validateTLSReferences(c)
+	if err != nil {
+		return nil, err
 	}
 
-	if len(name) > maxInstanceNameLength {
-		return fmt.Errorf("name %q exceeds max length of %d", name, maxInstanceNameLength)
+	return append(errs, tlsErrs...), nil
+}
+
+// validateName checks the Instance name.
+func validateName(name string) field.ErrorList {
+	path := field.NewPath("metadata", "name")
+
+	switch {
+	case name == "":
+		return field.ErrorList{field.Required(path, "")}
+	case !rfc1035Regexp.MatchString(name):
+		return field.ErrorList{field.Invalid(path, name,
+			"must be RFC-1035 compliant (lowercase alphanumeric or '-', start with a letter and end with an alphanumeric)",
+		)}
+	case len(name) > maxInstanceNameLength:
+		return field.ErrorList{field.TooLong(path, name, maxInstanceNameLength)}
 	}
 
 	return nil
 }
 
-// validateComponents validates the instance spec components and their configuration.
-func validateComponents(c *controller.Context) error {
-	spec := c.Instance().Spec
+// validateDataSource checks the dataSource fields the Instance carries.
+func validateDataSource(in *corev1alpha1.Instance) field.ErrorList {
+	ds := in.Spec.DataSource
+	path := field.NewPath("spec", "dataSource")
 
-	if err := validateEngine(c); err != nil {
-		return fmt.Errorf("engine validation failed: %w", err)
+	if ds == nil {
+		return nil
 	}
 
-	if err := validateHidden(c); err != nil {
-		return fmt.Errorf("hidden validation failed: %w", err)
-	}
+	switch ds.Type {
+	case backupv1alpha1.DataSourceTypeBackup:
+		if ds.Backup == nil {
+			return field.ErrorList{field.Required(path.Child("backup"), "")}
+		}
 
-	if spec.Topology != nil && spec.Topology.Type == "sharded" {
-		if err := validateShardedTopology(c); err != nil {
-			return fmt.Errorf("sharded topology validation failed: %w", err)
+		if ds.Backup.BackupRef.Name == "" {
+			return field.ErrorList{field.Required(path.Child("backup", "backupRef", "name"), "")}
+		}
+
+	case backupv1alpha1.DataSourceTypePointInTime:
+		// The credentials must come from live Instance.
+		if in.Spec.UserSecretRef != nil {
+			return field.ErrorList{field.Forbidden(field.NewPath("spec", "userSecretRef"),
+				"must not be set when seeding from an Instance; the credentials are inherited from the source Instance",
+			)}
 		}
 	}
 
@@ -84,105 +155,145 @@ func validateComponents(c *controller.Context) error {
 }
 
 // validateEngine validates the engine component spec.
-func validateEngine(c *controller.Context) error {
-	spec := c.Instance().Spec
+func validateEngine(components map[string]corev1alpha1.ComponentSpec) field.ErrorList {
+	path := componentsPath.Key(common.ComponentEngine)
 
-	engine, ok := spec.Components[common.ComponentEngine]
+	engine, ok := components[common.ComponentEngine]
 	if !ok {
-		return fmt.Errorf("missing spec.components.engine")
+		return field.ErrorList{field.Required(path, "")}
 	}
 
-	if engine.Replicas == nil {
-		return fmt.Errorf("missing spec.components.engine.replicas")
+	var errs field.ErrorList
+
+	switch {
+	case engine.Replicas == nil:
+		errs = append(errs, field.Required(path.Child("replicas"), ""))
+	case *engine.Replicas < 1 || *engine.Replicas%2 == 0:
+		errs = append(errs, field.Invalid(path.Child("replicas"), *engine.Replicas, "must be a positive odd number"))
 	}
 
-	if *engine.Replicas < 1 || *engine.Replicas%2 == 0 {
-		return fmt.Errorf("engine replicas must be a positive odd number, got %d", *engine.Replicas)
+	switch {
+	case engine.Storage == nil:
+		errs = append(errs, field.Required(path.Child("storage"), ""))
+	case engine.Storage.Size.Cmp(minStorage) < 0:
+		errs = append(errs, field.Invalid(path.Child("storage", "size"), engine.Storage.Size.String(),
+			"must be at least "+minStorage.String(),
+		))
 	}
 
-	// Validate storage size.
-	if engine.Storage == nil {
-		return fmt.Errorf("missing spec.components.engine.storage")
-	}
+	errs = append(errs, validateLimits(path.Child("resources", "limits"), engine.Resources)...)
+	errs = append(errs, validateService(path, engine.Service)...)
 
-	if engine.Storage.Size.Cmp(minStorage) < 0 {
-		return fmt.Errorf("spec.components.engine.storage.size must be >= %s", minStorage.String())
-	}
-
-	// Validate resources (CPU and memory).
-	if engine.Resources == nil || engine.Resources.Limits == nil {
-		return fmt.Errorf("missing spec.components.engine.resources.limits")
-	}
-
-	if cpu := engine.Resources.Limits.Cpu(); cpu == nil || cpu.Cmp(minCPU) < 0 {
-		return fmt.Errorf("spec.components.engine.resources.limits.cpu must be >= %s", minCPU.String())
-	}
-
-	if mem := engine.Resources.Limits.Memory(); mem == nil || mem.Cmp(minMemory) < 0 {
-		return fmt.Errorf("spec.components.engine.resources.limits.memory must be >= %s", minMemory.String())
-	}
-
-	// Validate engine version is available in the provider spec.
-	if engine.Version != "" {
-		providerSpec, err := c.ProviderSpec()
-		if err != nil {
-			return fmt.Errorf("failed to get provider spec: %w", err)
-		}
-
-		if img := controller.GetImageForVersion(providerSpec, common.ComponentEngine, engine.Version); img == "" {
-			return fmt.Errorf("version %q is not in available engine versions", engine.Version)
-		}
-	}
-
-	if err := validateService(c, common.ComponentEngine); err != nil {
-		return fmt.Errorf("engine service validation failed: %w", err)
-	}
-
-	return nil
+	return errs
 }
 
-// maxVotingMembers is MongoDB's limit on voting members in a replica set.
-const maxVotingMembers = 7
+// validateLimits checks the engine's CPU and memory limits against the
+// operator's minimums.
+func validateLimits(path *field.Path, resources *corev1.ResourceRequirements) field.ErrorList {
+	if resources == nil || resources.Limits == nil {
+		return field.ErrorList{field.Required(path, "")}
+	}
 
-// validateHidden validates the hidden members. They vote, so together with
-// the engine's members they must stay an odd number within MongoDB's voting
-// limit; otherwise the operator silently takes the vote and priority from
-// some member, possibly one that should be able to become primary.
-func validateHidden(c *controller.Context) error {
-	replicas := hiddenReplicas(c)
-	if replicas == 0 {
+	var errs field.ErrorList
+	for _, limit := range minLimits {
+		value, ok := resources.Limits[limit.name]
+		switch {
+		case !ok:
+			errs = append(errs, field.Required(path.Key(string(limit.name)), "must be at least "+limit.min.String()))
+		case value.Cmp(limit.min) < 0:
+			errs = append(errs, field.Invalid(path.Key(string(limit.name)), value.String(),
+				"must be at least "+limit.min.String(),
+			))
+		}
+	}
+
+	return errs
+}
+
+// validateHidden checks the hidden members. They vote, so together with the
+// engine's members they must stay within MongoDB's voting limit; otherwise the
+// operator silently takes the vote and priority from some member, possibly one
+// that should be able to become primary. Unset resources and storage match the
+// engine's. supportedFields keeps their count even, and the sharded topology
+// has no hidden members.
+func validateHidden(components map[string]corev1alpha1.ComponentSpec) field.ErrorList {
+	hidden, ok := components[common.ComponentHidden]
+	if !ok || hidden.Replicas == nil {
+		return nil
+	}
+	path := componentsPath.Key(common.ComponentHidden)
+
+	var errs field.ErrorList
+
+	if engine := components[common.ComponentEngine]; engine.Replicas != nil {
+		if voting := *engine.Replicas + *hidden.Replicas; voting > maxVotingMembers {
+			errs = append(errs, field.Invalid(path.Child("replicas"), *hidden.Replicas, fmt.Sprintf(
+				"together with spec.components[engine].replicas must not exceed %d voting members, got %d",
+				maxVotingMembers, voting,
+			)))
+		}
+	}
+
+	if hidden.Storage != nil && !hidden.Storage.Size.IsZero() && hidden.Storage.Size.Cmp(minStorage) < 0 {
+		errs = append(errs, field.Invalid(path.Child("storage", "size"), hidden.Storage.Size.String(),
+			"must be at least "+minStorage.String(),
+		))
+	}
+
+	if hidden.Resources != nil {
+		limitsPath := path.Child("resources", "limits")
+		for _, limit := range minLimits {
+			if value, ok := hidden.Resources.Limits[limit.name]; ok && !value.IsZero() && value.Cmp(limit.min) < 0 {
+				errs = append(errs, field.Invalid(limitsPath.Key(string(limit.name)), value.String(),
+					"must be at least "+limit.min.String(),
+				))
+			}
+		}
+	}
+
+	return errs
+}
+
+// validateShardedTopology checks the components of a sharded cluster. The
+// topology requires configServer and proxy, so the runtime has checked they
+// are present.
+func validateShardedTopology(components map[string]corev1alpha1.ComponentSpec) field.ErrorList {
+	path := componentsPath.Key(common.ComponentConfigServer).Child("replicas")
+	cfgSrv := components[common.ComponentConfigServer]
+
+	var errs field.ErrorList
+
+	switch {
+	case cfgSrv.Replicas == nil:
+		errs = append(errs, field.Required(path, ""))
+	case *cfgSrv.Replicas < 1 || *cfgSrv.Replicas%2 == 0:
+		errs = append(errs, field.Invalid(path, *cfgSrv.Replicas, "must be a positive odd number"))
+	case components[common.ComponentEngine].Replicas != nil &&
+		*components[common.ComponentEngine].Replicas > 1 && *cfgSrv.Replicas < 3:
+		// Multi-node setup requires at least 3 replicas for configServer
+		errs = append(errs, field.Invalid(path, *cfgSrv.Replicas,
+			"must be at least 3 when spec.components[engine].replicas is greater than 1",
+		))
+	}
+
+	errs = append(errs, validateService(componentsPath.Key(common.ComponentProxy), components[common.ComponentProxy].Service)...)
+
+	return errs
+}
+
+// validateService checks the service type a component asks for.
+func validateService(path *field.Path, service *corev1alpha1.Service) field.ErrorList {
+	if service == nil {
 		return nil
 	}
 
-	spec := c.Instance().Spec
-	if spec.Topology != nil && spec.Topology.Type == "sharded" {
-		return fmt.Errorf("hidden members are supported only in the replica set topology")
-	}
-
-	if replicas < 0 || replicas%2 != 0 {
-		return fmt.Errorf("spec.components.hidden.replicas must be a positive even number, got %d", replicas)
-	}
-
-	engineReplicas := *spec.Components[common.ComponentEngine].Replicas
-	if voting := engineReplicas + replicas; voting > maxVotingMembers {
-		return fmt.Errorf("engine and hidden replicas together must not exceed %d voting members, got %d", maxVotingMembers, voting)
-	}
-
-	hidden := spec.Components[common.ComponentHidden]
-	if hidden.Storage != nil && !hidden.Storage.Size.IsZero() && hidden.Storage.Size.Cmp(minStorage) < 0 {
-		return fmt.Errorf("spec.components.hidden.storage.size must be >= %s", minStorage.String())
-	}
-
-	if hidden.Resources != nil && hidden.Resources.Limits != nil {
-		if cpu := hidden.Resources.Limits.Cpu(); !cpu.IsZero() && cpu.Cmp(minCPU) < 0 {
-			return fmt.Errorf("spec.components.hidden.resources.limits.cpu must be >= %s", minCPU.String())
-		}
-		if mem := hidden.Resources.Limits.Memory(); !mem.IsZero() && mem.Cmp(minMemory) < 0 {
-			return fmt.Errorf("spec.components.hidden.resources.limits.memory must be >= %s", minMemory.String())
+	for _, t := range supportedServiceTypes {
+		if service.ServiceType == t {
+			return nil
 		}
 	}
 
-	return nil
+	return field.ErrorList{field.NotSupported(path.Child("service", "serviceType"), service.ServiceType, supportedServiceTypes)}
 }
 
 // userSecretKeys are the credential keys required for restoring from
@@ -200,207 +311,100 @@ var userSecretKeys = []string{
 	"MONGODB_USER_ADMIN_PASSWORD",
 }
 
-// validateUserSecret validates the Secret referenced by spec.userSecretRef
-// against the provider's secret schema, and enforces whether the field is
-// required or forbidden given the configured data source.
-func validateUserSecret(c *controller.Context) error {
-	userSecretRef := c.Instance().Spec.UserSecretRef
-
+// validateUserSecret checks the Secret named by spec.userSecretRef against the
+// provider's secret schema, and whether the field is required or forbidden
+// given the source Backup.
+func validateUserSecret(c *controller.Context) (field.ErrorList, error) {
+	ref := c.Instance().Spec.UserSecretRef
+	refPath := field.NewPath("spec", "userSecretRef")
 	ds := c.Instance().Spec.DataSource
 
 	if ds == nil {
-		// User secret is optional for fresh instances, but if supplied it must
-		// conform to the schema.
-		if userSecretRef == nil {
-			return nil
+		// Optional for a new instance, but it must fit the schema when set.
+		if ref == nil {
+			return nil, nil
 		}
-
-		if _, err := validateUserSecretSchema(c, userSecretRef.Name); err != nil {
-			return err
-		}
-
-		return nil
+		_, errs, err := validateUserSecretSchema(c, ref.Name)
+		return errs, err
+	}
+	if ds.Type != backupv1alpha1.DataSourceTypeBackup {
+		return nil, nil
 	}
 
-	switch ds.Type {
-	case backupv1alpha1.DataSourceTypePointInTime:
-		// The credentials must come from live Instance.
-		if userSecretRef == nil {
-			return nil
+	backupPath := field.NewPath("spec", "dataSource", "backup", "backupRef", "name")
+	name := ds.Backup.BackupRef.Name
+	srcBackup := &backupv1alpha1.Backup{}
+	if err := c.Get(srcBackup, name); err != nil {
+		if apierrors.IsNotFound(err) {
+			return field.ErrorList{field.NotFound(backupPath, name)}, nil
 		}
-
-		return fmt.Errorf(
-			"spec.userSecretRef must not be set when seeding " +
-				"from an Instance; the credentials are inherited " +
-				"from the source Instance",
-		)
-
-	case backupv1alpha1.DataSourceTypeBackup:
-		srcBackup := &backupv1alpha1.Backup{}
-		if err := c.Get(srcBackup, ds.Backup.BackupRef.Name); err != nil {
-			return fmt.Errorf("get Backup %q: %w", ds.Backup.BackupRef.Name, err)
-		}
-
-		switch srcBackup.Spec.Origin.Type {
-		case backupv1alpha1.BackupOriginTypeInstance:
-			// The credentials must come from live Instance.
-			if userSecretRef == nil {
-				return nil
-			}
-
-			return fmt.Errorf(
-				"spec.userSecretRef must not be set when seeding " +
-					"from an Instance; the credentials are inherited " +
-					"from the source Instance",
-			)
-
-		case backupv1alpha1.BackupOriginTypeExternal:
-			// Backup from a BackupStorage: user must supply userSecretRef.
-			if userSecretRef == nil {
-				return fmt.Errorf(
-					"spec.userSecretRef is required when seeding " +
-						"from an external backup; it must match the credentials " +
-						"of the Instance that produced the backup",
-				)
-			}
-
-			secret, err := validateUserSecretSchema(c, userSecretRef.Name)
-			if err != nil {
-				return err
-			}
-
-			// User secret must contain all MONGODB_* keys to be valid.
-			// If any are missing, the operator generates missing keys causing
-			// the authentication to fail after restore.
-			for _, key := range userSecretKeys {
-				if v, ok := secret.Data[key]; ok && string(v) != "" {
-					continue
-				}
-				if v, ok := secret.StringData[key]; ok && v != "" {
-					continue
-				}
-
-				return fmt.Errorf("user secret %q is missing %q", secret.Name, key)
-			}
-
-		default:
-			return fmt.Errorf("unknown origin type %q", srcBackup.Spec.Origin.Type)
-		}
+		return nil, fmt.Errorf("get Backup %q: %w", name, err)
 	}
 
-	return nil
+	switch srcBackup.Spec.Origin.Type {
+	case backupv1alpha1.BackupOriginTypeInstance:
+		if ref == nil {
+			return nil, nil
+		}
+		return field.ErrorList{field.Forbidden(refPath,
+			"must not be set when seeding from a backup of an Instance; the credentials are inherited from that Instance",
+		)}, nil
+
+	case backupv1alpha1.BackupOriginTypeExternal:
+		if ref == nil {
+			return field.ErrorList{field.Required(refPath,
+				"required when seeding from an external backup; it must match the credentials of the Instance that produced the backup",
+			)}, nil
+		}
+		secret, errs, err := validateUserSecretSchema(c, ref.Name)
+		if err != nil || len(errs) > 0 {
+			return errs, err
+		}
+
+		// Without every MONGODB_* key, the operator generates the missing ones
+		// and authentication fails after the restore.
+		var missing []string
+		for _, key := range userSecretKeys {
+			if v, ok := secret.Data[key]; ok && string(v) != "" {
+				continue
+			}
+			if v, ok := secret.StringData[key]; ok && v != "" {
+				continue
+			}
+			missing = append(missing, strconv.Quote(key))
+		}
+		if len(missing) > 0 {
+			return field.ErrorList{field.Invalid(refPath.Child("name"), ref.Name, "missing "+strings.Join(missing, ", "))}, nil
+		}
+		return nil, nil
+
+	default:
+		return field.ErrorList{field.Invalid(backupPath, name,
+			fmt.Sprintf("has an unknown origin type %q", srcBackup.Spec.Origin.Type),
+		)}, nil
+	}
 }
 
-// validateUserSecretSchema fetches the referenced Secret and validates it against
-// the provider's secret schema.
-func validateUserSecretSchema(c *controller.Context, secretName string) (*corev1.Secret, error) {
+// validateUserSecretSchema fetches the named Secret and checks it against the
+// provider's secret schema.
+func validateUserSecretSchema(c *controller.Context, name string) (*corev1.Secret, field.ErrorList, error) {
+	path := field.NewPath("spec", "userSecretRef", "name")
 	secret := &corev1.Secret{}
-	if err := c.Get(secret, secretName); err != nil {
-		return nil, fmt.Errorf("get user secret %q: %w", secretName, err)
+	if err := c.Get(secret, name); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil, field.ErrorList{field.NotFound(path, name)}, nil
+		}
+		return nil, nil, fmt.Errorf("get user secret %q: %w", name, err)
 	}
 
 	providerSpec, err := c.ProviderSpec()
 	if err != nil {
-		return nil, fmt.Errorf("get provider spec: %w", err)
+		return nil, nil, fmt.Errorf("get provider spec: %w", err)
 	}
 
 	if err := controller.ValidateSecretSchema(secret, providerSpec); err != nil {
-		return nil, fmt.Errorf("user secret %q validation failed: %w", secretName, err)
+		return nil, field.ErrorList{field.Invalid(path, name, err.Error())}, nil
 	}
 
-	return secret, nil
-}
-
-// validateDataSource validates the dataSource spec.
-func validateDataSource(c *controller.Context) error {
-	ds := c.Instance().Spec.DataSource
-
-	if ds == nil || ds.Type != backupv1alpha1.DataSourceTypeBackup {
-		return nil
-	}
-
-	if ds.Backup == nil {
-		return fmt.Errorf("missing spec.dataSource.backup")
-	}
-
-	if ds.Backup.BackupRef.Name == "" {
-		return fmt.Errorf("missing spec.dataSource.backup.backupRef.name")
-	}
-
-	return nil
-}
-
-// validateShardedTopology validates sharded cluster topology and its components.
-func validateShardedTopology(c *controller.Context) error {
-	spec := c.Instance().Spec
-
-	// Validate sharded topology parameters.
-	var shardedParams sharded.ShardedTopologyParameters
-	if c.TryDecodeTopologyParameters(&shardedParams) {
-		if shardedParams.NumShards < 1 {
-			return fmt.Errorf("spec.topology.parameters.numShards must be >= 1, got %d", shardedParams.NumShards)
-		}
-	}
-
-	if err := validateConfigServer(c); err != nil {
-		return fmt.Errorf("spec.components.configServer validation failed: %w", err)
-	}
-
-	// Proxy (mongos) is required for sharded topology.
-	_, ok := spec.Components[common.ComponentProxy]
-	if !ok {
-		return fmt.Errorf("component %q required for sharded topology", common.ComponentProxy)
-	}
-
-	if err := validateService(c, common.ComponentProxy); err != nil {
-		return fmt.Errorf("service validation failed: %w", err)
-	}
-
-	return nil
-}
-
-// validateConfigServer validates the configServer component spec.
-func validateConfigServer(c *controller.Context) error {
-	cfgSrv, ok := c.Instance().Spec.Components[common.ComponentConfigServer]
-	if !ok {
-		return fmt.Errorf("missing spec.components.configServer")
-	}
-
-	if cfgSrv.Replicas == nil {
-		return fmt.Errorf("missing spec.components.configServer.replicas")
-	}
-
-	replicas := *cfgSrv.Replicas
-	if replicas < 1 || replicas%2 == 0 {
-		return fmt.Errorf("spec.components.configServer.replicas must be a positive odd number, got %d", replicas)
-	}
-
-	// Validate replica count based on engine replicas
-	engine := c.Instance().Spec.Components[common.ComponentEngine]
-	if engine.Replicas != nil {
-		engineReplicas := *engine.Replicas
-		// Multi-node setup requires at least 3 replicas for configServer
-		if engineReplicas > 1 && replicas < 3 {
-			return fmt.Errorf("spec.components.configServer.replicas must be >= 3 for multi-node, got %d", replicas)
-		}
-	}
-
-	return nil
-}
-
-func validateService(c *controller.Context, componentName string) error {
-	spec := c.Instance().Spec.Components[componentName]
-
-	if spec.Service == nil {
-		return nil
-	}
-
-	switch spec.Service.ServiceType {
-	case corev1.ServiceTypeClusterIP,
-		corev1.ServiceTypeLoadBalancer,
-		corev1.ServiceTypeNodePort:
-		return nil
-	default:
-		return fmt.Errorf("spec.components.%s.service.serviceType must be one of ClusterIP, LoadBalancer or NodePort", componentName)
-	}
+	return secret, nil, nil
 }

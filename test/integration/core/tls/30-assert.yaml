@@ -4,7 +4,7 @@ kind: Instance
 metadata:
   name: psmdb-tls
 status:
-  (conditions[?type == 'Ready'] | [0].reason): ValidationFailed
+  (conditions[?type == 'Ready'] | [0].reason): InvalidReference
   (contains(conditions[?type == 'Ready'] | [0].message, 'turned on or off')): true
 ---
 apiVersion: psmdb.percona.com/v1

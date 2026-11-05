@@ -41,16 +41,28 @@ spec:
     configServer:
       parametersSchema:
         openAPIV3Schema:
+          description: MongodParameters defines structured parameters for mongod components.
           properties:
             configuration:
+              description: |-
+                Configuration is the mongod configuration file content (YAML).
+                `configuration` is the conventional property name for the engine
+                configuration file inside a component's parameters (mirrors the
+                upstream Percona `configuration` field).
               type: string
           type: object
       type: mongod
     engine:
       parametersSchema:
         openAPIV3Schema:
+          description: MongodParameters defines structured parameters for mongod components.
           properties:
             configuration:
+              description: |-
+                Configuration is the mongod configuration file content (YAML).
+                `configuration` is the conventional property name for the engine
+                configuration file inside a component's parameters (mirrors the
+                upstream Percona `configuration` field).
               type: string
           type: object
       type: mongod
@@ -59,8 +71,14 @@ spec:
     proxy:
       parametersSchema:
         openAPIV3Schema:
+          description: MongosParameters defines structured parameters for mongos (proxy) components.
           properties:
             configuration:
+              description: |-
+                Configuration is the mongos configuration file content (YAML).
+                `configuration` is the conventional property name for the engine
+                configuration file inside a component's parameters (mirrors the
+                upstream Percona `configuration` field).
               type: string
           type: object
       type: mongod
@@ -77,21 +95,44 @@ spec:
           - ServiceAccountToken
   parametersSchema:
     openAPIV3Schema:
+      description: |-
+        Parameters defines instance-wide structured parameters that apply to the
+        entire cluster (Instance.spec.parameters).
       properties:
         tls:
+          description: |-
+            TLS configures encryption in transit, between clients and the instance
+            and between its members.
           properties:
             certificateSecretName:
+              description: |-
+                CertificateSecretName names a Secret in the instance namespace with
+                the certificate clients connect to: tls.crt, tls.key and ca.crt. Its
+                subject alternative names must cover the instance's service and pod
+                names.
               type: string
             internalCertificateSecretName:
+              description: |-
+                InternalCertificateSecretName names a Secret in the instance
+                namespace with the certificate members authenticate each other with,
+                in the same format. Defaults to the certificate secret.
               type: string
             issuer:
+              description: |-
+                Issuer is the cert-manager issuer that signs the instance's
+                certificates, instead of a self-signed CA created for the instance.
               properties:
                 kind:
+                  default: Issuer
+                  description: Kind of the issuer.
                   type: string
                 name:
+                  description: Name of the issuer.
                   type: string
               type: object
             mode:
+              default: preferTLS
+              description: Mode controls which connections must use TLS.
               type: string
           type: object
       type: object
@@ -101,6 +142,7 @@ spec:
     user:
       parametersSchema:
         openAPIV3Schema:
+          description: UserSecretData describes the expected data keys for creating initial users.
           properties:
             MONGODB_BACKUP_PASSWORD:
               type: string
@@ -282,6 +324,7 @@ spec:
           supportedFields:
             openAPIV3Schema:
               properties:
+                image: {}
                 replicas:
                   minimum: 1
                 resources: {}
@@ -291,6 +334,7 @@ spec:
                     topologySpreadConstraints: {}
                 service: {}
                 storage: {}
+                version: {}
               required:
                 - storage
         hidden:
@@ -332,6 +376,7 @@ spec:
           supportedFields:
             openAPIV3Schema:
               properties:
+                image: {}
                 replicas:
                   minimum: 1
                 resources: {}
@@ -340,6 +385,7 @@ spec:
                     affinity: {}
                     topologySpreadConstraints: {}
                 storage: {}
+                version: {}
               required:
                 - storage
         proxy:
@@ -356,9 +402,15 @@ spec:
                 service: {}
       parametersSchema:
         openAPIV3Schema:
+          description: |-
+            ShardedTopologyParameters defines structured parameters for the sharded
+            cluster topology.
           properties:
             numShards:
+              default: 2
+              description: NumShards specifies the initial number of shards.
               format: int32
+              minimum: 1
               type: integer
           type: object
   uiSchema:

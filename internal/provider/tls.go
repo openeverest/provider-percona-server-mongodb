@@ -15,16 +15,21 @@
 package provider
 
 import (
-	"errors"
+	"encoding/json"
 	"fmt"
+	"slices"
+	"strconv"
+	"strings"
 
 	cmapi "github.com/cert-manager/cert-manager/pkg/apis/certmanager/v1"
 	cmmeta "github.com/cert-manager/cert-manager/pkg/apis/meta/v1"
 	psmdbv1 "github.com/percona/percona-server-mongodb-operator/pkg/apis/psmdb/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/util/validation/field"
 	"sigs.k8s.io/yaml"
 
+	corev1alpha1 "github.com/openeverest/openeverest/v2/api/core/v1alpha1"
 	"github.com/openeverest/openeverest/v2/provider-runtime/controller"
 
 	"github.com/openeverest/provider-percona-server-mongodb/definition"
@@ -47,9 +52,14 @@ var certificateSecretKeys = []string{"tls.crt", "tls.key", caKey}
 
 // tlsParameters returns the instance's TLS parameters with defaults applied.
 func tlsParameters(c *controller.Context) (definition.TLSParameters, error) {
+	return instanceTLSParameters(c.Instance())
+}
+
+// instanceTLSParameters returns the TLS parameters of in with defaults applied.
+func instanceTLSParameters(in *corev1alpha1.Instance) (definition.TLSParameters, error) {
 	params := definition.Parameters{}
-	if raw := c.Instance().Spec.Parameters; raw != nil && len(raw.Raw) > 0 {
-		if err := c.DecodeParameters(&params); err != nil {
+	if raw := in.Spec.Parameters; raw != nil && len(raw.Raw) > 0 {
+		if err := json.Unmarshal(raw.Raw, &params); err != nil {
 			return definition.TLSParameters{}, fmt.Errorf("decode parameters: %w", err)
 		}
 	}
@@ -243,85 +253,158 @@ func withClientCertificatesOptional(configuration psmdbv1.MongoConfiguration) (p
 	return psmdbv1.MongoConfiguration(out), nil
 }
 
-// validateTLS validates the TLS parameters, and that they keep what can't
-// change on a running instance.
-func validateTLS(c *controller.Context) error {
-	tls, err := tlsParameters(c)
+// tlsModes and issuerKinds are the values the TLS parameters accept.
+var (
+	tlsModes    = []definition.TLSMode{definition.TLSModePrefer, definition.TLSModeRequire, definition.TLSModeDisabled}
+	issuerKinds = []definition.IssuerKind{definition.IssuerKindIssuer, definition.IssuerKindClusterIssuer}
+)
+
+// validateTLS checks the TLS parameters on their own. validateTLSReferences
+// checks the certificate secrets and what a running instance can't change.
+func validateTLS(in *corev1alpha1.Instance) field.ErrorList {
+	tls, err := instanceTLSParameters(in)
 	if err != nil {
-		return err
+		return field.ErrorList{field.InternalError(field.NewPath("spec", "parameters"), err)}
 	}
+	path := field.NewPath("spec", "parameters", "tls")
 
-	switch tls.Mode {
-	case definition.TLSModePrefer, definition.TLSModeRequire, definition.TLSModeDisabled:
-	default:
-		return fmt.Errorf("mode must be one of %s, %s or %s, got %q",
-			definition.TLSModePrefer, definition.TLSModeRequire, definition.TLSModeDisabled, tls.Mode)
+	var errs field.ErrorList
+	if !slices.Contains(tlsModes, tls.Mode) {
+		errs = append(errs, field.NotSupported(path.Child("mode"), tls.Mode, tlsModes))
 	}
-
-	if tls.Issuer != nil {
-		switch tls.Issuer.Kind {
-		case definition.IssuerKindIssuer, definition.IssuerKindClusterIssuer:
-		default:
-			return fmt.Errorf("issuer.kind must be %s or %s, got %q",
-				definition.IssuerKindIssuer, definition.IssuerKindClusterIssuer, tls.Issuer.Kind)
-		}
+	if tls.Issuer != nil && !slices.Contains(issuerKinds, tls.Issuer.Kind) {
+		errs = append(errs, field.NotSupported(path.Child("issuer", "kind"), tls.Issuer.Kind, issuerKinds))
 	}
 
 	customCertificates := tls.CertificateSecretName != "" || tls.InternalCertificateSecretName != ""
 	switch {
 	case !tlsEnabled(tls.Mode) && (customCertificates || tls.Issuer != nil):
-		return errors.New("certificates and issuer apply only with TLS enabled")
+		errs = append(errs, field.Forbidden(path, "certificates and issuer apply only with TLS enabled"))
 	case tls.InternalCertificateSecretName != "" && tls.CertificateSecretName == "":
-		return errors.New("internalCertificateSecretName requires certificateSecretName")
+		errs = append(errs, field.Required(path.Child("certificateSecretName"),
+			"internalCertificateSecretName requires it",
+		))
 	case tls.CertificateSecretName != "" && tls.Issuer != nil:
-		return errors.New("use either certificate secrets or an issuer, not both")
+		errs = append(errs, field.Forbidden(path.Child("issuer"), "use either certificate secrets or an issuer, not both"))
 	}
 
-	for _, name := range []string{tls.CertificateSecretName, tls.InternalCertificateSecretName} {
-		if name == "" {
+	return errs
+}
+
+// validateTLSTransition rejects, on an update of an instance the provider has
+// created, the TLS changes a running cluster can't take. Turning TLS on or off
+// switches how members authenticate each other (x509 or keyfile); a rolling
+// restart would leave the members unable to talk to each other halfway. A new
+// certificate source brings a new CA, which members still on the old one
+// wouldn't trust. validateTLSChange checks the same at reconcile time, against
+// the PerconaServerMongoDB.
+func validateTLSTransition(in, old *corev1alpha1.Instance) field.ErrorList {
+	if old == nil || old.Status.Phase == "" || old.Status.Phase == corev1alpha1.InstancePhasePending {
+		return nil
+	}
+	before, err := instanceTLSParameters(old)
+	if err != nil {
+		return nil
+	}
+	after, err := instanceTLSParameters(in)
+	if err != nil {
+		return nil
+	}
+
+	path := field.NewPath("spec", "parameters", "tls")
+	var errs field.ErrorList
+	if tlsEnabled(before.Mode) != tlsEnabled(after.Mode) {
+		errs = append(errs, field.Forbidden(path.Child("mode"), "TLS can't be turned on or off on an existing instance"))
+	}
+	if certificateSource(before) != certificateSource(after) {
+		errs = append(errs, field.Forbidden(path, "certificates and issuer can't change on an existing instance"))
+	}
+	return errs
+}
+
+// certificateSource identifies where an instance's certificates come from.
+func certificateSource(tls definition.TLSParameters) string {
+	issuer := "/"
+	if tls.Issuer != nil {
+		issuer = string(tls.Issuer.Kind) + "/" + tls.Issuer.Name
+	}
+	return issuer + " " + tls.CertificateSecretName + " " + tls.InternalCertificateSecretName
+}
+
+// validateTLSReferences checks that the certificate secrets hold a
+// certificate, and that the TLS parameters keep what can't change on the
+// running cluster.
+func validateTLSReferences(c *controller.Context) (field.ErrorList, error) {
+	tls, err := tlsParameters(c)
+	if err != nil {
+		return nil, err
+	}
+
+	path := field.NewPath("spec", "parameters", "tls")
+	var errs field.ErrorList
+	for _, ref := range []struct {
+		field, name string
+	}{
+		{"certificateSecretName", tls.CertificateSecretName},
+		{"internalCertificateSecretName", tls.InternalCertificateSecretName},
+	} {
+		if ref.name == "" {
 			continue
 		}
-		if err := validateCertificateSecret(c, name); err != nil {
-			return err
+		secretErrs, err := validateCertificateSecret(c, path.Child(ref.field), ref.name)
+		if err != nil {
+			return nil, err
 		}
+		errs = append(errs, secretErrs...)
 	}
 
-	return validateTLSChange(c, tls)
+	changeErrs, err := validateTLSChange(c, tls)
+	if err != nil {
+		return nil, err
+	}
+	return append(errs, changeErrs...), nil
 }
 
-func validateCertificateSecret(c *controller.Context, name string) error {
+func validateCertificateSecret(c *controller.Context, path *field.Path, name string) (field.ErrorList, error) {
 	secret := &corev1.Secret{}
 	if err := c.Get(secret, name); err != nil {
-		return fmt.Errorf("get certificate secret %q: %w", name, err)
+		if apierrors.IsNotFound(err) {
+			return field.ErrorList{field.NotFound(path, name)}, nil
+		}
+		return nil, fmt.Errorf("get certificate secret %q: %w", name, err)
 	}
+	var missing []string
 	for _, key := range certificateSecretKeys {
 		if len(secret.Data[key]) == 0 {
-			return fmt.Errorf("certificate secret %q is missing %q", name, key)
+			missing = append(missing, strconv.Quote(key))
 		}
 	}
-	return nil
+	if len(missing) > 0 {
+		return field.ErrorList{field.Invalid(path, name, "missing "+strings.Join(missing, ", "))}, nil
+	}
+	return nil, nil
 }
 
-// validateTLSChange rejects changes the operator can't apply to a running
-// instance. Turning TLS on or off switches how members authenticate each
-// other (x509 or keyfile); a rolling restart would leave the members unable
-// to talk to each other halfway. A new certificate source brings a new CA,
-// which members still on the old one wouldn't trust.
-func validateTLSChange(c *controller.Context, tls definition.TLSParameters) error {
+// validateTLSChange is validateTLSTransition against the running
+// PerconaServerMongoDB, for reconcile time, when the previous Instance is
+// unknown.
+func validateTLSChange(c *controller.Context, tls definition.TLSParameters) (field.ErrorList, error) {
 	current := &psmdbv1.PerconaServerMongoDB{}
 	if err := c.Get(current, c.Name()); err != nil {
 		if apierrors.IsNotFound(err) {
-			return nil
+			return nil, nil
 		}
-		return fmt.Errorf("fetching current PSMDB CR: %w", err)
+		return nil, fmt.Errorf("fetching current PSMDB CR: %w", err)
 	}
 
+	path := field.NewPath("spec", "parameters", "tls")
+	var errs field.ErrorList
 	currentMode := psmdbv1.TLSModePrefer
 	if current.Spec.TLS != nil && current.Spec.TLS.Mode != "" {
 		currentMode = current.Spec.TLS.Mode
 	}
 	if (currentMode != psmdbv1.TLSModeDisabled) != tlsEnabled(tls.Mode) {
-		return errors.New("TLS can't be turned on or off on an existing instance")
+		errs = append(errs, field.Forbidden(path.Child("mode"), "TLS can't be turned on or off on an existing instance"))
 	}
 
 	currentIssuer, currentSecret, currentInternalSecret := "/", "", ""
@@ -340,10 +423,10 @@ func validateTLSChange(c *controller.Context, tls definition.TLSParameters) erro
 	}
 	if currentIssuer != wantIssuer || currentSecret != tls.CertificateSecretName ||
 		(currentInternalSecret != "" && currentInternalSecret != internalCertificateSecretName(c, tls)) {
-		return errors.New("certificates and issuer can't change on an existing instance")
+		errs = append(errs, field.Forbidden(path, "certificates and issuer can't change on an existing instance"))
 	}
 
-	return nil
+	return errs, nil
 }
 
 // internalCertificateSecretName is the secret holding the certificate

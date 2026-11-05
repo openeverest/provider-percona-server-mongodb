@@ -45,7 +45,7 @@ spec:
       backupRef:
         name: import-f0c20f37c8b68e24
   topology:
-    type: replicaset
+    type: replicaSet
   components:
     engine:
       type: mongod

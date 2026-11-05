@@ -5,7 +5,7 @@ metadata:
   name: test-psmdb-hidden
 status:
   (conditions[?type == 'Ready'] | [0].reason): ValidationFailed
-  (contains(conditions[?type == 'Ready'] | [0].message, 'positive even number')): true
+  (contains(conditions[?type == 'Ready'] | [0].message, 'spec.components[hidden].replicas')): true
 ---
 apiVersion: psmdb.percona.com/v1
 kind: PerconaServerMongoDB

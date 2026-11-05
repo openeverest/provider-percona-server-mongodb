@@ -23,8 +23,6 @@
 package components
 
 // MongodParameters defines structured parameters for mongod components.
-// This struct is converted to OpenAPI schema and served via the /schema endpoint.
-// Provider users can specify these fields in the Instance's component Parameters.
 type MongodParameters struct {
 	// Configuration is the mongod configuration file content (YAML).
 	// `configuration` is the conventional property name for the engine
