@@ -49,6 +49,7 @@ manages pods directly — all lifecycle work is delegated to the operator.
 
 | provider-percona-server-mongodb | OpenEverest | Percona Operator for MongoDB | Kubernetes |
 |---|---|---|---|
+| `0.6.x` | `2.0.0-dev.5` | `1.23.x` | `1.30` – `1.34` |
 | `0.5.x` | `2.0.0-dev.4` | `1.23.x` | `1.30` – `1.34` |
 | `0.4.x` | `2.0.0-dev.4` | `1.22.x` | `1.30` – `1.34` |
 | `0.3.x` | `2.0.0-dev.3` | `1.22.x` | `1.30` – `1.34` |

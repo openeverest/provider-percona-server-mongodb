@@ -37,9 +37,10 @@ import (
 	backupv1alpha1 "github.com/openeverest/openeverest/v2/api/backup/v1alpha1"
 	commonv1alpha1 "github.com/openeverest/openeverest/v2/api/common/v1alpha1"
 	corev1alpha1 "github.com/openeverest/openeverest/v2/api/core/v1alpha1"
-	"github.com/openeverest/openeverest/v2/pkg/backupstorageclasses"
+	s3class "github.com/openeverest/openeverest/v2/backupstorageclasses/s3"
 	"github.com/openeverest/openeverest/v2/provider-runtime/controller"
 
+	"github.com/openeverest/provider-percona-server-mongodb/definition/backupclasses"
 	"github.com/openeverest/provider-percona-server-mongodb/internal/common"
 )
 
@@ -55,6 +56,10 @@ const (
 	// PSMDB operator (kept as a string constant here to avoid pulling in the
 	// operator's internal naming package).
 	psmdbBackupAncestorLabel = "percona.com/backup-ancestor"
+
+	// backupClassName is the BackupClass the provider ships, defined in
+	// definition/backupclasses.
+	backupClassName = "percona-backup-mongodb"
 )
 
 // =============================================================================
@@ -337,17 +342,17 @@ func psmdbStorage(c *controller.Context, bs *backupv1alpha1.BackupStorage, prefi
 		return psmdbv1.BackupStorageSpec{}, err
 	}
 	implementation := s3.EffectiveImplementation()
-	if implementation == backupstorageclasses.S3ImplementationGCS {
+	if implementation == s3class.ImplementationGCS {
 		return psmdbv1.BackupStorageSpec{}, fmt.Errorf("PBM cannot use GCS through its S3 client: %w", controller.ErrImplementationUnsupported)
 	}
-	tls, err := c.BackupStorageTLS(bs, controller.TLSSupport{CustomCA: true, SkipVerify: true})
+	tls, err := c.BackupStorageTLS(bs, backupclasses.TLSSupport(backupClassName, s3class.ClassName))
 	if err != nil {
 		return psmdbv1.BackupStorageSpec{}, err
 	}
 	// PBM reads the AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY of the storage's Secret.
 	credentials := bs.Spec.Authentication.CredentialsSecretRef.Name
 
-	if implementation == backupstorageclasses.S3ImplementationAWS && tls.CASecretKeyRef == nil {
+	if implementation == s3class.ImplementationAWS && tls.CASecretKeyRef == nil {
 		return psmdbv1.BackupStorageSpec{
 			Type: psmdbv1.BackupStorageS3,
 			S3: psmdbv1.BackupStorageS3Spec{

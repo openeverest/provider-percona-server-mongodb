@@ -9,6 +9,44 @@ spec:
     - authModes:
         - AccessKey
       name: s3
+      parametersSchema:
+        openAPIV3Schema:
+          additionalProperties: false
+          properties:
+            endpointURL:
+              description: |-
+                EndpointURL is the URL of the S3 API, for example
+                https://s3.us-east-1.amazonaws.com. An http:// URL uses plain HTTP.
+              maxLength: 2048
+              pattern: ^https?://[^/?#@]+([/?#].*)?$
+              type: string
+            forcePathStyle:
+              description: |-
+                ForcePathStyle addresses the bucket in the URL path instead of the host
+                name, as most S3-compatible gateways require.
+              type: boolean
+            implementation:
+              description: |-
+                Implementation names the software serving the endpoint. Unset means
+                Amazon S3.
+              enum:
+                - aws
+                - minio
+                - ceph
+                - other
+              type: string
+            region:
+              description: Region of the bucket.
+              maxLength: 63
+              minLength: 1
+              type: string
+          required:
+            - endpointURL
+            - region
+          type: object
+      tls:
+        customCA: Supported
+        insecureSkipVerify: Supported
   description: |
     BackupClass for the Percona Server MongoDB provider. Backups are managed
     natively by Percona Backup for MongoDB (PBM) embedded in the PSMDB operator;
@@ -48,6 +86,8 @@ spec:
     limits:
       maxPITREnabledStorages: 1
       maxStorages: 1
+    providerRef:
+      name: percona-server-mongodb
     supportsPITR: true
   restoreParametersSchema:
     openAPIV3Schema:
@@ -57,6 +97,4 @@ spec:
         restore-time options through OpenEverest; the struct is intentionally
         empty and ships an empty schema until requirements crystallize.
       type: object
-  supportedProviders:
-    - percona-server-mongodb
   supportsImport: true

@@ -40,5 +40,6 @@ metadata:
 spec:
   displayName: Percona Backup for MongoDB
   executionMode: ProviderManaged
-  supportedProviders:
-    - percona-server-mongodb
+  providerManaged:
+    providerRef:
+      name: percona-server-mongodb

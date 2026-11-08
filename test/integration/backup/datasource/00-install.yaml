@@ -33,13 +33,13 @@ metadata:
 spec:
   displayName: Percona Backup for MongoDB
   executionMode: ProviderManaged
-  supportedProviders:
-    - percona-server-mongodb
   backupStorageClasses:
     - name: s3
       authModes:
         - AccessKey
   providerManaged:
+    providerRef:
+      name: percona-server-mongodb
     supportsPITR: true
     limits:
       maxPITREnabledStorages: 1

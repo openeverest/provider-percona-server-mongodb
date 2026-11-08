@@ -31,7 +31,8 @@ import (
 	backupv1alpha1 "github.com/openeverest/openeverest/v2/api/backup/v1alpha1"
 	commonv1alpha1 "github.com/openeverest/openeverest/v2/api/common/v1alpha1"
 	corev1alpha1 "github.com/openeverest/openeverest/v2/api/core/v1alpha1"
-	"github.com/openeverest/openeverest/v2/pkg/backupstorageclasses"
+	"github.com/openeverest/openeverest/v2/backupstorageclasses"
+	"github.com/openeverest/openeverest/v2/backupstorageclasses/s3"
 	"github.com/openeverest/openeverest/v2/provider-runtime/controller"
 
 	"github.com/openeverest/provider-percona-server-mongodb/internal/common"
@@ -390,11 +391,11 @@ func testBackupStorage(name, parameters string, tls *commonv1alpha1.TLSConfig) *
 	return &backupv1alpha1.BackupStorage{
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "ns", Generation: 1},
 		Spec: backupv1alpha1.BackupStorageSpec{
-			BackupStorageClassRef: commonv1alpha1.ObjectRef{Name: backupstorageclasses.ClassS3},
+			BackupStorageClassRef: commonv1alpha1.ObjectRef{Name: s3.ClassName},
 			Location:              backupv1alpha1.BackupStorageLocation{ObjectStore: &backupv1alpha1.ObjectStoreLocation{Bucket: "backups", Prefix: "team"}},
 			Parameters:            &runtime.RawExtension{Raw: []byte(parameters)},
 			Authentication: commonv1alpha1.Authentication{
-				Mode:                 backupstorageclasses.AuthModeAccessKey,
+				Mode:                 s3.AuthModeAccessKey,
 				CredentialsSecretRef: &commonv1alpha1.SecretRef{Name: testStorageCredentials},
 			},
 			TLS: tls,
@@ -413,8 +414,8 @@ func testStorageSecrets() []client.Object {
 		&corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{Name: testStorageCredentials, Namespace: "ns"},
 			Data: map[string][]byte{
-				backupstorageclasses.KeyAWSAccessKeyID:     []byte("id"),
-				backupstorageclasses.KeyAWSSecretAccessKey: []byte("secret"),
+				s3.KeyAWSAccessKeyID:     []byte("id"),
+				s3.KeyAWSSecretAccessKey: []byte("secret"),
 			},
 		},
 		&corev1.Secret{

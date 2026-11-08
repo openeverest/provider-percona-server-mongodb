@@ -36,6 +36,7 @@ import (
 	monitoringv1alpha1 "github.com/openeverest/openeverest/v2/api/monitoring/v1alpha1"
 	"github.com/openeverest/openeverest/v2/provider-runtime/controller"
 
+	"github.com/openeverest/provider-percona-server-mongodb/definition/backupclasses"
 	"github.com/openeverest/provider-percona-server-mongodb/internal/common"
 )
 
@@ -696,6 +697,7 @@ func NewPSMDBProviderInterface() *PSMDBProvider {
 			),
 		},
 	}
+	p.SetShippedBackupClasses(backupclasses.Shipped())
 
 	return p
 }
