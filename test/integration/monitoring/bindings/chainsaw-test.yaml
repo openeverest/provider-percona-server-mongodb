@@ -7,8 +7,9 @@ spec:
   description: |
     Monitoring through Instance.spec.monitoring.destinations[]: a ProviderManaged
     pmm binding renders spec.pmm, an ExtensionManaged prometheus binding turns
-    the mongodb_exporter sidecars on and publishes the metrics endpoints, a
-    deleted pmm destination keeps the live spec.pmm until it is re-created, a
+    the mongodb_exporter sidecars on and publishes the metrics endpoints, core
+    refuses deleting the pmm destination while the Instance lists it, one that
+    disappears anyway leaves the live spec.pmm until it is re-created, a
     rotated pmm token reaches the users secret, replacing prometheus with
     victoriametrics keeps the sidecars and endpoints, and dropping each entry
     undoes exactly its part. No extension controller runs here, so the classes
@@ -72,13 +73,36 @@ spec:
         - assert:
             file: 11-assert.yaml
 
+    # Core refuses deleting a destination an Instance lists. Force it through
+    # (a deletion admitted on a stale count, then the in-use finalizer
+    # removed) to cover a destination that disappears anyway.
     - name: delete-pmm-destination
       try:
-        - delete:
-            ref:
+        - assert:
+            resource:
               apiVersion: monitoring.openeverest.io/v1alpha1
               kind: MonitoringDestination
-              name: pmm-it
+              metadata:
+                name: pmm-it
+              status:
+                attachedInstances: 1
+        - script:
+            content: kubectl -n $NAMESPACE delete monitoringdestination/pmm-it --wait=false
+            check:
+              ($error != null): true
+              (contains($stderr, 'in use by 1 database')): true
+        - script:
+            content: |
+              set -e
+              kubectl -n $NAMESPACE patch monitoringdestination/pmm-it --subresource=status --type=merge -p '{"status":{"attachedInstances":0}}'
+              kubectl -n $NAMESPACE delete monitoringdestination/pmm-it --wait=false
+              kubectl -n $NAMESPACE patch monitoringdestination/pmm-it --type=merge -p '{"metadata":{"finalizers":null}}'
+        - error:
+            resource:
+              apiVersion: monitoring.openeverest.io/v1alpha1
+              kind: MonitoringDestination
+              metadata:
+                name: pmm-it
         - assert:
             file: 12-assert.yaml
 
