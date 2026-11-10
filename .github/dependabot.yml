@@ -1,0 +1,30 @@
+# The percona-server-mongodb-operator is pinned twice: as a Go module (its API
+# types, in go.mod) and as the bundled Helm subchart psmdb-operator
+# (charts/provider-percona-server-mongodb/Chart.yaml). Both are placed in one
+# multi-ecosystem group so a new operator release arrives as a single PR that
+# bumps them together.
+version: 2
+
+multi-ecosystem-groups:
+  percona-server-mongodb-operator:
+    schedule:
+      interval: "daily"
+    labels:
+      - "dependencies"
+
+updates:
+  - package-ecosystem: "gomod"
+    directory: "/"
+    allow:
+      - dependency-name: "github.com/percona/percona-server-mongodb-operator"
+    patterns:
+      - "github.com/percona/percona-server-mongodb-operator"
+    multi-ecosystem-group: "percona-server-mongodb-operator"
+
+  - package-ecosystem: "helm"
+    directory: "/charts/provider-percona-server-mongodb"
+    allow:
+      - dependency-name: "psmdb-operator"
+    patterns:
+      - "psmdb-operator"
+    multi-ecosystem-group: "percona-server-mongodb-operator"
