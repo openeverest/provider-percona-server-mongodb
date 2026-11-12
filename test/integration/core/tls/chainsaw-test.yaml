@@ -40,6 +40,8 @@ spec:
         - assert:
             file: 20-assert.yaml
 
+    # TLS can't be turned off once the provider has reconciled the Instance,
+    # which is when the runtime records the version it applies.
     - name: tls-stays-on
       try:
         - assert:
@@ -49,7 +51,7 @@ spec:
               metadata:
                 name: psmdb-tls
               status:
-                (phase != null && phase != 'Pending'): true
+                (version != null && version != ''): true
         - script:
             content: >-
               kubectl -n $NAMESPACE patch in/psmdb-tls --type merge

@@ -3,7 +3,11 @@ kind: Instance
 metadata:
   name: psmdb-dest
 status:
-  phase: Restoring
+  # A new Instance being seeded has not been available yet.
+  phase: Pending
+  (conditions[?type == 'Restoring'].status | [0]): "True"
+  (conditions[?type == 'Ready'].status | [0]): "False"
+  (conditions[?type == 'Available'].status | [0]): "False"
 ---
 apiVersion: backup.openeverest.io/v1alpha1
 kind: Restore

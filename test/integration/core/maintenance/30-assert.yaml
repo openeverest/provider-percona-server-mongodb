@@ -1,5 +1,6 @@
 # The approved action applies: crVersion converges to the running operator's
-# version, the pending list empties, and the condition flips to False.
+# version, the pending list empties, and the condition flips to False. The
+# operator has not rolled the new version out, so the Instance is not Ready.
 apiVersion: psmdb.percona.com/v1
 kind: PerconaServerMongoDB
 metadata:
@@ -12,7 +13,8 @@ kind: Instance
 metadata:
   name: test-psmdb-cluster
 status:
-  phase: Ready
+  phase: Provisioned
+  (conditions[?type == 'Ready'].status | [0]): "False"
   (pendingMaintenance == null): true
   (conditions[?type == 'MaintenancePending'])[0]:
     status: "False"

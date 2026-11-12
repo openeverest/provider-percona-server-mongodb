@@ -34,10 +34,16 @@ spec:
       type: backup
 
 # status:
-#   phase: Ready
-#   connectionURL: mongodb://psmdb-simple:27017
-#   credentialSecretRef:
-#     name: psmdb-simple-credentials
+#   phase: Provisioned
+#   connectionSecretRef:
+#     name: psmdb-simple-conn
+#   conditions:
+#     - type: Available
+#       status: "True"
+#       reason: Available
+#     - type: Ready
+#       status: "True"
+#       reason: Ready
   
 #   conditions:
 #   - type: Ready

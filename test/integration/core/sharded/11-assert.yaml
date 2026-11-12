@@ -44,8 +44,9 @@ spec:
 #     expose:
 #       type: internal
 status:
-  # status: ready
-  phase: Ready
+  phase: Provisioned
+  (conditions[?type == 'Ready'].status | [0]): "True"
+  (conditions[?type == 'Available'].status | [0]): "True"
 ---
 apiVersion: psmdb.percona.com/v1
 kind: PerconaServerMongoDB

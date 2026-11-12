@@ -160,6 +160,33 @@ kubectl get instance my-instance -o jsonpath='{.status.connection}'
 
 Credentials are in the secret named by `.status.connection.credentialsSecretRef`.
 
+### Status
+
+The provider reports what it observes, and OpenEverest derives the `Instance` conditions from
+it the same way for every provider.
+
+| Condition | What this provider reports |
+|---|---|
+| `Available` | `True` while every replica set, and the config servers of a sharded cluster, have a member in state `PRIMARY`, and a sharded cluster has a `mongos` ready. A shard that is still being added does not count. It is read from the member states the operator records in the `PerconaServerMongoDB` status, so a replica set stays available through a rolling restart. It is `Unknown` when the operator has not recorded them, and `False` while a restore runs or the cluster is paused. The reason and message name the replica set, for example `NoPrimary`: "Replica set rs1 has no primary". |
+| `Ready` | `True` once the cluster runs what the `Instance` asks for: the operator reports it ready for the latest generation of the `PerconaServerMongoDB`, and every StatefulSet runs its latest pod template. Until then the message says what is being waited for. |
+| `Restoring` | `True` while a `Restore` of the `Instance` runs, and while a new `Instance` is seeded from `spec.dataSource`. |
+| `Upgrading` | `True` while a new engine image rolls out. |
+
+The connection details Secret is written the first time the database is available, and kept
+current while a change rolls out.
+
+A problem makes the `Instance` not `Ready`, with a reason that says what is wrong:
+
+| Reason | Cause |
+|---|---|
+| `PausedOutsideOpenEverest` | `spec.pause` is set on the `PerconaServerMongoDB`. Nothing but unsetting it there starts the database again. |
+| `NoPrimary` | The operator could not find a primary in a replica set. |
+| `AuthenticationFailed` | `mongod` rejects the operator's credentials, for example because the users Secret does not match the data. |
+| `ConfigurationRejected` | The operator refuses the cluster's configuration. |
+| `TLSCertificatesNotReady` | The operator cannot get the cluster's certificates. |
+| `CrashLoopBackOff` | The operator found a pod in a crash loop. |
+| `EngineError` | Any other error the operator reports; the message quotes it. |
+
 ## Topologies
 
 <!-- BEGIN GENERATED: topologies -->

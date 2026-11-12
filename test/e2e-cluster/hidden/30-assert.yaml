@@ -3,5 +3,6 @@ kind: Instance
 metadata:
   name: psmdb-hidden
 status:
-  phase: Ready
+  phase: Provisioned
+  (conditions[?type == 'Ready'].status | [0]): "True"
   (length(components[?name == 'hidden'])): 0

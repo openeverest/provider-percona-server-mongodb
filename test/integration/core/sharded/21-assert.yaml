@@ -61,7 +61,7 @@ spec:
             topologyKey: kubernetes.io/hostname
             whenUnsatisfiable: ScheduleAnyway
 status:
-  phase: Ready
+  phase: Provisioned
 ---
 apiVersion: psmdb.percona.com/v1
 kind: PerconaServerMongoDB
