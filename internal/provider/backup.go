@@ -832,37 +832,8 @@ func (p *PSMDBProvider) CleanupRestore(c *controller.Context, restore *backupv1a
 	return false, nil
 }
 
-// hasActiveRestoreForInstance reports whether any Restore targeting the given
-// Instance is still in a non-terminal state.
-func hasActiveRestoreForInstance(c *controller.Context, namespace, instanceName string) (bool, error) {
-	restoreList := &backupv1alpha1.RestoreList{}
-	if err := c.Client().List(
-		c.Context(),
-		restoreList,
-		client.InNamespace(namespace),
-		client.MatchingFields{controller.IndexRestoreInstanceName: instanceName},
-	); err != nil {
-		return false, fmt.Errorf("list Restore resources for instance %q: %w", instanceName, err)
-	}
-
-	for i := range restoreList.Items {
-		r := restoreList.Items[i]
-		if !r.DeletionTimestamp.IsZero() {
-			continue
-		}
-		switch r.Status.State {
-		case backupv1alpha1.RestoreStateSucceeded, backupv1alpha1.RestoreStateFailed:
-			continue
-		default:
-			return true, nil
-		}
-	}
-
-	return false, nil
-}
-
 // enqueueRestoreInstance maps a Restore event to a reconcile request for the
-// Instance it targets, so the Instance phase tracks the restore's lifecycle.
+// Instance it targets, so the Instance's status tracks the restore's lifecycle.
 func enqueueRestoreInstance() func(ctx context.Context, obj client.Object) []reconcile.Request {
 	return func(_ context.Context, obj client.Object) []reconcile.Request {
 		r, ok := obj.(*backupv1alpha1.Restore)

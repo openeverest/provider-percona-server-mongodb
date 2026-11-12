@@ -308,8 +308,8 @@ func SyncPSMDB(c *controller.Context) error {
 	// AND PSMDB having published a BackupVersion. Issuing the Restore before
 	// the operator has selected a backup-agent image causes the restore to
 	// hang in a Waiting state. While the gate is not satisfied the helper is
-	// not invoked and StatusPSMDB will report Restoring so callers know the
-	// Instance is still being seeded.
+	// not invoked and StatusPSMDB reports the Restoring operation so callers
+	// know the Instance is still being seeded.
 	if c.Instance().Spec.DataSource != nil {
 		current := &psmdbv1.PerconaServerMongoDB{}
 		if err := c.Get(current, c.Name()); err != nil {
@@ -397,57 +397,6 @@ func unsafeFlags(c *controller.Context) psmdbv1.UnsafeFlags {
 		MongosSize:             proxyReplicas != nil && *proxyReplicas < productionSafeMongosSize,
 		TerminationGracePeriod: allowUnsafeTermination,
 		BackupIfUnhealthy:      allowUnsafeBackup,
-	}
-}
-
-// StatusPSMDB computes the current status of the PSMDB cluster.
-func StatusPSMDB(c *controller.Context) (controller.Status, error) {
-	// TODO: We probably shouldn't be querying the PSMDB object directly here;
-	// It can lead to a race condition where we are setting the status based on
-	// new data whereas the sync used older data.
-	// Should the SDK be responsible for fetching and caching the PSMDB object
-	// to ensure we only get it once during the reconcile?
-	psmdb := &psmdbv1.PerconaServerMongoDB{}
-	if err := c.Get(psmdb, c.Name()); err != nil {
-		return controller.Provisioning("Waiting for PerconaServerMongoDB"), nil
-	}
-	// While initial seeding from .spec.dataSource has not reached a terminal
-	// state, override the phase to Restoring so users can see the Instance
-	// is being populated. ConditionDataSourceReady carries the detailed
-	// reason/message.
-	if ds := c.GetDataSourceStatus(); ds != nil {
-		if !ds.Done {
-			return controller.Restoring(ds.Message), nil
-		}
-		if ds.State == controller.DataSourceStateFailed {
-			return controller.Failed(ds.Message), nil
-		}
-	}
-
-	// A restore drives the engine through intermediate and momentarily ready
-	// states, so reading the phase off the engine alone makes the Instance
-	// flap between Restoring, Provisioning and Ready while one is in flight.
-	// The Restore CR reaching a terminal state is what ends the restore, so let
-	// it own the phase for as long as it is running.
-	activeRestore, err := hasActiveRestoreForInstance(c, c.Namespace(), c.Name())
-	if err != nil {
-		return controller.Status{}, err
-	}
-	if activeRestore {
-		return controller.Restoring("Restore is running"), nil
-	}
-
-	switch psmdb.Status.State {
-	case psmdbv1.AppStateReady:
-		details, err := buildConnectionDetails(c, psmdb)
-		if err != nil {
-			return controller.Failed("Failed to build connection details: " + err.Error()), nil
-		}
-		return controller.ReadyWithConnectionDetails(details), nil
-	case psmdbv1.AppStateError:
-		return controller.Failed(psmdb.Status.Message), nil
-	default:
-		return controller.Provisioning("Cluster is being created"), nil
 	}
 }
 
@@ -668,7 +617,8 @@ func NewPSMDBProviderInterface() *PSMDBProvider {
 			psmdbv1.SchemeBuilder.AddToScheme,
 			// Sync lists MonitoringBindings and the conformance harness's scheme has only these.
 			monitoringv1alpha1.SchemeBuilder.AddToScheme,
-			// Deployments are read to discover the running operator version.
+			// Deployments are read to discover the running operator version,
+			// StatefulSets to tell whether the cluster has rolled out.
 			appsv1.AddToScheme,
 		},
 		WatchConfigs: []controller.WatchConfig{
@@ -678,13 +628,21 @@ func NewPSMDBProviderInterface() *PSMDBProvider {
 			// we need to be notified when the status changes so we can
 			// update the Instance status.
 			controller.WatchOwned(&psmdbv1.PerconaServerMongoDB{}),
-			// Watch Restores so the Instance leaves the Restoring phase as soon
+			// Watch Restores so the Instance stops reporting a restore as soon
 			// as one reaches a terminal state. The engine usually reports ready
-			// before the Restore CR does, so without this the Instance would sit
-			// in Restoring until an unrelated event arrived. Standalone Restores
-			// are not owned by the Instance, so map them via spec.instanceRef.
+			// before the Restore CR does, so without this the Instance would
+			// keep reporting it until an unrelated event arrived. Standalone
+			// Restores are not owned by the Instance, so map them via
+			// spec.instanceRef.
 			controller.WatchExternal(&backupv1alpha1.Restore{},
 				handler.EnqueueRequestsFromMapFunc(enqueueRestoreInstance()),
+			),
+			// Watch the cluster's StatefulSets: the Instance has converged
+			// only once they have rolled out, which the operator's own status
+			// can report too early. They are owned by the
+			// PerconaServerMongoDB, so map them by their cluster label.
+			controller.WatchExternal(&appsv1.StatefulSet{},
+				handler.EnqueueRequestsFromMapFunc(enqueueStatefulSetInstance()),
 			),
 			// Watch operator backups so latestRestorableTime refreshes
 			// (stamped by PBM on ready backups) propagate to
@@ -705,7 +663,7 @@ func (p *PSMDBProvider) Sync(c *controller.Context) error {
 	return SyncPSMDB(c)
 }
 
-// Status computes the current status of the cluster.
+// Status reports what the provider observes about the cluster.
 func (p *PSMDBProvider) Status(c *controller.Context) (controller.Status, error) {
 	return StatusPSMDB(c)
 }
