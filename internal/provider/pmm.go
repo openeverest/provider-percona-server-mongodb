@@ -15,11 +15,11 @@
 package provider
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/url"
 
+	pmm "github.com/openeverest/monitoring-pmm/api"
 	psmdbv1 "github.com/percona/percona-server-mongodb-operator/pkg/apis/psmdb/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -183,16 +183,24 @@ func mergeResourceList(requested, defaultResources corev1.ResourceList) corev1.R
 	return merged
 }
 
-// pmmDestinationParameters is the shape of MonitoringDestination.spec.parameters
-// for the pmm class.
-type pmmDestinationParameters struct {
-	URL string `json:"url"`
+// pmmResourceRequirements converts the resources of a pmm entry's parameters
+// into the container's; nil sets none.
+func pmmResourceRequirements(r *pmm.Resources) corev1.ResourceRequirements {
+	if r == nil {
+		return corev1.ResourceRequirements{}
+	}
+	return corev1.ResourceRequirements{Limits: resourceList(r.Limits), Requests: resourceList(r.Requests)}
 }
 
-// pmmInstanceParameters is the shape of
-// Instance.spec.monitoring.destinations[].parameters for the pmm class.
-type pmmInstanceParameters struct {
-	Resources corev1.ResourceRequirements `json:"resources"`
+func resourceList(quantities map[string]resource.Quantity) corev1.ResourceList {
+	if quantities == nil {
+		return nil
+	}
+	list := make(corev1.ResourceList, len(quantities))
+	for name, q := range quantities {
+		list[corev1.ResourceName(name)] = q
+	}
+	return list
 }
 
 // renderFailure is a binding that cannot be rendered as configured. It is
@@ -220,8 +228,8 @@ func applyPMMBindings(c *controller.Context, psmdb *psmdbv1.PerconaServerMongoDB
 	if err != nil {
 		return err
 	}
-	switch pmm := req.Integrations[pmmIntegration]; {
-	case pmm == controller.Required:
+	switch requirement := req.Integrations[pmmIntegration]; {
+	case requirement == controller.Required:
 		bindings, err := c.MonitoringBindings()
 		if err != nil {
 			return err
@@ -243,9 +251,9 @@ func applyPMMBindings(c *controller.Context, psmdb *psmdbv1.PerconaServerMongoDB
 			c.SetMonitoringBindingResult(rb.Binding.Name, monitoringv1alpha1.ReasonAgentTLSNotVerified,
 				"pmm-client does not verify the PMM server certificate, whatever spec.tls says: the Percona operator runs it with PMM_AGENT_SERVER_INSECURE_TLS=1")
 		}
-	case pmm.Else(live.Spec.PMM.Enabled):
+	case requirement.Else(live.Spec.PMM.Enabled):
 		psmdb.Spec.PMM = *live.Spec.PMM.DeepCopy()
-	case pmm == controller.NotRequired && !live.Spec.PMM.Enabled:
+	case requirement == controller.NotRequired && !live.Spec.PMM.Enabled:
 		return removeSecretData(c, usersSecretName, psmdbv1.PMMServerToken)
 	}
 	return nil
@@ -261,15 +269,19 @@ func renderPMMBinding(c *controller.Context, psmdb *psmdbv1.PerconaServerMongoDB
 		return renderFailedf("MonitoringClass %q sets no providerManaged.agentImage", rb.Class.Name)
 	}
 
-	dstParams := pmmDestinationParameters{}
+	// The contract's decoders are strict: a parameter this build does not
+	// know is a render failure, never ignored.
+	var rawDst []byte
 	if rb.Destination.Spec.Parameters != nil {
-		if err := json.Unmarshal(rb.Destination.Spec.Parameters.Raw, &dstParams); err != nil {
-			return renderFailedf("decode MonitoringDestination %q parameters: %w", rb.Destination.Name, err)
-		}
+		rawDst = rb.Destination.Spec.Parameters.Raw
+	}
+	dstParams, err := pmm.DecodeDestination(rawDst)
+	if err != nil {
+		return renderFailedf("MonitoringDestination %q parameters: %w", rb.Destination.Name, err)
 	}
 	u, err := url.Parse(dstParams.URL)
-	if err != nil || u.Host == "" {
-		return renderFailedf("MonitoringDestination %q parameters.url %q: not an absolute URL", rb.Destination.Name, dstParams.URL)
+	if err != nil {
+		return renderFailedf("MonitoringDestination %q parameters.url: %w", rb.Destination.Name, err)
 	}
 	// A missing Secret or key is a renderFailure; other API errors are retried.
 	_, credentials, err := c.MonitoringCredentials(rb)
@@ -279,18 +291,20 @@ func renderPMMBinding(c *controller.Context, psmdb *psmdbv1.PerconaServerMongoDB
 	if err != nil {
 		return renderFailure{err}
 	}
-	token := credentials["token"]
+	token := credentials[pmm.KeyToken]
 	if len(token) == 0 {
 		return renderFailedf("MonitoringDestination %q credentials carry no token", rb.Destination.Name)
 	}
 
-	entryParams := pmmInstanceParameters{}
+	var rawEntry []byte
 	if rb.Binding.Spec.Parameters != nil {
-		if err := json.Unmarshal(rb.Binding.Spec.Parameters.Raw, &entryParams); err != nil {
-			return renderFailedf("decode binding parameters: %w", err)
-		}
+		rawEntry = rb.Binding.Spec.Parameters.Raw
 	}
-	resources, err := getPMMResources(c, entryParams.Resources)
+	entryParams, err := pmm.DecodeInstance(rawEntry)
+	if err != nil {
+		return renderFailedf("binding parameters: %w", err)
+	}
+	resources, err := getPMMResources(c, pmmResourceRequirements(entryParams.Resources))
 	if err != nil {
 		return renderFailedf("binding parameters: %w", err)
 	}

@@ -51,7 +51,7 @@ func TestApplyPMMBindings(t *testing.T) {
 
 		c, _ := bindingContext(t, pmmEntry,
 			acceptedBinding("pmm", "pmm-dst", "pmm", corev1alpha1.MonitoringExecutionModeProviderManaged),
-			destination("pmm-dst", "pmm", "https://pmm.example.com:8443/graph", "pmm-token"),
+			destination("pmm-dst", "pmm", "https://pmm.example.com:8443/", "pmm-token"),
 			pmmClass("percona/pmm-client:3.8.0"),
 			pmmToken(),
 			&corev1.Secret{
@@ -100,6 +100,23 @@ func TestApplyPMMBindings(t *testing.T) {
 		assert.Equal(t, resource.MustParse("1Gi"), psmdb.Spec.PMM.Resources.Limits[corev1.ResourceMemory])
 		assert.Equal(t, resource.MustParse("250m"), psmdb.Spec.PMM.Resources.Requests[corev1.ResourceCPU])
 		assert.Equal(t, pmmResourcesSmall.Requests[corev1.ResourceMemory], psmdb.Spec.PMM.Resources.Requests[corev1.ResourceMemory], "unset values keep the tier default")
+	})
+
+	t.Run("resources other than cpu and memory are not rendered", func(t *testing.T) {
+		t.Parallel()
+
+		b := acceptedBinding("pmm", "pmm-dst", "pmm", corev1alpha1.MonitoringExecutionModeProviderManaged)
+		b.Spec.Parameters = &runtime.RawExtension{Raw: []byte(`{"resources":{"limits":{"memory":"1Gi","ephemeral-storage":"1Gi"}}}`)}
+		c, _ := bindingContext(t, pmmEntry, b,
+			destination("pmm-dst", "pmm", "https://pmm.example.com", "pmm-token"),
+			pmmClass("percona/pmm-client:3.8.0"),
+			pmmToken(),
+		)
+		psmdb := &psmdbv1.PerconaServerMongoDB{}
+
+		require.NoError(t, applyPMMBindings(c, psmdb, metricsTestUsersSecret))
+
+		assert.Equal(t, corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("1Gi")}, psmdb.Spec.PMM.Resources.Limits)
 	})
 
 	t.Run("an entry limit below the tier request lowers the request to the limit", func(t *testing.T) {
@@ -182,7 +199,29 @@ func TestApplyPMMBindings(t *testing.T) {
 		}{
 			"relative url": {
 				func(o *objects) { o.dst.Spec.Parameters = &runtime.RawExtension{Raw: []byte(`{"url":"pmm.example.com"}`)} },
-				`parameters.url "pmm.example.com": not an absolute URL`,
+				`MonitoringDestination "pmm-dst" parameters: invalid parameters: url "pmm.example.com" must be an http:// or https:// URL`,
+			},
+			"url with a path, which the operator has nowhere to put": {
+				func(o *objects) {
+					o.dst.Spec.Parameters = &runtime.RawExtension{Raw: []byte(`{"url":"https://pmm.example.com/graph"}`)}
+				},
+				`url "https://pmm.example.com/graph" must be an http:// or https:// URL without user information, path, query or fragment`,
+			},
+			"no destination parameters": {
+				func(o *objects) { o.dst.Spec.Parameters = nil },
+				`MonitoringDestination "pmm-dst" parameters: invalid parameters: url is required`,
+			},
+			"destination parameter this build does not know": {
+				func(o *objects) {
+					o.dst.Spec.Parameters = &runtime.RawExtension{Raw: []byte(`{"url":"https://pmm.example.com","serverHost":"pmm"}`)}
+				},
+				`MonitoringDestination "pmm-dst" parameters: unsupported parameter: unknown field "serverHost"`,
+			},
+			"entry parameter this build does not know": {
+				func(o *objects) {
+					o.binding.Spec.Parameters = &runtime.RawExtension{Raw: []byte(`{"resources":{"claims":[{"name":"gpu"}]}}`)}
+				},
+				`binding parameters: unsupported parameter: unknown field "claims"`,
 			},
 			"no credentials Secret reference": {
 				func(o *objects) { o.dst.Spec.Authentication.CredentialsSecretRef = nil },
@@ -216,7 +255,7 @@ func TestApplyPMMBindings(t *testing.T) {
 				func(o *objects) {
 					o.binding.Spec.Parameters = &runtime.RawExtension{Raw: []byte(`{"resources":"lots"}`)}
 				},
-				"decode binding parameters",
+				"binding parameters: invalid parameters",
 			},
 		} {
 			t.Run(name, func(t *testing.T) {
