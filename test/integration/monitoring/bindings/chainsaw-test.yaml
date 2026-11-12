@@ -68,8 +68,9 @@ spec:
       try:
         - script:
             content: |
-              kubectl patch psmdb/psmdb-bindings --subresource status -n $NAMESPACE \
-                -p '{"status":{"state":"ready", "size":3, "ready":3, "host":"psmdb-bindings-rs0.default.svc.cluster.local", "replsets":{"rs0":{"size":3, "ready":3, "status":"ready"}}}}' --type=merge
+              generation=$(kubectl get psmdb/psmdb-bindings -n $NAMESPACE -o jsonpath='{.metadata.generation}')
+              kubectl patch psmdb/psmdb-bindings --subresource status -n $NAMESPACE --type=merge \
+                -p '{"status":{"state":"ready","observedGeneration":'"${generation}"',"size":3,"ready":3,"host":"psmdb-bindings-rs0.default.svc.cluster.local","replsets":{"rs0":{"initialized":true,"size":3,"ready":3,"status":"ready","members":{"psmdb-bindings-rs0-0":{"name":"psmdb-bindings-rs0-0:27017","state":1,"stateStr":"PRIMARY"}}}}}}'
         - assert:
             file: 11-assert.yaml
 

@@ -31,8 +31,9 @@ spec:
   #   expose:
   #     type: internal
 status:
-  # status: ready
-  phase: Ready
+  phase: Provisioned
+  (conditions[?type == 'Ready'].status | [0]): "True"
+  (conditions[?type == 'Available'].status | [0]): "True"
   # The PSMDB operator is scaled to 0, so the component has no pods.
   components:
     - name: engine

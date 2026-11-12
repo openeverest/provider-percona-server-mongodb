@@ -85,10 +85,16 @@ spec:
       type: backup
 
 # status:
-#   phase: Ready
-#   connectionURL: mongodb://psmdb-cluster:27017
-#   credentialSecretRef:
-#     name: psmdb-cluster-credentials
+#   phase: Provisioned
+#   connectionSecretRef:
+#     name: psmdb-cluster-conn
+#   conditions:
+#     - type: Available
+#       status: "True"
+#       reason: Available
+#     - type: Ready
+#       status: "True"
+#       reason: Ready
   
 #   conditions:
 #   - type: Ready

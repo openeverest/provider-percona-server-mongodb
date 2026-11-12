@@ -104,7 +104,7 @@ instance).
 
 ### A replica set never becomes ready (DNS times out on some pods)
 
-The Instance hangs in `Provisioning`, `rs.status()` reports members as
+The Instance never becomes `Ready` (its status stays `Creating`), `rs.status()` reports members as
 `(not reachable/healthy)`, and the affected pods restart in a loop on liveness
 probe timeouts — but which pods are affected changes on every `make dev-up`.
 On Linux this means `br_netfilter` is not loaded on the host, so kube-proxy's

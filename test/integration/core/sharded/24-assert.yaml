@@ -14,7 +14,7 @@ spec:
       service:
         serviceType: NodePort
 status:
-  phase: Ready
+  phase: Provisioned
 ---
 apiVersion: psmdb.percona.com/v1
 kind: PerconaServerMongoDB

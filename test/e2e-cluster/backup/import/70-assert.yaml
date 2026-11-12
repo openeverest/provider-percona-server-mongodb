@@ -3,9 +3,12 @@ kind: Instance
 metadata:
   name: psmdb-wrong-creds
 status:
-  phase: Failed
+  # The seeding failed before the database was ever available.
+  phase: Pending
   (conditions[?type == 'DataSourceReady']):
     - status: "False"
       reason: UserSecretMismatch
   (conditions[?type == 'Ready']):
     - status: "False"
+  (conditions[?type == 'NeedsAttention']):
+    - status: "True"
