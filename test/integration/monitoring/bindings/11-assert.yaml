@@ -5,7 +5,7 @@ kind: Instance
 metadata:
   name: psmdb-bindings
 status:
-  phase: Ready
+  phase: Provisioned
   monitoring:
     sources:
       identity:

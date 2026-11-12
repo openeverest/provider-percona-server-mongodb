@@ -35,7 +35,7 @@ spec:
       storage:
         size: 25Gi
 status:
-  phase: Ready
+  phase: Provisioned
 ---
 apiVersion: psmdb.percona.com/v1
 kind: PerconaServerMongoDB

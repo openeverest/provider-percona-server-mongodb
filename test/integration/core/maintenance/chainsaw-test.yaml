@@ -37,25 +37,34 @@ spec:
             file: 11-cluster-ready.yaml
         - script:
             content: |
-              kubectl patch psmdb/test-psmdb-cluster --subresource status -n $NAMESPACE \
-                -p '{"status":{"state":"ready", "size":1, "ready":1, "host":"test-psmdb-cluster-host"}}' --type=merge
+              generation=$(kubectl get psmdb/test-psmdb-cluster -n $NAMESPACE -o jsonpath='{.metadata.generation}')
+              kubectl patch psmdb/test-psmdb-cluster --subresource status -n $NAMESPACE --type=merge \
+                -p '{"status":{"state":"ready","observedGeneration":'"${generation}"',"size":3,"ready":3,"host":"test-psmdb-cluster-host","replsets":{"rs0":{"initialized":true,"size":3,"ready":3,"status":"ready","members":{"test-psmdb-cluster-rs0-0":{"name":"test-psmdb-cluster-rs0-0:27017","state":1,"stateStr":"PRIMARY"}}}}}}'
         - assert:
             file: 11-assert.yaml
 
     # Simulate the state right after a provider upgrade swapped the operator:
     # the engine CR still carries the previous operator's crVersion. The
     # default tolerance (NonDisruptive) must hold the convergence bump.
+    # Patching crVersion by hand is only how the test gets there, so the
+    # generation it creates is reported as observed, the way an operator that
+    # has nothing to do for it would.
     - name: lagging-crversion-is-held
       try:
         - script:
             content: |
               kubectl patch psmdb/test-psmdb-cluster -n $NAMESPACE \
                 -p '{"spec":{"crVersion":"1.21.0"}}' --type=merge
+              generation=$(kubectl get psmdb/test-psmdb-cluster -n $NAMESPACE -o jsonpath='{.metadata.generation}')
+              kubectl patch psmdb/test-psmdb-cluster --subresource status -n $NAMESPACE --type=merge \
+                -p '{"status":{"observedGeneration":'"${generation}"'}}'
         - assert:
             file: 20-assert.yaml
 
     # The owner copies the approval token into spec.maintenance.approved; the
-    # provider then applies the bump and the pending action clears. The token
+    # provider then applies the bump and the pending action clears. The
+    # Instance is not Ready until the operator, scaled to 0 here, has rolled
+    # the bump out. The token
     # is read from status rather than hard-coded so the test tracks whatever
     # the provider surfaces (release-based once the chart declares one,
     # operator-based fallback until then).

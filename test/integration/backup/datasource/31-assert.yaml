@@ -3,7 +3,12 @@ kind: Instance
 metadata:
   name: dest-psmdb-cluster
 status:
-  phase: Restoring
+  # A new Instance being seeded has not been available yet.
+  phase: Pending
+  (conditions[?type == 'Restoring'].status | [0]): "True"
+  (conditions[?type == 'Ready'].status | [0]): "False"
+  (conditions[?type == 'Ready'].reason | [0]): Restoring
+  (conditions[?type == 'Available'].status | [0]): "False"
 ---
 apiVersion: psmdb.percona.com/v1
 kind: PerconaServerMongoDB

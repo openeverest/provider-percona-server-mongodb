@@ -34,17 +34,20 @@ spec:
             file: 10-assert.yaml
 
     # Create the users secret and then simulate the PSMDB operator (scaled to
-    # 0) marking the cluster ready. The secret must exist before the status
-    # patch triggers the reconcile, otherwise the provider reports Failed and
-    # nothing re-triggers reconciliation (the provider does not watch Secrets).
+    # 0) marking the cluster ready the way it does: for the latest generation,
+    # with a primary in every shard and in the config servers, the shards
+    # joined and mongos ready. The secret is created first because the
+    # provider reads it for the connection details as soon as the cluster is
+    # ready, and would otherwise fail and retry with a growing delay.
     - name: cluster-ready
       try:
         - apply:
             file: 11-cluster-ready.yaml
         - script:
             content: |
-              kubectl patch psmdb/test-psmdb-cluster --subresource status -n $NAMESPACE \
-                -p '{"status":{"state":"ready", "size":1, "ready":1, "host":"test-psmdb-cluster-mongos.default.svc.cluster.local:27017"}}' --type=merge
+              generation=$(kubectl get psmdb/test-psmdb-cluster -n $NAMESPACE -o jsonpath='{.metadata.generation}')
+              kubectl patch psmdb/test-psmdb-cluster --subresource status -n $NAMESPACE --type=merge \
+                -p '{"status":{"state":"ready","observedGeneration":'"${generation}"',"size":12,"ready":12,"host":"test-psmdb-cluster-mongos.default.svc.cluster.local:27017","mongos":{"size":3,"ready":3,"status":"ready"},"replsets":{"rs0":{"initialized":true,"added_as_shard":true,"size":3,"ready":3,"status":"ready","members":{"test-psmdb-cluster-rs0-0":{"name":"test-psmdb-cluster-rs0-0:27017","state":1,"stateStr":"PRIMARY"}}},"rs1":{"initialized":true,"added_as_shard":true,"size":3,"ready":3,"status":"ready","members":{"test-psmdb-cluster-rs1-0":{"name":"test-psmdb-cluster-rs1-0:27017","state":1,"stateStr":"PRIMARY"}}},"cfg":{"initialized":true,"size":3,"ready":3,"status":"ready","members":{"test-psmdb-cluster-cfg-0":{"name":"test-psmdb-cluster-cfg-0:27017","state":1,"stateStr":"PRIMARY"}}}}}}'
         - assert:
             file: 11-assert.yaml
 

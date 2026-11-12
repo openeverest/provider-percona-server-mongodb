@@ -33,20 +33,21 @@ spec:
             file: 10-assert.yaml
 
     # Create the users secret and then simulate the source cluster becoming
-    # ready. The secret must exist before the status patch triggers the
-    # reconcile, otherwise the provider reports Failed and nothing re-triggers
-    # reconciliation (the provider does not watch Secrets).
+    # ready. The secret is created first because the provider reads it for the
+    # connection details as soon as the cluster is ready, and would otherwise
+    # fail and retry with a growing delay.
     - name: source-cluster-ready
       try:
         - apply:
             file: 11-cluster-ready.yaml
-        # Like the operator, report the latest generation as observed: the
-        # provider requests backups only after the cluster has rolled out.
+        # Like the operator, report the latest generation as observed and a
+        # primary in the replica set: the Instance is Ready, and the provider
+        # requests backups, only after the cluster has rolled out.
         - script:
             content: |
               generation=$(kubectl get psmdb/src-psmdb-cluster -n $NAMESPACE -o jsonpath='{.metadata.generation}')
-              kubectl patch psmdb/src-psmdb-cluster --subresource status -n $NAMESPACE \
-                -p "{\"status\":{\"state\":\"ready\",\"observedGeneration\":${generation},\"size\":3,\"ready\":3,\"host\":\"src-psmdb-cluster-rs0.default.svc.cluster.local\",\"backupVersion\":\"2.9.0\"}}" --type=merge
+              kubectl patch psmdb/src-psmdb-cluster --subresource status -n $NAMESPACE --type=merge \
+                -p '{"status":{"state":"ready","observedGeneration":'"${generation}"',"size":3,"ready":3,"host":"src-psmdb-cluster-rs0.default.svc.cluster.local","backupVersion":"2.9.0","replsets":{"rs0":{"initialized":true,"size":3,"ready":3,"status":"ready","members":{"src-psmdb-cluster-rs0-0":{"name":"src-psmdb-cluster-rs0-0:27017","state":1,"stateStr":"PRIMARY"}}}}}}'
         - assert:
             file: 11-assert.yaml
 
