@@ -3,7 +3,8 @@
 #
 # integrations: operator-native integrations rendered in Sync (spec.pmm).
 # componentTypes: what each component type from provider.yaml exposes; every
-# mongod and mongos pod can run a mongodb_exporter sidecar.
+# mongod and mongos pod can run a mongodb_exporter sidecar, and agents can
+# connect to each mongod directly with the monitor credential.
 
 integrations:
   pmm:
@@ -13,3 +14,4 @@ componentTypes:
   mongod:
     kind: mongodb
     metrics: Exporter
+    connection: Supported

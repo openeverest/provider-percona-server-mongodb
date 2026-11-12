@@ -86,6 +86,7 @@ spec:
   monitoring:
     componentTypes:
       mongod:
+        connection: Supported
         kind: mongodb
         metrics: Exporter
     integrations:
