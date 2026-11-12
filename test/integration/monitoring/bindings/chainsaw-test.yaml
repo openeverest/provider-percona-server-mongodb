@@ -7,14 +7,15 @@ spec:
   description: |
     Monitoring through Instance.spec.monitoring.destinations[]: a ProviderManaged
     pmm binding renders spec.pmm, an ExtensionManaged prometheus binding turns
-    the mongodb_exporter sidecars on and publishes the metrics endpoints, core
-    refuses deleting the pmm destination while the Instance lists it, one that
-    disappears anyway leaves the live spec.pmm until it is re-created, a
-    rotated pmm token reaches the users secret, replacing prometheus with
-    victoriametrics keeps the sidecars and endpoints, and dropping each entry
-    undoes exactly its part. No extension controller runs here, so the classes
-    are claimed by hand and the ExtensionManaged bindings are never Configured;
-    what the provider owns is asserted.
+    the mongodb_exporter sidecars on and publishes the metrics endpoints, a pmm
+    destination that rejects its token leaves the pmm entry Configured but not
+    Ready, core refuses deleting the pmm destination while the Instance lists
+    it, one that disappears anyway leaves the live spec.pmm until it is
+    re-created, a rotated pmm token reaches the users secret, replacing
+    prometheus with victoriametrics keeps the sidecars and endpoints, and
+    dropping each entry undoes exactly its part. No extension controller runs
+    here, so the classes are claimed by hand and the ExtensionManaged bindings
+    are never Configured; what the provider owns is asserted.
   catch:
     - script:
         content: kubectl -n $NAMESPACE get instance,psmdb,monitoringdestination,monitoringbinding,secret -o yaml
@@ -73,6 +74,32 @@ spec:
                 -p '{"status":{"state":"ready", "size":3, "ready":3, "host":"psmdb-bindings-rs0.default.svc.cluster.local", "replsets":{"rs0":{"size":3, "ready":3, "status":"ready"}}}}' --type=merge
         - assert:
             file: 11-assert.yaml
+
+    # Stand in for the pmm extension's probe: the server rejects the token.
+    - name: pmm-destination-rejects-the-token
+      try:
+        - script:
+            content: |
+              set -e
+              gen=$(kubectl get monitoringdestination/pmm-it -n $NAMESPACE -o jsonpath='{.metadata.generation}')
+              patch=$(kubectl get monitoringdestination/pmm-it -n $NAMESPACE -o json | jq -c --argjson gen "$gen" \
+                '{status: {conditions: ([.status.conditions[]? | select(.type != "Ready")] + [{type: "Ready", status: "False", reason: "Unauthorized", message: "probed by the test", observedGeneration: $gen, lastTransitionTime: "2026-01-01T00:00:00Z"}])}}')
+              kubectl patch monitoringdestination/pmm-it -n $NAMESPACE --subresource status --type merge -p "$patch"
+        - assert:
+            file: 11-pmm-unauthorized-assert.yaml
+
+    # The token is replaced and the probe succeeds.
+    - name: pmm-destination-accepts-the-token
+      try:
+        - script:
+            content: |
+              set -e
+              gen=$(kubectl get monitoringdestination/pmm-it -n $NAMESPACE -o jsonpath='{.metadata.generation}')
+              patch=$(kubectl get monitoringdestination/pmm-it -n $NAMESPACE -o json | jq -c --argjson gen "$gen" \
+                '{status: {conditions: ([.status.conditions[]? | select(.type != "Ready")] + [{type: "Ready", status: "True", reason: "Ready", message: "probed by the test", observedGeneration: $gen, lastTransitionTime: "2026-01-01T00:00:00Z"}])}}')
+              kubectl patch monitoringdestination/pmm-it -n $NAMESPACE --subresource status --type merge -p "$patch"
+        - assert:
+            file: 11-pmm-ready-assert.yaml
 
     # Core refuses deleting a destination an Instance lists. Force it through
     # (a deletion admitted on a stale count, then the in-use finalizer
