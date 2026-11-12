@@ -169,7 +169,28 @@ docker_build_with_restart(
 # image.repository/image.tag values and live-updates the running pod. Using
 # helm_resource also guarantees the Provider CR is applied only after the core
 # CRDs exist.
-provider_resource_deps = ['provider-build']
+#
+# The psmdb-operator subchart is not vendored in git; fetch it before install
+# (same as `make deploy-provider-ci`). `helm dependency build` only resolves
+# repositories that are already registered, so register Percona's first.
+helm_repo(
+    'percona-repo',
+    'https://percona.github.io/percona-helm-charts/',
+    labels=['provider'],
+)
+
+local_resource(
+    'provider-helm-deps',
+    'helm dependency build {0}'.format(chart_dir),
+    deps=[
+        '{0}/Chart.yaml'.format(chart_dir),
+        '{0}/Chart.lock'.format(chart_dir),
+    ],
+    resource_deps=['percona-repo'],
+    labels=['provider'],
+)
+
+provider_resource_deps = ['provider-build', 'provider-helm-deps']
 if install_openeverest:
     provider_resource_deps = provider_resource_deps + ['openeverest']
 
