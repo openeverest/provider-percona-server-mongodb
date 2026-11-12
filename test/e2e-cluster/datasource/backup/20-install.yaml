@@ -42,6 +42,7 @@ kind: MonitoringClass
 metadata:
   name: pmm-e2e
 spec:
+  controllerName: test.openeverest.io/provider-percona-server-mongodb-e2e
   providerManaged:
     integration: pmm
     agentImage: percona/pmm-client:3.9.1

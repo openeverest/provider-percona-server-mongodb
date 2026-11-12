@@ -11,6 +11,7 @@ spec:
           version: 2.15.0
     mongod:
       defaultVersion: 8.0.32-14
+      kind: mongodb
       versions:
         - image: percona/percona-server-mongodb:6.0.19-16-multi
           version: 6.0.19-16
@@ -86,7 +87,6 @@ spec:
   monitoring:
     componentTypes:
       mongod:
-        kind: mongodb
         metrics: Exporter
     integrations:
       pmm:
