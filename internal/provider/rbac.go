@@ -31,6 +31,10 @@ package provider
 // operator's Deployment image tag):
 // +kubebuilder:rbac:groups=apps,resources=deployments,verbs=list;watch
 
+// Rollout tracking (an Instance has converged only once the cluster's
+// StatefulSets run their latest pod template):
+// +kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=list;watch
+
 // =============================================================================
 // PSMDB-SPECIFIC RBAC — Percona Server MongoDB Operator integration.
 // =============================================================================
