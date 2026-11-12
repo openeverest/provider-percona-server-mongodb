@@ -21,7 +21,7 @@ spec:
       properties:
         url:
           type: string
-          pattern: '^https?://[^/?#@]+([/?#].*)?$'
+          pattern: '^https?://[^/?#@]+/?$'
   instanceParametersSchema:
     openAPIV3Schema:
       type: object

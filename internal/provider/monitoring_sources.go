@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"slices"
 
+	pmm "github.com/openeverest/monitoring-pmm/api"
 	psmdbv1 "github.com/percona/percona-server-mongodb-operator/pkg/apis/psmdb/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -30,7 +31,7 @@ import (
 
 // pmmIntegration is the integration name declared in the provider's monitoring
 // contract and matched by the pmm MonitoringClass.
-const pmmIntegration = "pmm"
+const pmmIntegration = pmm.IntegrationName
 
 // MonitoringIntegrations implements controller.MonitoringIntegrationsProvider.
 func (p *PSMDBProvider) MonitoringIntegrations() []string {
