@@ -1,0 +1,24 @@
+# The exporter sidecar is on although the Instance has no destination.
+apiVersion: psmdb.percona.com/v1
+kind: PerconaServerMongoDB
+metadata:
+  name: psmdb-metrics-policy
+spec:
+  replsets:
+    - name: rs0
+      sidecars:
+        - name: mongodb-exporter
+          ports:
+            - name: metrics
+              containerPort: 9216
+---
+# The CRD keeps the policy rather than pruning it.
+apiVersion: core.openeverest.io/v1alpha1
+kind: Instance
+metadata:
+  name: psmdb-metrics-policy
+spec:
+  monitoring:
+    sources:
+      metrics:
+        policy: Always
