@@ -1,0 +1,16 @@
+# Nothing requires metrics any more: the sidecar and its endpoint go.
+apiVersion: psmdb.percona.com/v1
+kind: PerconaServerMongoDB
+metadata:
+  name: psmdb-metrics-policy
+spec:
+  replsets:
+    - name: rs0
+      (sidecars == null): true
+---
+apiVersion: core.openeverest.io/v1alpha1
+kind: Instance
+metadata:
+  name: psmdb-metrics-policy
+status:
+  (monitoring.sources.metrics == null): true
