@@ -121,9 +121,10 @@ func liveEngine(c *controller.Context) (*psmdbv1.PerconaServerMongoDB, error) {
 }
 
 // metricsExporterRequired says whether the exporter sidecars go on the engine
-// pods this pass: when a bound class requires metrics or, while that is
-// unresolved, when the live CR already carries them (removing and re-adding a
-// sidecar would roll the pods twice for nothing).
+// pods this pass: when the metrics source policy is Always or a bound class
+// requires metrics or, while that is unresolved, when the live CR already
+// carries them (removing and re-adding a sidecar would roll the pods twice
+// for nothing).
 func metricsExporterRequired(c *controller.Context) (bool, error) {
 	req, err := c.RequiredSources()
 	if err != nil {

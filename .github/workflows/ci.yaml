@@ -212,6 +212,15 @@ jobs:
       suite: bindings
     secrets: inherit
 
+  test-integration-monitoring-metrics-policy:
+    name: Integration / monitoring metrics policy
+    needs: [lint, build, verify]
+    uses: ./.github/workflows/integration-test.yaml
+    with:
+      make_target: test-integration-monitoring-metrics-policy
+      suite: metrics-policy
+    secrets: inherit
+
   test-integration-backup-datasource:
     name: Integration / backup datasource
     needs: [lint, build, verify]

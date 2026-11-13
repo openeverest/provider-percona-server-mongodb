@@ -282,6 +282,21 @@ func TestMetricsExporterRequired(t *testing.T) {
 		assert.False(t, required)
 	})
 
+	t.Run("the Always metrics policy requires the exporter without entries", func(t *testing.T) {
+		t.Parallel()
+
+		c, _ := bindingContext(t, nil, livePSMDB(psmdbv1.AppStateReady, false, false))
+		c.Instance().Spec.Monitoring = &corev1alpha1.InstanceMonitoringSpec{
+			Sources: &corev1alpha1.InstanceMonitoringSources{
+				Metrics: &corev1alpha1.InstanceMetricsSource{Policy: corev1alpha1.MonitoringSourcePolicyAlways},
+			},
+		}
+
+		required, err := metricsExporterRequired(c)
+		require.NoError(t, err)
+		assert.True(t, required)
+	})
+
 	t.Run("while an entry has no binding yet the live sidecar is held", func(t *testing.T) {
 		t.Parallel()
 
