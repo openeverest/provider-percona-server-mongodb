@@ -1,12 +1,15 @@
 # PerconaServerMongodbOperator BackupClass definition.
 # This file is the source of truth for the generated BackupClass manifest.
 #
+# provider-sdk generate makes the class ProviderManaged and names this
+# provider in providerManaged.providerRef: the provider claims and executes it.
+#
 # Fields:
 #   displayName/description: human-readable metadata.
-#   supportedProviders: providers this class can be used with.
-#   executionMode: "ProviderManaged" (operator-native) or "Job".
 #   supportsImport: advertise backup import capability to BackupImport validation.
-#   backupStorageClasses: BackupStorageClasses the engine writes to, with their auth modes.
+#   backupStorageClasses: BackupStorageClasses the engine writes to, with their
+#     auth modes, the parameters it supports (parametersSchema narrows the
+#     storage class's schema) and the spec.tls settings it honours (tls).
 #   providerManaged.supportsPITR: advertise PITR capability to Restore validation.
 #   providerManaged.limits: caps the runtime enforces against Instance.spec.backup.
 #     maxStorages, maxPITREnabledStorages, maxSchedulesPerStorage — unset means unlimited.
@@ -22,14 +25,21 @@ description: |
   BackupClass for the Percona Server MongoDB provider. Backups are managed
   natively by Percona Backup for MongoDB (PBM) embedded in the PSMDB operator;
   OpenEverest does not run any side-car Job for this class.
-supportedProviders:
-  - percona-server-mongodb
-executionMode: ProviderManaged
 supportsImport: true
 backupStorageClasses:
   - name: s3
     authModes:
       - AccessKey
+    parametersSchema:
+      openAPIV3Schema:
+        properties:
+          # PBM cannot use GCS through its S3 client.
+          implementation:
+            enum: [aws, minio, ceph, other]
+    tls:
+      # minio.caBundle on PBM's minio storage type.
+      customCA: Supported
+      insecureSkipVerify: Supported
 
 providerManaged:
   supportsPITR: true

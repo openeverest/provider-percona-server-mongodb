@@ -40,6 +40,7 @@ import (
 	s3class "github.com/openeverest/openeverest/v2/backupstorageclasses/s3"
 	"github.com/openeverest/openeverest/v2/provider-runtime/controller"
 
+	"github.com/openeverest/provider-percona-server-mongodb/definition/backupclasses"
 	"github.com/openeverest/provider-percona-server-mongodb/internal/common"
 )
 
@@ -55,6 +56,10 @@ const (
 	// PSMDB operator (kept as a string constant here to avoid pulling in the
 	// operator's internal naming package).
 	psmdbBackupAncestorLabel = "percona.com/backup-ancestor"
+
+	// backupClassName is the BackupClass the provider ships, defined in
+	// definition/backupclasses.
+	backupClassName = "percona-backup-mongodb"
 )
 
 // =============================================================================
@@ -340,7 +345,7 @@ func psmdbStorage(c *controller.Context, bs *backupv1alpha1.BackupStorage, prefi
 	if implementation == s3class.ImplementationGCS {
 		return psmdbv1.BackupStorageSpec{}, fmt.Errorf("PBM cannot use GCS through its S3 client: %w", controller.ErrImplementationUnsupported)
 	}
-	tls, err := c.BackupStorageTLS(bs, controller.TLSSupport{CustomCA: true, SkipVerify: true})
+	tls, err := c.BackupStorageTLS(bs, backupclasses.TLSSupport(backupClassName, s3class.ClassName))
 	if err != nil {
 		return psmdbv1.BackupStorageSpec{}, err
 	}
