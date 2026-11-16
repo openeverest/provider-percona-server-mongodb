@@ -27,4 +27,5 @@ metadata:
 status:
   monitoring:
     (destinations[?name == 'pmm'] | [0]):
-      configured: "True"
+      (conditions[?type == 'Configured'] | [0]):
+        status: "True"

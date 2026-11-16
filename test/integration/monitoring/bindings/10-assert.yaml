@@ -93,6 +93,7 @@ status:
   monitoring:
     (destinations[?name == 'pmm'] | [0]):
       mode: ProviderManaged
-      configured: "True"
+      (conditions[?type == 'Configured'] | [0]):
+        status: "True"
     (destinations[?name == 'prometheus'] | [0]):
       mode: ExtensionManaged
