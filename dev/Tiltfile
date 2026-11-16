@@ -164,12 +164,6 @@ docker_build_with_restart(
 # ===========================
 # Provider: Helm chart
 # ===========================
-# Deployed with a real `helm upgrade --install` (via the helm_resource
-# extension). Tilt injects the locally built image into the chart's
-# image.repository/image.tag values and live-updates the running pod. Using
-# helm_resource also guarantees the Provider CR is applied only after the core
-# CRDs exist.
-#
 # The psmdb-operator subchart is not vendored in git; fetch it before install
 # (same as `make deploy-provider-ci`). `helm dependency build` only resolves
 # repositories that are already registered, so register Percona's first.
@@ -190,6 +184,11 @@ local_resource(
     labels=['provider'],
 )
 
+# Deployed with a real `helm upgrade --install` (via the helm_resource
+# extension). Tilt injects the locally built image into the chart's
+# image.repository/image.tag values and live-updates the running pod. Using
+# helm_resource also guarantees the Provider CR is applied only after the core
+# CRDs exist.
 provider_resource_deps = ['provider-build', 'provider-helm-deps']
 if install_openeverest:
     provider_resource_deps = provider_resource_deps + ['openeverest']
