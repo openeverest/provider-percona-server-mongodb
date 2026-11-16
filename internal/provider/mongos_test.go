@@ -21,7 +21,9 @@ import (
 
 	"github.com/AlekSi/pointer"
 	psmdbv1 "github.com/percona/percona-server-mongodb-operator/pkg/apis/psmdb/v1"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -91,5 +93,32 @@ func TestConfigureMongosConfiguration(t *testing.T) {
 
 		require.NoError(t, err)
 		require.Empty(t, mongos.Configuration)
+	})
+}
+
+func TestConfigureMongosExpose(t *testing.T) {
+	t.Parallel()
+
+	t.Run("proxy service is exposed through mongos", func(t *testing.T) {
+		t.Parallel()
+		c := mongosContext(t, corev1alpha1.ComponentSpec{
+			Replicas: pointer.ToInt32(3),
+			Service:  &corev1alpha1.Service{ServiceType: corev1.ServiceTypeLoadBalancer},
+		})
+
+		mongos, err := configureMongos(c)
+
+		require.NoError(t, err)
+		assert.Equal(t, corev1.ServiceTypeLoadBalancer, mongos.Expose.ExposeType)
+	})
+
+	t.Run("no service defaults to ClusterIP", func(t *testing.T) {
+		t.Parallel()
+		c := mongosContext(t, corev1alpha1.ComponentSpec{Replicas: pointer.ToInt32(3)})
+
+		mongos, err := configureMongos(c)
+
+		require.NoError(t, err)
+		assert.Equal(t, corev1.ServiceTypeClusterIP, mongos.Expose.ExposeType)
 	})
 }

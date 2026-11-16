@@ -67,6 +67,7 @@ provider itself is covered under [Installation](#installation).
 | Vertical scaling (CPU / memory) | ✅ | `spec.components.<name>.resources` |
 | Version upgrades | ✅ | of the deployed MongoDB version — change `spec.version`; see [Versions](#versions) |
 | Custom configuration | ✅ | `mongod` / `mongos` config via the component's `configuration` parameter |
+| Exposure | ✅ | `spec.components.<name>.service.serviceType`: `ClusterIP` (default), `LoadBalancer` or `NodePort`. `replicaSet` topology: only `engine` is exposed (there is no proxy in front of it). `sharded` topology: only `proxy` (`mongos`) is exposed — shards and config servers are never reachable directly, clients always go through `mongos`. `service.annotations` and, for `LoadBalancer`, `service.loadBalancerService.sourceRanges` are also supported, but only via the `Instance` spec directly — the UI only exposes `serviceType`, under **Advanced configuration** ([openeverest#1959](https://github.com/openeverest/openeverest/issues/1959), [openeverest#2398](https://github.com/openeverest/openeverest/issues/2398)) |
 | Monitoring | ✅ | PMM, and any metrics backend through mongodb_exporter, via `spec.monitoring.destinations` — see [Monitoring](#monitoring) |
 | TLS | ✅ | on by default; generated, cert-manager or your own certificates — see [TLS](#tls) |
 | Pod scheduling | ✅ | affinity and topology spread per component — see [Pod scheduling](#pod-scheduling) |
