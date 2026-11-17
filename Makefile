@@ -128,6 +128,10 @@ test-integration-core-maintenance: ## Run maintenance (crVersion convergence) in
 test-integration-monitoring-bindings: ## Run MonitoringBinding (spec.monitoring.destinations) integration tests.
 	. ./test/vars.sh && chainsaw test --config ./test/integration/.chainsaw.yaml ./test/integration/monitoring/bindings
 
+.PHONY: test-integration-monitoring-metrics-policy
+test-integration-monitoring-metrics-policy: ## Run metrics source policy (spec.monitoring.sources.metrics) integration tests.
+	. ./test/vars.sh && chainsaw test --config ./test/integration/.chainsaw.yaml ./test/integration/monitoring/metrics-policy
+
 .PHONY: test-integration-backup
 test-integration-backup: ## Run backup integration tests.
 	. ./test/vars.sh && chainsaw test --config ./test/integration/.chainsaw.yaml ./test/integration/backup

@@ -1,0 +1,19 @@
+# Once the cluster serves, the provider publishes where the exporter listens,
+# for the user's own scraper.
+apiVersion: core.openeverest.io/v1alpha1
+kind: Instance
+metadata:
+  name: psmdb-metrics-policy
+status:
+  monitoring:
+    (destinations == null): true
+    sources:
+      metrics:
+        - component: engine
+          kind: mongodb
+          podSelector:
+            core.openeverest.io/instance: psmdb-metrics-policy
+            core.openeverest.io/component: engine
+          port: metrics
+          path: /metrics
+          scheme: http
