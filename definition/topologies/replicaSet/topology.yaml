@@ -129,7 +129,7 @@ ui:
               components:
                 cpu:
                   path: "spec.components.engine.resources.limits.cpu"
-                  uiType: number
+                  uiType: quantity
                   fieldParams:
                     label: "CPU"
                     defaultValue: 1
@@ -139,24 +139,22 @@ ui:
                     required: true
                 memory:
                   path: "spec.components.engine.resources.limits.memory"
-                  uiType: number
+                  uiType: quantity
                   fieldParams:
                     label: "Memory"
                     defaultValue: 4
                     step: 0.1
-                    badge: "Gi"
-                    badgeToApi: true
+                    unit: "Gi"
                   validation:
                     min: 0.512
                     required: true
                 disk:
                   path: "spec.components.engine.storage.size"
-                  uiType: number
+                  uiType: quantity
                   fieldParams:
                     label: "Disk"
                     defaultValue: 25
-                    badge: "Gi"
-                    badgeToApi: true
+                    unit: "Gi"
                   validation:
                     min: 1
                     int: true
@@ -213,7 +211,7 @@ ui:
               components:
                 cpu:
                   path: "spec.components.hidden.resources.limits.cpu"
-                  uiType: number
+                  uiType: quantity
                   fieldParams:
                     label: "Hidden CPU"
                     defaultValue: 1
@@ -223,24 +221,22 @@ ui:
                     required: true
                 memory:
                   path: "spec.components.hidden.resources.limits.memory"
-                  uiType: number
+                  uiType: quantity
                   fieldParams:
                     label: "Hidden memory"
                     defaultValue: 4
                     step: 0.1
-                    badge: "Gi"
-                    badgeToApi: true
+                    unit: "Gi"
                   validation:
                     min: 0.512
                     required: true
                 disk:
                   path: "spec.components.hidden.storage.size"
-                  uiType: number
+                  uiType: quantity
                   fieldParams:
                     label: "Hidden disk"
                     defaultValue: 25
-                    badge: "Gi"
-                    badgeToApi: true
+                    unit: "Gi"
                   validation:
                     min: 1
                     int: true
