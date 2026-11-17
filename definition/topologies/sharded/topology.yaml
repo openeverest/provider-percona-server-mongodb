@@ -435,7 +435,7 @@ ui:
                     disabled: true
               validation:
                 celExpressions:
-                  - celExpr: "!has(spec.parameters.tls.certificateSecretName) || spec.parameters.tls.certificateSecretName == '' || !has(spec.parameters.tls.issuer.name) || spec.parameters.tls.issuer.name == ''"
+                  - celExpr: "!has(spec.parameters) || !has(spec.parameters.tls) || !has(spec.parameters.tls.certificateSecretName) || spec.parameters.tls.certificateSecretName == '' || !has(spec.parameters.tls.issuer) || !has(spec.parameters.tls.issuer.name) || spec.parameters.tls.issuer.name == ''"
                     message: "Use either a certificate secret or an issuer, not both"
             internalCertificateSecretName:
               uiType: text
@@ -448,7 +448,7 @@ ui:
                     disabled: true
               validation:
                 celExpressions:
-                  - celExpr: "!has(spec.parameters.tls.internalCertificateSecretName) || spec.parameters.tls.internalCertificateSecretName == '' || (has(spec.parameters.tls.certificateSecretName) && spec.parameters.tls.certificateSecretName != '')"
+                  - celExpr: "!has(spec.parameters) || !has(spec.parameters.tls) || !has(spec.parameters.tls.internalCertificateSecretName) || spec.parameters.tls.internalCertificateSecretName == '' || (has(spec.parameters.tls.certificateSecretName) && spec.parameters.tls.certificateSecretName != '')"
                     message: "Set the certificate secret as well"
             issuer:
               uiType: group
@@ -495,7 +495,7 @@ ui:
           uiType: text
           path: spec.components.engine.parameters.configuration
           fieldParams:
-            label: "Еngine parameters"
+            label: "Engine parameters"
             placeholder: |2
               operationProfiling:
                 mode: slowOps
