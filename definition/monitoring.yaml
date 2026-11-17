@@ -1,7 +1,9 @@
 # Monitoring contract, published by `provider-sdk generate` as
 # Provider.spec.monitoring.
 #
-# integrations: operator-native integrations rendered in Sync (spec.pmm).
+# integrations: operator-native integrations rendered in Sync (spec.pmm). The
+# parameter schemas of pmm are published from the contract module go.mod
+# requires, whose decoders Sync uses.
 # componentTypes: what each component type from provider.yaml exposes (its
 # kind is declared in provider.yaml); every mongod and mongos pod can run a
 # mongodb_exporter sidecar.
@@ -10,6 +12,7 @@ integrations:
   pmm:
     agentVersions: ">=3.0.0 <4.0.0"
     authModes: [ServiceAccountToken]
+    contractModule: github.com/openeverest/monitoring-pmm/api
 componentTypes:
   mongod:
     metrics: Exporter
