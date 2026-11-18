@@ -492,6 +492,7 @@ spec:
               label: Pod scheduling policy
               uiType: group
           componentsOrder:
+            - externalAccess
             - configuration
             - podSchedulingPolicy
           description: Configure advanced settings for your database
@@ -733,7 +734,7 @@ spec:
                   uiType: text
                   validation:
                     celExpressions:
-                      - celExpr: '!has(spec.parameters.tls.certificateSecretName) || spec.parameters.tls.certificateSecretName == '''' || !has(spec.parameters.tls.issuer.name) || spec.parameters.tls.issuer.name == '''''
+                      - celExpr: '!has(spec.parameters) || !has(spec.parameters.tls) || !has(spec.parameters.tls.certificateSecretName) || spec.parameters.tls.certificateSecretName == '''' || !has(spec.parameters.tls.issuer) || !has(spec.parameters.tls.issuer.name) || spec.parameters.tls.issuer.name == '''''
                         message: Use either a certificate secret or an issuer, not both
                 internalCertificateSecretName:
                   fieldParams:
@@ -746,7 +747,7 @@ spec:
                   uiType: text
                   validation:
                     celExpressions:
-                      - celExpr: '!has(spec.parameters.tls.internalCertificateSecretName) || spec.parameters.tls.internalCertificateSecretName == '''' || (has(spec.parameters.tls.certificateSecretName) && spec.parameters.tls.certificateSecretName != '''')'
+                      - celExpr: '!has(spec.parameters) || !has(spec.parameters.tls) || !has(spec.parameters.tls.internalCertificateSecretName) || spec.parameters.tls.internalCertificateSecretName == '''' || (has(spec.parameters.tls.certificateSecretName) && spec.parameters.tls.certificateSecretName != '''')'
                         message: Set the certificate secret as well
                 issuer:
                   components:
@@ -815,7 +816,7 @@ spec:
           components:
             configuration:
               fieldParams:
-                label: Еngine parameters
+                label: Engine parameters
                 maxRows: 8
                 minRows: 3
                 multiline: true
@@ -825,19 +826,6 @@ spec:
                     slowOpThresholdMs: 200
               path: spec.components.engine.parameters.configuration
               uiType: text
-            externalAccess:
-              fieldParams:
-                defaultValue: ClusterIP
-                label: External access
-                options:
-                  - label: ClusterIP
-                    value: ClusterIP
-                  - label: LoadBalancer
-                    value: LoadBalancer
-                  - label: NodePort
-                    value: NodePort
-              path: spec.components.proxy.service.serviceType
-              uiType: select
             podSchedulingPolicy:
               components:
                 policy:
@@ -1132,6 +1120,22 @@ spec:
                     verbosity: 1
               path: spec.components.proxy.parameters.configuration
               uiType: text
+            routersExposure:
+              fieldParams:
+                defaultValue: ClusterIP
+                helperText: How clients reach the mongos routers. ClusterIP keeps it reachable only from inside the Kubernetes cluster. Shards and config servers are never reachable directly; clients always go through mongos. For NodePort, see https://openeverest.io/docs/current/networking/nodeport_support/ for how to access your database.
+                label: External access
+                options:
+                  - label: ClusterIP
+                    value: ClusterIP
+                  - label: LoadBalancer
+                    value: LoadBalancer
+                  - label: NodePort
+                    value: NodePort
+              path: spec.components.proxy.service.serviceType
+              uiType: select
+              validation:
+                required: true
             routersResources:
               components:
                 cpu:
@@ -1163,6 +1167,7 @@ spec:
               uiType: group
           componentsOrder:
             - numberOfRouters
+            - routersExposure
             - routersResources
             - routersConfiguration
           description: Configure the mongos routers for the cluster.
@@ -1182,7 +1187,7 @@ spec:
                   uiType: text
                   validation:
                     celExpressions:
-                      - celExpr: '!has(spec.parameters.tls.certificateSecretName) || spec.parameters.tls.certificateSecretName == '''' || !has(spec.parameters.tls.issuer.name) || spec.parameters.tls.issuer.name == '''''
+                      - celExpr: '!has(spec.parameters) || !has(spec.parameters.tls) || !has(spec.parameters.tls.certificateSecretName) || spec.parameters.tls.certificateSecretName == '''' || !has(spec.parameters.tls.issuer) || !has(spec.parameters.tls.issuer.name) || spec.parameters.tls.issuer.name == '''''
                         message: Use either a certificate secret or an issuer, not both
                 internalCertificateSecretName:
                   fieldParams:
@@ -1195,7 +1200,7 @@ spec:
                   uiType: text
                   validation:
                     celExpressions:
-                      - celExpr: '!has(spec.parameters.tls.internalCertificateSecretName) || spec.parameters.tls.internalCertificateSecretName == '''' || (has(spec.parameters.tls.certificateSecretName) && spec.parameters.tls.certificateSecretName != '''')'
+                      - celExpr: '!has(spec.parameters) || !has(spec.parameters.tls) || !has(spec.parameters.tls.internalCertificateSecretName) || spec.parameters.tls.internalCertificateSecretName == '''' || (has(spec.parameters.tls.certificateSecretName) && spec.parameters.tls.certificateSecretName != '''')'
                         message: Set the certificate secret as well
                 issuer:
                   components:

@@ -336,6 +336,25 @@ ui:
                 message: "The number of routers must be odd"
               - celExpr: "spec.components.engine.replicas > 1 ? spec.components.proxy.replicas > 1 : true"
                 message: "Number of routers must be more than 1 if number of nodes is greater than 1"
+        routersExposure:
+          uiType: select
+          path: spec.components.proxy.service.serviceType
+          fieldParams:
+            label: "External access"
+            helperText: "How clients reach the mongos routers. ClusterIP keeps it reachable only from inside the Kubernetes cluster. Shards and config servers are never reachable directly; clients always go through mongos. For NodePort, see https://openeverest.io/docs/current/networking/nodeport_support/ for how to access your database."
+            defaultValue: "ClusterIP"
+            options:
+              - label: "ClusterIP"
+                value: "ClusterIP"
+              - label: "LoadBalancer"
+                value: "LoadBalancer"
+              - label: "NodePort"
+                value: "NodePort"
+            # TODO: Support Service annotation and LoadBalancer source ranges configuration
+            # https://github.com/openeverest/openeverest/issues/1959
+            # https://github.com/openeverest/openeverest/issues/2398
+          validation:
+            required: true
         routersResources:
           uiType: group
           groupType: line
@@ -379,6 +398,7 @@ ui:
             maxRows: 8
       componentsOrder:
         - numberOfRouters
+        - routersExposure
         - routersResources
         - routersConfiguration
     tls:
@@ -415,7 +435,7 @@ ui:
                     disabled: true
               validation:
                 celExpressions:
-                  - celExpr: "!has(spec.parameters.tls.certificateSecretName) || spec.parameters.tls.certificateSecretName == '' || !has(spec.parameters.tls.issuer.name) || spec.parameters.tls.issuer.name == ''"
+                  - celExpr: "!has(spec.parameters) || !has(spec.parameters.tls) || !has(spec.parameters.tls.certificateSecretName) || spec.parameters.tls.certificateSecretName == '' || !has(spec.parameters.tls.issuer) || !has(spec.parameters.tls.issuer.name) || spec.parameters.tls.issuer.name == ''"
                     message: "Use either a certificate secret or an issuer, not both"
             internalCertificateSecretName:
               uiType: text
@@ -428,7 +448,7 @@ ui:
                     disabled: true
               validation:
                 celExpressions:
-                  - celExpr: "!has(spec.parameters.tls.internalCertificateSecretName) || spec.parameters.tls.internalCertificateSecretName == '' || (has(spec.parameters.tls.certificateSecretName) && spec.parameters.tls.certificateSecretName != '')"
+                  - celExpr: "!has(spec.parameters) || !has(spec.parameters.tls) || !has(spec.parameters.tls.internalCertificateSecretName) || spec.parameters.tls.internalCertificateSecretName == '' || (has(spec.parameters.tls.certificateSecretName) && spec.parameters.tls.certificateSecretName != '')"
                     message: "Set the certificate secret as well"
             issuer:
               uiType: group
@@ -471,27 +491,11 @@ ui:
       label: "Advanced configuration"
       description: "Configure advanced settings for your database"
       components:
-        externalAccess:
-          uiType: select
-          path: spec.components.proxy.service.serviceType
-          fieldParams:
-            label: "External access"
-            defaultValue: "ClusterIP"
-            options:
-              - label: "ClusterIP"
-                value: "ClusterIP"
-              - label: "LoadBalancer"
-                value: "LoadBalancer"
-              - label: "NodePort"
-                value: "NodePort"
-            # TODO: Support Service annotation and LoadBalancer source ranges configuration
-            # https://github.com/openeverest/openeverest/issues/1959
-            # https://github.com/openeverest/openeverest/issues/2398
         configuration:
           uiType: text
           path: spec.components.engine.parameters.configuration
           fieldParams:
-            label: "Еngine parameters"
+            label: "Engine parameters"
             placeholder: |2
               operationProfiling:
                 mode: slowOps
