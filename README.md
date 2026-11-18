@@ -189,6 +189,8 @@ A problem makes the `Instance` not `Ready`, with a reason that says what is wron
 | `CrashLoopBackOff` | The operator found a pod in a crash loop. |
 | `EngineError` | Any other error the operator reports; the message quotes it. |
 
+Two operator errors are not problems, because the operator retries them on its next pass: a pod that takes longer than the operator's wait limit to restart, and a write that conflicted with another one. While either lasts, the `Instance` waits and says so.
+
 ## Topologies
 
 <!-- BEGIN GENERATED: topologies -->

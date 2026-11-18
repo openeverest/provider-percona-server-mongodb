@@ -78,7 +78,19 @@ const (
 	// its pass when the pod takes longer, and picks the rolling update up
 	// again on the next pass.
 	errFragmentPodRestartTimeout = "reach pod wait limit"
+	// The API server refuses a write made from a stale read with this
+	// message. The operator fails its pass on one, often its own status
+	// update, and retries at once.
+	errFragmentConflict = "Operation cannot be fulfilled"
 )
+
+// transientUpstreamErrors are the operator errors that are no failure: the
+// operator carries on with its next pass. Each comes with what the cluster
+// is waiting for meanwhile.
+var transientUpstreamErrors = []struct{ fragment, wait string }{
+	{errFragmentPodRestartTimeout, "Waiting for a pod to restart"},
+	{errFragmentConflict, "Waiting for the operator to retry a conflicting write"},
+}
 
 // upstreamErrorReasons names the operator errors a user can act on, by a
 // fragment of their message. The first match wins.
@@ -282,10 +294,21 @@ func upstreamError(psmdb *psmdbv1.PerconaServerMongoDB) (string, bool) {
 	if message == "" {
 		message = "The operator reports an error without a message"
 	}
-	// A pod that restarts slowly is not a failure: the operator carries on
-	// with the next pass. A pod that cannot start at all is reported by the
-	// runtime from the pod itself.
-	return message, !strings.Contains(message, errFragmentPodRestartTimeout)
+	// A pod that cannot start at all is reported by the runtime from the pod
+	// itself, not from this error.
+	_, transient := transientWait(message)
+	return message, !transient
+}
+
+// transientWait returns what the cluster waits for while the operator
+// recovers from an error that is no failure, and whether message is one.
+func transientWait(message string) (string, bool) {
+	for _, known := range transientUpstreamErrors {
+		if strings.Contains(message, known.fragment) {
+			return known.wait, true
+		}
+	}
+	return "", false
 }
 
 // upstreamErrorReason picks the reason for an operator error from its message.
@@ -310,9 +333,9 @@ func waitingFor(psmdb *psmdbv1.PerconaServerMongoDB, sets []appsv1.StatefulSet, 
 	case restore != nil:
 		return restore.message
 	case state == psmdbv1.AppStateError:
-		message, failing := upstreamError(psmdb)
-		if !failing {
-			return "Waiting for a pod to restart"
+		message, _ := upstreamError(psmdb)
+		if wait, transient := transientWait(message); transient {
+			return wait
 		}
 		return "The operator reports an error: " + message
 	case psmdb.Status.ObservedGeneration == 0:

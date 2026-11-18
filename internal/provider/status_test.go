@@ -366,6 +366,15 @@ func TestStatus(t *testing.T) {
 			available: controller.Available,
 		},
 		{
+			name: "a write conflict fails the operator's pass",
+			cluster: replicaSetCluster(failing(
+				"reconcile statefulsets: update mongo version: failed to update CR: Operation cannot be fulfilled on " +
+					`perconaservermongodbs.psmdb.percona.com "my-mongo": the object has been modified; ` +
+					"please apply your changes to the latest version and try again")),
+			message:   "Waiting for the operator to retry a conflicting write",
+			available: controller.Available,
+		},
+		{
 			name: "no primary",
 			cluster: replicaSetCluster(
 				state(psmdbv1.AppStateInit),
