@@ -38,6 +38,8 @@ import (
 	commonv1alpha1 "github.com/openeverest/openeverest/v2/api/common/v1alpha1"
 	corev1alpha1 "github.com/openeverest/openeverest/v2/api/core/v1alpha1"
 	"github.com/openeverest/openeverest/v2/provider-runtime/controller"
+
+	"github.com/openeverest/provider-percona-server-mongodb/internal/common"
 )
 
 const (
@@ -52,6 +54,12 @@ const (
 // from. seeding is what Sync staged about the data source, if anything.
 func statusContext(t *testing.T, seeding *controller.DataSourceStatus, objs ...client.Object) *controller.Context {
 	t.Helper()
+	return statusContextWithSpec(t, corev1alpha1.InstanceSpec{}, seeding, objs...)
+}
+
+// statusContextWithSpec is statusContext for an Instance with the given spec.
+func statusContextWithSpec(t *testing.T, spec corev1alpha1.InstanceSpec, seeding *controller.DataSourceStatus, objs ...client.Object) *controller.Context {
+	t.Helper()
 
 	scheme := runtime.NewScheme()
 	require.NoError(t, corev1alpha1.AddToScheme(scheme))
@@ -62,6 +70,7 @@ func statusContext(t *testing.T, seeding *controller.DataSourceStatus, objs ...c
 
 	in := &corev1alpha1.Instance{
 		ObjectMeta: metav1.ObjectMeta{Name: statusTestName, Namespace: statusTestNamespace},
+		Spec:       spec,
 	}
 	users := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{Name: "everest-secrets-" + statusTestName, Namespace: statusTestNamespace},
@@ -776,6 +785,160 @@ func TestStatusWithoutUsersSecret(t *testing.T) {
 			}
 			require.NoError(t, err)
 			assert.True(t, got.ConnectionDetails.IsEmpty())
+		})
+	}
+}
+
+// TestStatusDesiredReplicas covers how many pods the provider reports each
+// component will have: worked out from the Instance with the provider's
+// defaults, whatever the PerconaServerMongoDB object runs for now.
+func TestStatusDesiredReplicas(t *testing.T) {
+	t.Parallel()
+
+	runningHidden := func(psmdb *psmdbv1.PerconaServerMongoDB) {
+		psmdb.Spec.Replsets[0].Hidden = psmdbv1.HiddenSpec{Enabled: true, Size: 2}
+	}
+	shardedTopology := func(parameters string) *corev1alpha1.TopologySpec {
+		topology := &corev1alpha1.TopologySpec{Type: "sharded"}
+		if parameters != "" {
+			topology.Parameters = &runtime.RawExtension{Raw: []byte(parameters)}
+		}
+		return topology
+	}
+
+	tests := []struct {
+		name    string
+		spec    corev1alpha1.InstanceSpec
+		cluster *psmdbv1.PerconaServerMongoDB
+		// hiddenHeldBack is whether Sync holds the hidden members back while
+		// the volumes of earlier ones are deleted.
+		hiddenHeldBack bool
+		want           map[string]int32
+	}{
+		{
+			name: "replica set with replicas unset",
+			spec: corev1alpha1.InstanceSpec{Components: map[string]corev1alpha1.ComponentSpec{
+				common.ComponentEngine:      {},
+				common.ComponentBackupAgent: {},
+			}},
+			cluster: replicaSetCluster(),
+			want:    map[string]int32{common.ComponentEngine: 3},
+		},
+		{
+			name: "replica set scaling from 3 to 5 members",
+			spec: corev1alpha1.InstanceSpec{Components: map[string]corev1alpha1.ComponentSpec{
+				common.ComponentEngine: {Replicas: pointer.ToInt32(5)},
+			}},
+			cluster: replicaSetCluster(),
+			want:    map[string]int32{common.ComponentEngine: 5},
+		},
+		{
+			name: "hidden members",
+			spec: corev1alpha1.InstanceSpec{Components: map[string]corev1alpha1.ComponentSpec{
+				common.ComponentEngine: {},
+				common.ComponentHidden: {Replicas: pointer.ToInt32(2)},
+			}},
+			cluster: replicaSetCluster(runningHidden),
+			want:    map[string]int32{common.ComponentEngine: 3, common.ComponentHidden: 2},
+		},
+		{
+			name: "hidden members held back",
+			spec: corev1alpha1.InstanceSpec{Components: map[string]corev1alpha1.ComponentSpec{
+				common.ComponentEngine: {},
+				common.ComponentHidden: {Replicas: pointer.ToInt32(2)},
+			}},
+			cluster:        replicaSetCluster(),
+			hiddenHeldBack: true,
+			want:           map[string]int32{common.ComponentEngine: 3, common.ComponentHidden: 2},
+		},
+		{
+			name: "hidden members turned off",
+			spec: corev1alpha1.InstanceSpec{Components: map[string]corev1alpha1.ComponentSpec{
+				common.ComponentEngine: {},
+				common.ComponentHidden: {Replicas: pointer.ToInt32(0)},
+			}},
+			cluster: replicaSetCluster(runningHidden),
+			want:    map[string]int32{common.ComponentEngine: 3},
+		},
+		{
+			name: "sharded with defaults",
+			spec: corev1alpha1.InstanceSpec{
+				Topology: shardedTopology(""),
+				Components: map[string]corev1alpha1.ComponentSpec{
+					common.ComponentEngine:       {},
+					common.ComponentConfigServer: {},
+					common.ComponentProxy:        {},
+					common.ComponentBackupAgent:  {},
+				},
+			},
+			cluster: shardedCluster(),
+			want: map[string]int32{
+				common.ComponentEngine:       6,
+				common.ComponentConfigServer: 3,
+				common.ComponentProxy:        3,
+			},
+		},
+		{
+			name: "sharded with custom shards and sizes",
+			spec: corev1alpha1.InstanceSpec{
+				Topology: shardedTopology(`{"numShards":3}`),
+				Components: map[string]corev1alpha1.ComponentSpec{
+					common.ComponentEngine:       {Replicas: pointer.ToInt32(5)},
+					common.ComponentConfigServer: {Replicas: pointer.ToInt32(5)},
+					common.ComponentProxy:        {Replicas: pointer.ToInt32(2)},
+					// Hidden members are not run in a sharded cluster.
+					common.ComponentHidden: {Replicas: pointer.ToInt32(2)},
+				},
+			},
+			cluster: shardedCluster(),
+			want: map[string]int32{
+				common.ComponentEngine:       15,
+				common.ComponentConfigServer: 5,
+				common.ComponentProxy:        2,
+			},
+		},
+		{
+			name: "paused on the PerconaServerMongoDB object",
+			spec: corev1alpha1.InstanceSpec{Components: map[string]corev1alpha1.ComponentSpec{
+				common.ComponentEngine: {},
+			}},
+			cluster: replicaSetCluster(state(psmdbv1.AppStatePaused), func(psmdb *psmdbv1.PerconaServerMongoDB) {
+				psmdb.Spec.Pause = true
+			}),
+			want: map[string]int32{common.ComponentEngine: 3},
+		},
+		{
+			name: "PerconaServerMongoDB object not created yet",
+			spec: corev1alpha1.InstanceSpec{Components: map[string]corev1alpha1.ComponentSpec{
+				common.ComponentEngine: {Replicas: pointer.ToInt32(5)},
+				common.ComponentHidden: {Replicas: pointer.ToInt32(2)},
+			}},
+			want: map[string]int32{common.ComponentEngine: 5, common.ComponentHidden: 2},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			var objs []client.Object
+			if tt.cluster != nil {
+				objs = append(objs, tt.cluster)
+			}
+			c := statusContextWithSpec(t, tt.spec, nil, objs...)
+			if tt.cluster != nil {
+				require.Equal(t, tt.hiddenHeldBack, hiddenStartPending(c, tt.cluster), "hidden members held back")
+			}
+
+			got, err := StatusPSMDB(c)
+			require.NoError(t, err)
+
+			desired := make(map[string]int32, len(got.DesiredReplicas))
+			for _, r := range got.DesiredReplicas {
+				desired[r.Component] = r.Desired
+			}
+			assert.Equal(t, tt.want, desired)
+			assert.Len(t, got.DesiredReplicas, len(tt.want), "each component is reported once")
 		})
 	}
 }

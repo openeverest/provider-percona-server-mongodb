@@ -34,6 +34,8 @@ import (
 	backupv1alpha1 "github.com/openeverest/openeverest/v2/api/backup/v1alpha1"
 	corev1alpha1 "github.com/openeverest/openeverest/v2/api/core/v1alpha1"
 	"github.com/openeverest/openeverest/v2/provider-runtime/controller"
+
+	"github.com/openeverest/provider-percona-server-mongodb/internal/common"
 )
 
 // Reasons of the problems the provider reports. A problem's reason becomes
@@ -117,12 +119,13 @@ type restoreInProgress struct {
 
 // StatusPSMDB reports what the provider observes about the cluster: whether
 // it runs what the Instance asks for, whether clients can connect, what is
-// wrong and which long operation is running. The runtime derives the
-// Instance's phase and conditions from these facts.
+// wrong and which long operation is running, and how many pods each
+// component will have. The runtime derives the Instance's phase and
+// conditions from these facts.
 func StatusPSMDB(c *controller.Context) (controller.Status, error) {
 	psmdb, err := uncachedCluster(c)
 	if apierrors.IsNotFound(err) {
-		return controller.Progressing("Waiting for the PerconaServerMongoDB object to be created"), nil
+		return withDesiredReplicas(c, controller.Progressing("Waiting for the PerconaServerMongoDB object to be created")), nil
 	}
 	if err != nil {
 		return controller.Status{}, err
@@ -138,7 +141,7 @@ func StatusPSMDB(c *controller.Context) (controller.Status, error) {
 		return controller.Status{}, fmt.Errorf("list StatefulSets of cluster %q: %w", psmdb.Name, err)
 	}
 
-	status := observe(psmdb, sets.Items, restore)
+	status := withDesiredReplicas(c, observe(psmdb, sets.Items, restore))
 
 	// The connection details are reported as soon as clients can connect,
 	// not only once the cluster has converged: whoever is told the database
@@ -281,6 +284,30 @@ func observe(psmdb *psmdbv1.PerconaServerMongoDB, sets []appsv1.StatefulSet, res
 		status = status.WithOperation(corev1alpha1.ConditionUpgrading, reasonRollingOutImage, message)
 	}
 
+	return status
+}
+
+// withDesiredReplicas reports how many pods each component will have once the
+// cluster runs what the Instance asks for. The counts come from the Instance,
+// with the defaults Sync applies, not from the PerconaServerMongoDB object,
+// which may still describe an earlier spec. A cluster paused on that object
+// keeps them: the Instance does not ask for the pause. The backup agent runs
+// as a sidecar, so it has no pods of its own.
+func withDesiredReplicas(c *controller.Context, status controller.Status) controller.Status {
+	if isSharded(c) {
+		return status.
+			WithDesiredReplicas(common.ComponentEngine, numShards(c)*engineReplicas(c)).
+			WithDesiredReplicas(common.ComponentConfigServer, configServerReplicas(c)).
+			WithDesiredReplicas(common.ComponentProxy, mongosReplicas(c))
+	}
+
+	status = status.WithDesiredReplicas(common.ComponentEngine, engineReplicas(c))
+	// Hidden members held back while the volumes of earlier ones are deleted
+	// are counted too: the Instance then shows none of them ready, not no
+	// hidden members at all.
+	if hidden := hiddenReplicas(c); hidden > 0 {
+		status = status.WithDesiredReplicas(common.ComponentHidden, hidden)
+	}
 	return status
 }
 

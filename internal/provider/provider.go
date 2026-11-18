@@ -212,7 +212,7 @@ func SyncPSMDB(c *controller.Context) error {
 		return err
 	}
 	psmdb.Spec.Replsets = replsets
-	if c.Instance().Spec.Topology != nil && c.Instance().Spec.Topology.Type == "sharded" {
+	if isSharded(c) {
 		psmdb.Spec.Sharding.Enabled = true
 		configsvr, err := configureConfigServerReplset(c)
 		if err != nil {

@@ -22,6 +22,18 @@ import (
 	corev1 "k8s.io/api/core/v1"
 )
 
+// defaultMongosSize is the number of mongos routers of a sharded instance
+// whose proxy component asks for no replicas.
+const defaultMongosSize int32 = 3
+
+// mongosReplicas is the number of mongos routers a sharded instance asks for.
+func mongosReplicas(c *controller.Context) int32 {
+	if replicas := c.Instance().Spec.Components[common.ComponentProxy].Replicas; replicas != nil {
+		return *replicas
+	}
+	return defaultMongosSize
+}
+
 // configureMongos configures the mongos (proxy) component for sharded clusters.
 func configureMongos(c *controller.Context) (*psmdbv1.MongosSpec, error) {
 	in := c.Instance()
@@ -35,7 +47,7 @@ func configureMongos(c *controller.Context) (*psmdbv1.MongosSpec, error) {
 	config := proxyParams.Configuration
 
 	mongosSpec := &psmdbv1.MongosSpec{
-		Size: 3,
+		Size: mongosReplicas(c),
 		MultiAZ: psmdbv1.MultiAZ{
 			Resources: corev1.ResourceRequirements{
 				Limits: corev1.ResourceList{},
@@ -45,10 +57,6 @@ func configureMongos(c *controller.Context) (*psmdbv1.MongosSpec, error) {
 
 	if config != "" {
 		mongosSpec.Configuration = psmdbv1.MongoConfiguration(config)
-	}
-
-	if proxy.Replicas != nil {
-		mongosSpec.Size = *proxy.Replicas
 	}
 
 	if proxy.Resources != nil {

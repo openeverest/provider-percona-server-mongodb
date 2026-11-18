@@ -177,6 +177,8 @@ it the same way for every provider.
 The connection details Secret is written the first time the database is available, and kept
 current while a change rolls out.
 
+Each component reports `desiredReplicas`, the pods it will have once the cluster runs the `Instance`'s current spec, defaults included: `engine` counts the members of every shard, `hidden` (replica set topology only) counts members still held back while the volumes of earlier ones are deleted, `configServer` and `proxy` are reported only when sharded, and `backupAgent`, a sidecar, is not reported.
+
 A problem makes the `Instance` not `Ready`, with a reason that says what is wrong:
 
 | Reason | Cause |

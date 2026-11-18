@@ -25,13 +25,58 @@ import (
 	corev1alpha1 "github.com/openeverest/openeverest/v2/api/core/v1alpha1"
 	"github.com/openeverest/openeverest/v2/provider-runtime/controller"
 
+	"github.com/openeverest/provider-percona-server-mongodb/definition"
 	"github.com/openeverest/provider-percona-server-mongodb/definition/components"
 	"github.com/openeverest/provider-percona-server-mongodb/definition/topologies/sharded"
 	"github.com/openeverest/provider-percona-server-mongodb/internal/common"
 )
 
+const (
+	// defaultReplsetSize is the number of members of a replica set whose
+	// component asks for no replicas.
+	defaultReplsetSize int32 = 3
+	// defaultNumShards is the number of shards of a sharded cluster whose
+	// topology parameters ask for none.
+	defaultNumShards int32 = 2
+)
+
+// isSharded reports whether the instance asks for the sharded topology.
+func isSharded(c *controller.Context) bool {
+	return c.Instance().GetTopologyType() == string(definition.TopologyTypeSharded)
+}
+
+// numShards is the number of shards a sharded instance asks for.
+func numShards(c *controller.Context) int32 {
+	var params sharded.ShardedTopologyParameters
+	if c.TryDecodeTopologyParameters(&params) && params.NumShards > 0 {
+		return params.NumShards
+	}
+	return defaultNumShards
+}
+
+// engineReplicas is the number of members of each replica set holding the
+// data: the only one, or each shard's.
+func engineReplicas(c *controller.Context) int32 {
+	return replsetSize(c.Instance().Spec.Components[common.ComponentEngine].Replicas)
+}
+
+// configServerReplicas is the number of members of the config server replica
+// set of a sharded instance.
+func configServerReplicas(c *controller.Context) int32 {
+	return replsetSize(c.Instance().Spec.Components[common.ComponentConfigServer].Replicas)
+}
+
+// replsetSize is the number of members of a replica set whose component asks
+// for replicas.
+func replsetSize(replicas *int32) int32 {
+	if replicas == nil {
+		return defaultReplsetSize
+	}
+	return *replicas
+}
+
 // configureReplset configures a single replset based on the provided parameters.
-func configureReplset(name string, replicas *int32, resources *corev1.ResourceRequirements, storageSize *corev1alpha1.Storage, expose bool, config string, service *corev1alpha1.Service) *psmdbv1.ReplsetSpec {
+func configureReplset(name string, size int32, resources *corev1.ResourceRequirements, storageSize *corev1alpha1.Storage, expose bool, config string, service *corev1alpha1.Service) *psmdbv1.ReplsetSpec {
 	configuration := psmdbDefaultConfigurationTemplate
 	if config != "" {
 		configuration = config
@@ -46,16 +91,12 @@ func configureReplset(name string, replicas *int32, resources *corev1.ResourceRe
 			},
 			Resources: mongodResources(resources),
 		},
-		Size:       3,
+		Size:       size,
 		VolumeSpec: mongodVolume(storageSize),
 		Expose: psmdbv1.ExposeTogglable{
 			Enabled: expose,
 			Expose:  configureExpose(service),
 		},
-	}
-
-	if replicas != nil {
-		rsSpec.Size = *replicas
 	}
 
 	return rsSpec
@@ -158,24 +199,19 @@ func configureReplsets(c *controller.Context) ([]*psmdbv1.ReplsetSpec, error) {
 	config := engineParams.Configuration
 
 	// TODO: implement disabling
-	if spec.Topology == nil || spec.Topology.Type != "sharded" {
-		rs := configureReplset(rsName(0), engine.Replicas, engine.Resources, engine.Storage, true, config, engine.Service)
+	if !isSharded(c) {
+		rs := configureReplset(rsName(0), engineReplicas(c), engine.Resources, engine.Storage, true, config, engine.Service)
 		if err := configureHidden(c, rs); err != nil {
 			return nil, err
 		}
 		return []*psmdbv1.ReplsetSpec{rs}, nil
 	}
 
-	numShards := 2 // default
-	var shardedParams sharded.ShardedTopologyParameters
-	if c.TryDecodeTopologyParameters(&shardedParams) && shardedParams.NumShards > 0 {
-		numShards = int(shardedParams.NumShards)
-	}
-
 	// For sharded topology, replsets should not be exposed directly (clients connect via mongos)
-	replsets := make([]*psmdbv1.ReplsetSpec, 0, numShards)
-	for i := 0; i < numShards; i++ {
-		replsets = append(replsets, configureReplset(rsName(i), engine.Replicas, engine.Resources, engine.Storage, false, config, nil))
+	shards := int(numShards(c))
+	replsets := make([]*psmdbv1.ReplsetSpec, 0, shards)
+	for i := range shards {
+		replsets = append(replsets, configureReplset(rsName(i), engineReplicas(c), engine.Resources, engine.Storage, false, config, nil))
 	}
 
 	return replsets, nil
@@ -183,15 +219,12 @@ func configureReplsets(c *controller.Context) ([]*psmdbv1.ReplsetSpec, error) {
 
 // configureConfigServerReplset configures the config server replset for sharded clusters.
 func configureConfigServerReplset(c *controller.Context) (*psmdbv1.ReplsetSpec, error) {
-	in := c.Instance()
-	spec := in.Spec
-
 	// TODO: implement disabling
-	if spec.Topology == nil || spec.Topology.Type != "sharded" {
+	if !isSharded(c) {
 		return nil, nil
 	}
 
-	cfgSrv := spec.Components[common.ComponentConfigServer]
+	cfgSrv := c.Instance().Spec.Components[common.ComponentConfigServer]
 
 	// The engine configuration file is the conventional `configuration`
 	// property inside the component's parameters.
@@ -202,7 +235,7 @@ func configureConfigServerReplset(c *controller.Context) (*psmdbv1.ReplsetSpec, 
 	// TODO: check if this is okay. It adds the configuration, expose.type,
 	// name, podDisruptionBudget that we didn't have in the everest operator
 	// Config servers should never be exposed directly - they are internal infrastructure
-	rs := configureReplset("configsvr", cfgSrv.Replicas, cfgSrv.Resources, cfgSrv.Storage, false, config, nil)
+	rs := configureReplset("configsvr", configServerReplicas(c), cfgSrv.Resources, cfgSrv.Storage, false, config, nil)
 	if err := keepCurrentConfigServerStorageClass(c, rs); err != nil {
 		return nil, err
 	}
