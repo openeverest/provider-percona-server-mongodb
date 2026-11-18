@@ -136,7 +136,6 @@ spec:
         - script:
             content: |
               kubectl -n $NAMESPACE delete backupstorage --all --ignore-not-found=true
-              kubectl delete backupclass/percona-backup-mongodb --ignore-not-found=true
               kubectl -n $NAMESPACE delete secret/backup-storage-credentials --ignore-not-found=true
         - wait:
             apiVersion: backup.openeverest.io/v1alpha1

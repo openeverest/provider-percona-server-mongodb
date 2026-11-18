@@ -17,16 +17,25 @@ kind: BackupStorage
 metadata:
   name: test-storage-s3
 spec:
-  type: s3
-  s3:
-    bucket: test-backup-bucket
+  backupStorageClassRef:
+    name: s3
+  location:
+    objectStore:
+      bucket: test-backup-bucket
+  parameters:
     region: us-east-1
     endpointURL: http://fake
     forcePathStyle: true
+  authentication:
+    mode: AccessKey
     credentialsSecretRef:
       name: backup-storage-credentials
-    verifyTLS: false
+status:
+  (conditions[?type == 'Accepted'].status | [0]): "True"
+  (backupClasses[?name == 'percona-backup-mongodb'].compatibility | [0]): Compatible
 ---
+# The class the chart installs, once the provider has accepted it and
+# core has judged it compatible with the provider.
 apiVersion: backup.openeverest.io/v1alpha1
 kind: BackupClass
 metadata:
@@ -34,5 +43,9 @@ metadata:
 spec:
   displayName: Percona Backup for MongoDB
   executionMode: ProviderManaged
-  supportedProviders:
-    - percona-server-mongodb
+  providerManaged:
+    providerRef:
+      name: percona-server-mongodb
+status:
+  (conditions[?type == 'Accepted'].status | [0]): "True"
+  (providers[?name == 'percona-server-mongodb'].compatibility | [0]): Compatible

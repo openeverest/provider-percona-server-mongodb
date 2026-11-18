@@ -2,21 +2,28 @@ apiVersion: backup.openeverest.io/v1alpha1
 kind: BackupStorage
 metadata:
   name: seaweedfs-storage
+status:
+  (conditions[?type == 'Accepted'].status | [0]): "True"
+  (backupClasses[?name == 'percona-backup-mongodb'].compatibility | [0]): Compatible
 ---
+# The class the chart installs, once the provider has accepted it and
+# core has judged it compatible with the provider.
 apiVersion: backup.openeverest.io/v1alpha1
 kind: BackupClass
-metadata:
 metadata:
   name: percona-backup-mongodb
 spec:
   displayName: Percona Backup for MongoDB
   executionMode: ProviderManaged
-  supportedProviders:
-    - percona-server-mongodb
   providerManaged:
+    providerRef:
+      name: percona-server-mongodb
     supportsPITR: true
     limits:
       maxPITREnabledStorages: 1
+status:
+  (conditions[?type == 'Accepted'].status | [0]): "True"
+  (providers[?name == 'percona-server-mongodb'].compatibility | [0]): Compatible
 ---
 apiVersion: monitoring.openeverest.io/v1alpha1
 kind: MonitoringDestination
