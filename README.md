@@ -106,6 +106,10 @@ helm install provider-percona-server-mongodb \
   missing or incomplete object the `Instance` names, such as its user Secret, is never a
   reason to reject it: `kubectl` prints a warning, and the `Instance` reports it once
   created.
+- The provider runs one replica by default. Set `replicaCount` above one for HA:
+  leader election is enabled by default, so only one replica reconciles while every
+  replica continues serving health endpoints and admission requests. Multi-replica
+  installs also receive a PodDisruptionBudget and prefer different nodes.
 
 Upgrade and uninstall:
 

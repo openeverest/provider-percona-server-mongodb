@@ -150,6 +150,20 @@ jobs:
           grep -q 'release:' /tmp/hook.yaml || { echo 'provider-spec release block missing from hook ConfigMap'; exit 1; }
           grep -q -- '--apply-operator-crds' /tmp/hook.yaml || { echo 'preflight hook does not upgrade the operator CRDs'; exit 1; }
 
+      - name: Verify HA chart rendering
+        run: |
+          helm template test charts/provider-percona-server-mongodb \
+            --set replicaCount=2 > /tmp/ha.yaml
+          grep -q -- '--leader-elect' /tmp/ha.yaml
+          grep -q 'kind: PodDisruptionBudget' /tmp/ha.yaml
+          if helm template test charts/provider-percona-server-mongodb \
+            --set replicaCount=2 \
+            --set leaderElection.enabled=false 2>/tmp/ha-error; then
+            echo 'replicas without leader election unexpectedly rendered'
+            exit 1
+          fi
+          grep -q 'replicaCount above 1 requires leaderElection.enabled' /tmp/ha-error
+
       # The hook upgrades the operator CRDs from the copy embedded in the
       # provider; it must match the CRDs of the operator the chart bundles.
       - name: Verify embedded operator CRDs match the bundled operator chart

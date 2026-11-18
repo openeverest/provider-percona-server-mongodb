@@ -230,9 +230,8 @@ admission:
     enabled: false
 
 # -- Leader election configuration
-# TODO: enable configuring leader election in provider.
 leaderElection:
-  # -- Enable leader election (recommended for HA deployments)
+  # -- Enable leader election. Required when replicaCount is above 1.
   enabled: true
 
 # -- Values for the operator subchart.
