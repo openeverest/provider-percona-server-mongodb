@@ -9,8 +9,8 @@
 #
 # The pipeline:
 #   1. Creates a k3d cluster
-#   2. Builds the OpenEverest platform from the v2 branch (UI, API server,
-#      controller, operator, CLI) and deploys it via everestctl
+#   2. Builds the OpenEverest platform from its main branch (UI, API server,
+#      controller, CLI) and deploys it via everestctl
 #   3. Builds the provider image and deploys it via the local Helm chart
 #   4. Port-forwards the Everest UI to localhost:8080
 #   5. Runs Playwright browser tests against the UI
@@ -50,9 +50,9 @@ env:
   # Branch of openeverest/openeverest to build the platform from.
   OPENEVEREST_BRANCH: main
 
-  # Image names produced by the openeverest build (must match its Makefile).
+  # Image produced by the openeverest build (must match its Makefile). It
+  # carries both the API server and the controller.
   EVEREST_IMG: ghcr.io/openeverest/openeverest-dev:0.0.0
-  EVEREST_OPERATOR_IMG: ghcr.io/openeverest/openeverest-operator-dev:0.0.0
 
   # k3d cluster name (must match dev/k3d_config.yaml metadata.name).
   K3D_CLUSTER_NAME: provider-psmdb-test
@@ -138,13 +138,6 @@ jobs:
       - name: Import Everest server image into k3d
         run: k3d image import -c "$K3D_CLUSTER_NAME" "$EVEREST_IMG"
 
-      - name: Build Everest operator Docker image
-        working-directory: _openeverest
-        run: make docker-build-operator
-
-      - name: Import Everest operator image into k3d
-        run: k3d image import -c "$K3D_CLUSTER_NAME" "$EVEREST_OPERATOR_IMG"
-
       - name: Build everestctl
         working-directory: _openeverest
         run: make build-cli-debug
@@ -164,10 +157,7 @@ jobs:
             --helm.set server.apiRequestsRateLimit=500 \
             --helm.set server.sessionRequestsRateLimit=200 \
             --helm.set versionMetadataURL=https://check-dev.percona.com \
-            --helm.set server.initialAdminPassword=admin \
-            --helm.set operator.init=false \
-            --helm.set operator.image=ghcr.io/openeverest/openeverest-operator-dev \
-            --helm.set olm.catalogSourceImage=ghcr.io/openeverest/openeverest-catalog-dev
+            --helm.set server.initialAdminPassword=admin
 
       - name: Wait for Everest pods to be ready
         run: |
@@ -205,12 +195,14 @@ jobs:
         working-directory: test/e2e
         run: npx playwright install --with-deps chromium
 
+      # There are no specs yet. The global setup still logs in to the UI, so
+      # this step checks that the platform and the provider deploy and serve.
       - name: Run E2E tests
         working-directory: test/e2e
         env:
           CI: "true"
           EVEREST_URL: http://localhost:8080
-        run: npx playwright test
+        run: npx playwright test --pass-with-no-tests
 
       # -- Artifacts ------------------------------------------------------
       - name: Upload Playwright report
