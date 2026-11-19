@@ -299,7 +299,7 @@ func validateTLS(in *corev1alpha1.Instance) field.ErrorList {
 // wouldn't trust. validateTLSChange checks the same at reconcile time, against
 // the PerconaServerMongoDB.
 func validateTLSTransition(in, old *corev1alpha1.Instance) field.ErrorList {
-	if old == nil || old.Status.Phase == "" || old.Status.Phase == corev1alpha1.InstancePhasePending {
+	if old == nil || !reconciledBefore(old) {
 		return nil
 	}
 	before, err := instanceTLSParameters(old)
@@ -320,6 +320,16 @@ func validateTLSTransition(in, old *corev1alpha1.Instance) field.ErrorList {
 		errs = append(errs, field.Forbidden(path, "certificates and issuer can't change on an existing instance"))
 	}
 	return errs
+}
+
+// reconciledBefore reports whether the provider has reconciled the Instance
+// before, and so may have created its cluster. The runtime records the
+// version bundle it applies the first time a reconcile gets through the
+// provider, and keeps it from then on. The phase does not tell: an Instance
+// stays Pending until its database is first available, long after its members
+// were started.
+func reconciledBefore(in *corev1alpha1.Instance) bool {
+	return in.Status.Version != ""
 }
 
 // certificateSource identifies where an instance's certificates come from.

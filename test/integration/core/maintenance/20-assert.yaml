@@ -12,7 +12,8 @@ kind: Instance
 metadata:
   name: test-psmdb-cluster
 status:
-  phase: Ready
+  phase: Provisioned
+  (conditions[?type == 'Ready'].status | [0]): "True"
   pendingMaintenance:
     - description: Apply the new engine compatibility version (causes a brief rolling restart)
       severity: RollingRestart

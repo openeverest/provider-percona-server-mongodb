@@ -28,26 +28,47 @@ spec:
             file: 10-assert.yaml
 
     # Create the users secret and then simulate the PSMDB operator (scaled to
-    # 0) marking the cluster ready. The secret must exist before the status
-    # patch triggers the reconcile, otherwise the provider reports Failed and
-    # nothing re-triggers reconciliation (the provider does not watch Secrets).
+    # 0) marking the cluster ready the way it does: for the latest generation,
+    # with a primary in the replica set. The secret is created first because
+    # the provider reads it for the connection details as soon as the cluster
+    # is ready, and would otherwise fail and retry with a growing delay.
     - name: cluster-ready
       try:
         - apply:
             file: 11-cluster-ready.yaml
         - script:
             content: |
-              kubectl patch psmdb/test-psmdb-cluster --subresource status -n $NAMESPACE \
-                -p '{"status":{"state":"ready", "size":1, "ready":1, "host":"test-psmdb-cluster-rs0.default.svc.cluster.local"}}' --type=merge
+              generation=$(kubectl get psmdb/test-psmdb-cluster -n $NAMESPACE -o jsonpath='{.metadata.generation}')
+              kubectl patch psmdb/test-psmdb-cluster --subresource status -n $NAMESPACE --type=merge \
+                -p '{"status":{"state":"ready","observedGeneration":'"${generation}"',"size":3,"ready":3,"host":"test-psmdb-cluster-rs0.default.svc.cluster.local","replsets":{"rs0":{"initialized":true,"size":3,"ready":3,"status":"ready","members":{"test-psmdb-cluster-rs0-0":{"name":"test-psmdb-cluster-rs0-0:27017","state":1,"stateStr":"PRIMARY"}}}}}}'
         - assert:
             file: 11-assert.yaml
 
+    # A change is applied to the PerconaServerMongoDB at once, but the
+    # Instance is not Ready again until the operator has acted on it.
     - name: scale-cluster
       try:
         - apply:
             file: 20-update-cluster.yaml
         - assert:
             file: 20-assert.yaml
+
+    - name: scale-cluster-observed
+      try:
+        - script:
+            content: |
+              generation=$(kubectl get psmdb/test-psmdb-cluster -n $NAMESPACE -o jsonpath='{.metadata.generation}')
+              kubectl patch psmdb/test-psmdb-cluster --subresource status -n $NAMESPACE --type=merge \
+                -p '{"status":{"observedGeneration":'"${generation}"'}}'
+        - assert:
+            resource:
+              apiVersion: core.openeverest.io/v1alpha1
+              kind: Instance
+              metadata:
+                name: test-psmdb-cluster
+              status:
+                phase: Provisioned
+                (conditions[?type == 'Ready'].status | [0]): "True"
 
     - name: update-affinity
       try:
@@ -158,8 +179,9 @@ spec:
             file: 41-cluster-ready.yaml
         - script:
             content: |
-              kubectl patch psmdb/test-psmdb-cluster --subresource status -n $NAMESPACE \
-                -p '{"status":{"state":"ready", "size":1, "ready":1, "host":"test-psmdb-cluster-host"}}' --type=merge
+              generation=$(kubectl get psmdb/test-psmdb-cluster -n $NAMESPACE -o jsonpath='{.metadata.generation}')
+              kubectl patch psmdb/test-psmdb-cluster --subresource status -n $NAMESPACE --type=merge \
+                -p '{"status":{"state":"ready","observedGeneration":'"${generation}"',"size":1,"ready":1,"host":"test-psmdb-cluster-host","replsets":{"rs0":{"initialized":true,"size":1,"ready":1,"status":"ready","members":{"test-psmdb-cluster-rs0-0":{"name":"test-psmdb-cluster-rs0-0:27017","state":1,"stateStr":"PRIMARY"}}}}}}'
         - assert:
             file: 41-assert.yaml
 

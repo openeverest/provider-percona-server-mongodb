@@ -31,8 +31,11 @@ spec:
   #   expose:
   #     type: internal
 status:
-  # status: ready
-  phase: Ready
+  # The operator is scaled to 0, so nobody has acted on the new generation.
+  phase: Provisioned
+  (conditions[?type == 'Ready'].status | [0]): "False"
+  (conditions[?type == 'Reconciling'].status | [0]): "True"
+  (conditions[?type == 'Available'].status | [0]): "True"
 ---
 apiVersion: psmdb.percona.com/v1
 kind: PerconaServerMongoDB

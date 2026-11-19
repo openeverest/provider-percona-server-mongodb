@@ -338,12 +338,17 @@ func TestValidate(t *testing.T) {
 func TestValidateTLSTransition(t *testing.T) {
 	t.Parallel()
 	v := validationtest.New(t, NewPSMDBProviderInterface(), providerSpecPath)
-	stored := func(phase corev1alpha1.InstancePhase, raw string) *corev1alpha1.Instance {
+	// stored returns the Instance as stored before the update. The runtime
+	// records the version it applies once the provider has reconciled the
+	// Instance, which is when its cluster may exist.
+	stored := func(reconciled bool, raw string) *corev1alpha1.Instance {
 		in := validationtest.Load(t, replicaSetFixture)
 		if raw != "" {
 			parameters(raw)(in)
 		}
-		in.Status.Phase = phase
+		if reconciled {
+			in.Status.Version = "8.0"
+		}
 		return in
 	}
 
@@ -355,29 +360,29 @@ func TestValidateTLSTransition(t *testing.T) {
 	}{
 		{
 			name: "TLS turned off",
-			old:  stored(corev1alpha1.InstancePhaseReady, ""),
+			old:  stored(true, ""),
 			raw:  `{"tls":{"mode":"disabled"}}`,
 			want: []string{"spec.parameters.tls.mode"},
 		},
 		{
 			name: "TLS turned on",
-			old:  stored(corev1alpha1.InstancePhaseReady, `{"tls":{"mode":"disabled"}}`),
+			old:  stored(true, `{"tls":{"mode":"disabled"}}`),
 			want: []string{"spec.parameters.tls.mode"},
 		},
 		{
 			name: "TLS required instead of preferred",
-			old:  stored(corev1alpha1.InstancePhaseReady, ""),
+			old:  stored(true, ""),
 			raw:  `{"tls":{"mode":"requireTLS"}}`,
 		},
 		{
 			name: "issuer added",
-			old:  stored(corev1alpha1.InstancePhaseFailed, ""),
+			old:  stored(true, ""),
 			raw:  `{"tls":{"issuer":{"name":"corp-ca"}}}`,
 			want: []string{"spec.parameters.tls"},
 		},
 		{
 			name: "TLS turned off before the cluster is created",
-			old:  stored(corev1alpha1.InstancePhasePending, ""),
+			old:  stored(false, ""),
 			raw:  `{"tls":{"mode":"disabled"}}`,
 		},
 	}

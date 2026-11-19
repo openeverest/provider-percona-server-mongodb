@@ -3,7 +3,11 @@ kind: Instance
 metadata:
   name: psmdb-import-test
 status:
-  phase: Restoring
+  # A new Instance being seeded has not been available yet.
+  phase: Pending
+  (conditions[?type == 'Restoring'].status | [0]): "True"
+  (conditions[?type == 'Ready'].status | [0]): "False"
+  (conditions[?type == 'Available'].status | [0]): "False"
 ---
 # The explicit Restore CR seeds the running Instance from the imported
 # (external) Backup CR discovered by the BackupImport.

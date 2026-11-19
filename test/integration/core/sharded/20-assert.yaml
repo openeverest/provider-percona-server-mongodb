@@ -49,8 +49,7 @@ spec:
 #     enabled: true
 #     shards: 3
 status:
-  # status: ready
-  phase: Ready
+  phase: Provisioned
 ---
 apiVersion: psmdb.percona.com/v1
 kind: PerconaServerMongoDB
