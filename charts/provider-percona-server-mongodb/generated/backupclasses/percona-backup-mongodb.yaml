@@ -183,3 +183,134 @@ spec:
               rule: (!has(self.nsFrom) && !has(self.nsTo)) || (has(self.nsFrom) && has(self.nsTo))
       type: object
   supportsImport: true
+  uiSchema:
+    backup:
+      components:
+        compressionLevel:
+          fieldParams:
+            helperText: Algorithm-specific level. Leave empty for the PBM default.
+            label: Compression Level
+          path: compressionLevel
+          uiType: number
+          validation:
+            int: true
+            max: 22
+            min: 0
+        compressionType:
+          fieldParams:
+            defaultValue: snappy
+            label: Compression
+            options:
+              - label: None
+                value: none
+              - label: Gzip
+                value: gzip
+              - label: Snappy
+                value: snappy
+              - label: LZ4
+                value: lz4
+              - label: Zstandard
+                value: zstd
+          path: compressionType
+          uiType: select
+        type:
+          fieldParams:
+            defaultValue: logical
+            label: Backup Type
+            options:
+              - label: Logical
+                value: logical
+              - label: Physical
+                value: physical
+              - label: External (volume snapshot)
+                value: external
+          path: type
+          uiType: select
+          validation:
+            required: true
+        volumeSnapshotClass:
+          fieldParams:
+            helperText: Only used by external backups.
+            label: Volume Snapshot Class
+          path: volumeSnapshotClass
+          uiType: text
+      componentsOrder:
+        - type
+        - volumeSnapshotClass
+        - compressionType
+        - compressionLevel
+      label: Backup Configuration
+    pitr:
+      components:
+        compressionLevel:
+          fieldParams:
+            label: Oplog Compression Level
+          path: compressionLevel
+          uiType: number
+          validation:
+            int: true
+            max: 22
+            min: 0
+        compressionType:
+          fieldParams:
+            defaultValue: snappy
+            label: Oplog Compression
+            options:
+              - label: None
+                value: none
+              - label: Gzip
+                value: gzip
+              - label: Snappy
+                value: snappy
+              - label: LZ4
+                value: lz4
+              - label: Zstandard
+                value: zstd
+          path: compressionType
+          uiType: select
+        oplogOnly:
+          fieldParams:
+            helperText: Stream only the oplog, without periodic base snapshots. Needs an existing full backup.
+            label: Oplog only
+          path: oplogOnly
+          uiType: toggle
+        oplogSpanMin:
+          fieldParams:
+            helperText: Size of the oplog slices PBM buffers before uploading them. Leave empty for the PBM default.
+            label: Oplog Span (minutes)
+          path: oplogSpanMin
+          uiType: text
+          validation:
+            regex:
+              message: Enter a number, for example 10 or 2.5
+              pattern: ^[0-9]+(\.[0-9]+)?$
+      componentsOrder:
+        - oplogSpanMin
+        - oplogOnly
+        - compressionType
+        - compressionLevel
+      label: PITR Configuration
+    restore:
+      components:
+        nsFrom:
+          fieldParams:
+            helperText: Source namespace (database.collection). Set together with the target.
+            label: Rename namespace from
+          path: selective.nsFrom
+          uiType: text
+        nsTo:
+          fieldParams:
+            helperText: Target namespace (database.collection).
+            label: Rename namespace to
+          path: selective.nsTo
+          uiType: text
+        withUsersAndRoles:
+          fieldParams:
+            label: Restore users and roles
+          path: selective.withUsersAndRoles
+          uiType: toggle
+      componentsOrder:
+        - withUsersAndRoles
+        - nsFrom
+        - nsTo
+      label: Restore Configuration
