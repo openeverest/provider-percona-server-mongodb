@@ -64,6 +64,6 @@ spec:
           deleteFromStorage: true
     pitr:
       enabled: true
-      oplogSpanMin: "15"
+      oplogSpanMin: 15
       compressionType: lz4
       compressionLevel: 3
