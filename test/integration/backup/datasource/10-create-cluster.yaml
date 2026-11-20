@@ -12,6 +12,24 @@ spec:
     storages:
     - storageRef:
         name: test-storage-s3
+      schedules:
+        - name: nightly
+          enabled: true
+          cron: "0 2 * * *"
+          retention:
+            type: count
+            count: 5
+          parameters:
+            type: external
+            compressionType: zstd
+            compressionLevel: 9
+            volumeSnapshotClass: csi-snapclass
+      pitr:
+        enabled: true
+        parameters:
+          oplogSpanMin: "15"
+          compressionType: lz4
+          compressionLevel: 3
   components:
     engine:
       type: mongod
@@ -26,3 +44,9 @@ spec:
       storage:
         size: 25Gi
         storageClass: standard
+    backupAgent:
+      type: backup
+      resources:
+        limits:
+          cpu: 500m
+          memory: 750M

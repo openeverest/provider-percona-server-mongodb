@@ -1,0 +1,32 @@
+apiVersion: core.openeverest.io/v1alpha1
+kind: Instance
+metadata:
+  name: rp-psmdb-cluster
+spec:
+  providerRef:
+    name: percona-server-mongodb
+  backup:
+    enabled: true
+    classRef:
+      name: percona-backup-mongodb
+    storages:
+      - storageRef:
+          name: rp-storage-s3
+---
+apiVersion: psmdb.percona.com/v1
+kind: PerconaServerMongoDB
+metadata:
+  name: rp-psmdb-cluster
+spec:
+  backup:
+    enabled: true
+    storages:
+      rp-storage-s3:
+        type: s3
+        s3:
+          bucket: rp-backup-bucket
+          credentialsSecret: rp-storage-credentials
+          endpointUrl: http://fake
+          insecureSkipTLSVerify: true
+          region: us-east-1
+

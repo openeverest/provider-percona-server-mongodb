@@ -16,14 +16,20 @@ package provider
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
+	"github.com/AlekSi/pointer"
+	"github.com/percona/percona-backup-mongodb/pbm/compress"
+	"github.com/percona/percona-backup-mongodb/pbm/defs"
 	psmdbv1 "github.com/percona/percona-server-mongodb-operator/pkg/apis/psmdb/v1"
+	"github.com/percona/percona-server-mongodb-operator/pkg/util/numstr"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -36,6 +42,7 @@ import (
 	"github.com/openeverest/openeverest/v2/backupstorageclasses/s3"
 	"github.com/openeverest/openeverest/v2/provider-runtime/controller"
 
+	perconabackupmongodb "github.com/openeverest/provider-percona-server-mongodb/definition/backupclasses/percona-backup-mongodb"
 	"github.com/openeverest/provider-percona-server-mongodb/internal/common"
 )
 
@@ -154,6 +161,10 @@ func pitrStorageEntry(name string) corev1alpha1.InstanceBackupStorage {
 }
 
 func TestBuildPSMDBPITRSpec(t *testing.T) {
+	rawParams := func(p perconabackupmongodb.PerconaPITRParameters) *runtime.RawExtension {
+		return &runtime.RawExtension{Raw: mustMarshal(t, p)}
+	}
+
 	tests := []struct {
 		name     string
 		storages []corev1alpha1.InstanceBackupStorage
@@ -189,6 +200,36 @@ func TestBuildPSMDBPITRSpec(t *testing.T) {
 			},
 			wantErr: "at most one PITR-enabled storage",
 		},
+		{
+			name: "PITR parameters are applied onto the cluster-global spec",
+			storages: []corev1alpha1.InstanceBackupStorage{{
+				StorageRef: commonv1alpha1.ObjectRef{Name: "s1"},
+				PITR: &corev1alpha1.InstanceBackupStoragePITR{
+					Enabled: true,
+					Parameters: rawParams(perconabackupmongodb.PerconaPITRParameters{
+						OplogSpanMin:     "10",
+						OplogOnly:        true,
+						CompressionType:  "zstd",
+						CompressionLevel: pointer.ToInt32(5),
+					}),
+				},
+			}},
+			want: psmdbv1.PITRSpec{
+				Enabled:          true,
+				OplogSpanMin:     numstr.NumberString("10"),
+				OplogOnly:        true,
+				CompressionType:  compress.CompressionType("zstd"),
+				CompressionLevel: pointer.ToInt(5),
+			},
+		},
+		{
+			name: "invalid PITR parameters payload is rejected",
+			storages: []corev1alpha1.InstanceBackupStorage{{
+				StorageRef: commonv1alpha1.ObjectRef{Name: "s1"},
+				PITR:       &corev1alpha1.InstanceBackupStoragePITR{Enabled: true, Parameters: &runtime.RawExtension{Raw: []byte(`{"oplogSpanMin":`)}},
+			}},
+			wantErr: `storage "s1"`,
+		},
 	}
 
 	for _, tc := range tests {
@@ -203,6 +244,15 @@ func TestBuildPSMDBPITRSpec(t *testing.T) {
 			assert.Equal(t, tc.want, got)
 		})
 	}
+}
+
+// mustMarshal marshals v to JSON, failing the test on error. Used to build
+// *runtime.RawExtension payloads for parameter-decoding tests.
+func mustMarshal(t *testing.T, v any) []byte {
+	t.Helper()
+	b, err := json.Marshal(v)
+	require.NoError(t, err)
+	return b
 }
 
 func TestBuildPSMDBTasksRetention(t *testing.T) {
@@ -254,6 +304,155 @@ func TestBuildPSMDBTasksRetention(t *testing.T) {
 			require.NoError(t, err)
 			require.Len(t, got, 1)
 			assert.Equal(t, tc.want, got[0].Retention)
+		})
+	}
+}
+
+func TestBuildPSMDBTasksParameters(t *testing.T) {
+	rawParams := func(p perconabackupmongodb.PerconaBackupParameters) *runtime.RawExtension {
+		return &runtime.RawExtension{Raw: mustMarshal(t, p)}
+	}
+
+	tests := []struct {
+		name       string
+		parameters *runtime.RawExtension
+		want       psmdbv1.BackupTaskSpec
+		wantErr    string
+	}{
+		{
+			name: "unset parameters leave the operator's defaults",
+			want: psmdbv1.BackupTaskSpec{Name: "daily", Enabled: true, Schedule: "0 2 * * *", StorageName: "s3"},
+		},
+		{
+			name: "type, compression and volumeSnapshotClass are applied",
+			parameters: rawParams(perconabackupmongodb.PerconaBackupParameters{
+				Type:                "physical",
+				CompressionType:     "zstd",
+				CompressionLevel:    pointer.ToInt32(9),
+				VolumeSnapshotClass: "csi-snapclass",
+			}),
+			want: psmdbv1.BackupTaskSpec{
+				Name: "daily", Enabled: true, Schedule: "0 2 * * *", StorageName: "s3",
+				Type:                defs.BackupType("physical"),
+				CompressionType:     compress.CompressionType("zstd"),
+				CompressionLevel:    pointer.ToInt(9),
+				VolumeSnapshotClass: pointer.ToString("csi-snapclass"),
+			},
+		},
+		{
+			name:       "invalid parameters payload is rejected",
+			parameters: &runtime.RawExtension{Raw: []byte(`{"type":`)},
+			wantErr:    `schedule "daily"`,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			storages := []corev1alpha1.InstanceBackupStorage{{
+				StorageRef: commonv1alpha1.ObjectRef{Name: "s3"},
+				Schedules: []corev1alpha1.InstanceBackupSchedule{
+					{Name: "daily", Enabled: true, Cron: "0 2 * * *", Parameters: tc.parameters},
+				},
+			}}
+
+			got, err := buildPSMDBTasks(storages)
+			if tc.wantErr != "" {
+				require.ErrorContains(t, err, tc.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			require.Len(t, got, 1)
+			assert.Equal(t, tc.want, got[0])
+		})
+	}
+}
+
+func TestBackupAgentResources(t *testing.T) {
+	defaultResources := corev1.ResourceRequirements{
+		Limits: corev1.ResourceList{
+			corev1.ResourceMemory: resource.MustParse("1G"),
+			corev1.ResourceCPU:    resource.MustParse("300m"),
+		},
+	}
+
+	tests := []struct {
+		name      string
+		resources *corev1.ResourceRequirements
+		want      corev1.ResourceRequirements
+	}{
+		{
+			name: "nil resources use the default",
+			want: defaultResources,
+		},
+		{
+			name:      "limits override the default per-field",
+			resources: &corev1.ResourceRequirements{Limits: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("1")}},
+			want: corev1.ResourceRequirements{
+				Limits: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("1"),
+					corev1.ResourceMemory: resource.MustParse("1G"),
+				},
+			},
+		},
+		{
+			name: "requests are carried over when set",
+			resources: &corev1.ResourceRequirements{
+				Requests: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("512M")},
+			},
+			want: corev1.ResourceRequirements{
+				Limits:   defaultResources.Limits,
+				Requests: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("512M")},
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, backupAgentResources(tc.resources))
+		})
+	}
+}
+
+func TestApplyRestoreParams(t *testing.T) {
+	tests := []struct {
+		name   string
+		params perconabackupmongodb.PerconaRestoreParameters
+		want   psmdbv1.PerconaServerMongoDBRestoreSpec
+	}{
+		{
+			name: "empty parameters leave the spec untouched",
+		},
+		{
+			name: "selective restore options are copied",
+			params: perconabackupmongodb.PerconaRestoreParameters{
+				Selective: &perconabackupmongodb.PerconaRestoreSelective{
+					WithUsersAndRoles: true,
+					Namespaces:        []string{"db.coll"},
+					NamespaceFrom:     "old.coll",
+					NamespaceTo:       "new.coll",
+				},
+			},
+			want: psmdbv1.PerconaServerMongoDBRestoreSpec{
+				Selective: &psmdbv1.SelectiveRestoreOpts{
+					WithUsersAndRoles: true,
+					Namespaces:        []string{"db.coll"},
+					NamespaceFrom:     "old.coll",
+					NamespaceTo:       "new.coll",
+				},
+			},
+		},
+		{
+			name:   "replset remapping is copied",
+			params: perconabackupmongodb.PerconaRestoreParameters{ReplsetRemapping: map[string]string{"rs0": "rs1"}},
+			want:   psmdbv1.PerconaServerMongoDBRestoreSpec{RSMap: map[string]string{"rs0": "rs1"}},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var got psmdbv1.PerconaServerMongoDBRestoreSpec
+			applyRestoreParams(&got, tc.params)
+			assert.Equal(t, tc.want, got)
 		})
 	}
 }

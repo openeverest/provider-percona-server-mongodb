@@ -296,7 +296,11 @@ func SyncPSMDB(c *controller.Context) error {
 		SSLInternal: internalCertificateSecretName(c, tls),
 	}
 
+	oplogSpanMin := detachOplogSpanMin(psmdb)
 	if err := c.Apply(psmdb); err != nil {
+		return err
+	}
+	if err := syncOplogSpanMin(c, oplogSpanMin); err != nil {
 		return err
 	}
 

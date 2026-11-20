@@ -34,6 +34,10 @@ metadata:
 spec:
   backup:
     enabled: true
+    resources:
+      limits:
+        cpu: 500m
+        memory: 750M
     storages:
       test-storage-s3:
         type: s3
@@ -45,3 +49,21 @@ spec:
           endpointUrl: http://fake
           forcePathStyle: true
           region: us-east-1
+    tasks:
+      - name: nightly
+        enabled: true
+        schedule: "0 2 * * *"
+        storageName: test-storage-s3
+        type: external
+        compressionType: zstd
+        compressionLevel: 9
+        volumeSnapshotClass: csi-snapclass
+        retention:
+          type: count
+          count: 5
+          deleteFromStorage: true
+    pitr:
+      enabled: true
+      oplogSpanMin: 15
+      compressionType: lz4
+      compressionLevel: 3

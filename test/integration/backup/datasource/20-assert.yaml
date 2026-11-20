@@ -11,6 +11,10 @@ spec:
     name: percona-backup-mongodb
   storageRef:
     name: test-storage-s3
+  parameters:
+    type: physical
+    compressionType: snappy
+    compressionLevel: 4
 ---
 apiVersion: psmdb.percona.com/v1
 kind: PerconaServerMongoDBBackup
@@ -19,3 +23,6 @@ metadata:
 spec:
   storageName: test-storage-s3
   clusterName: src-psmdb-cluster
+  type: physical
+  compressionType: snappy
+  compressionLevel: 4
