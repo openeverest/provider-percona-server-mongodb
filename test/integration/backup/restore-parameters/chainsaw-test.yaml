@@ -1,0 +1,134 @@
+---
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: backup-restore-parameters
+spec:
+  description: |
+    Verify that Restore.spec.parameters (selective restore options and
+    replset remapping) are applied onto the operator's
+    PerconaServerMongoDBRestore. Uses a single cluster (same-cluster restore)
+    to keep the scenario focused on parameter wiring, independent of the
+    cross-cluster / dataSource restore paths already covered by
+    backup/datasource.
+  catch:
+    - script:
+        content: kubectl -n $NAMESPACE get instance,psmdb,backup,psmdb-backup,restore,psmdb-restore,backupstorage -o yaml
+    - script:
+        content: kubectl get backupclass -o yaml
+    - podLogs:
+        namespace: provider-system
+        selector: app.kubernetes.io/name=provider-percona-server-mongodb
+        tail: 100
+  steps:
+    - name: setup-backup-infra
+      try:
+        - apply:
+            file: 00-install.yaml
+        - assert:
+            file: 00-assert.yaml
+
+    - name: create-cluster
+      try:
+        - apply:
+            file: 10-create-cluster.yaml
+        - assert:
+            file: 10-assert.yaml
+
+    # Create the users secret and then simulate the cluster becoming ready.
+    - name: cluster-ready
+      try:
+        - apply:
+            file: 11-cluster-ready.yaml
+        - script:
+            content: |
+              generation=$(kubectl get psmdb/rp-psmdb-cluster -n $NAMESPACE -o jsonpath='{.metadata.generation}')
+              kubectl patch psmdb/rp-psmdb-cluster --subresource status -n $NAMESPACE \
+                -p "{\"status\":{\"state\":\"ready\",\"observedGeneration\":${generation},\"size\":3,\"ready\":3,\"host\":\"rp-psmdb-cluster-rs0.default.svc.cluster.local\",\"backupVersion\":\"2.9.0\"}}" --type=merge
+        - assert:
+            file: 11-assert.yaml
+
+    - name: create-backup
+      try:
+        - apply:
+            file: 20-create-backup.yaml
+        - assert:
+            file: 20-assert.yaml
+
+    # Simulate the PSMDB backup reaching ready state, so the Restore below can
+    # resolve the backupRef (resolveBackupSource requires Backup.status.state
+    # == Succeeded).
+    - name: backup-ready
+      try:
+        - script:
+            content: |
+              kubectl patch psmdb-backup/rp-backup --subresource status -n $NAMESPACE \
+                -p '{"status":{"state":"ready","completed":"2025-01-01T01:02:03Z","storageName":"rp-storage-s3","type":"logical","destination":"s3://rp-backup-bucket/rp-psmdb-cluster/dee8317b-b24e-45f5-bd8d-bf2aff04819d/2025-01-01T01:02:03Z"}}' --type=merge
+        - assert:
+            file: 21-assert.yaml
+
+    - name: create-restore-with-parameters
+      try:
+        - apply:
+            file: 30-create-restore.yaml
+        - assert:
+            file: 30-assert.yaml
+
+    - name: cleanup
+      try:
+        - script:
+            content: |
+              kubectl -n $NAMESPACE delete restore,psmdb-restore,psmdb-backup,psmdb,backup,instance --all --wait=false --ignore-not-found=true
+              # Remove finalizers blocking deletion (the operator is scaled to
+              # 0, so finalizers won't be processed).
+              kubectl -n $NAMESPACE patch psmdb-backup rp-backup --type=merge -p '{"metadata":{"finalizers":[]}}' --ignore-not-found 2>/dev/null || true
+              kubectl -n $NAMESPACE patch psmdb/rp-psmdb-cluster -p '{"metadata":{"finalizers":null}}' --type merge --ignore-not-found 2>/dev/null || true
+        - wait:
+            apiVersion: backup.openeverest.io/v1alpha1
+            kind: Restore
+            for:
+              deletion: {}
+        - wait:
+            apiVersion: psmdb.percona.com/v1
+            kind: PerconaServerMongoDBRestore
+            for:
+              deletion: {}
+        - wait:
+            apiVersion: psmdb.percona.com/v1
+            kind: PerconaServerMongoDBBackup
+            for:
+              deletion: {}
+        - wait:
+            apiVersion: psmdb.percona.com/v1
+            kind: PerconaServerMongoDB
+            for:
+              deletion: {}
+        - wait:
+            apiVersion: backup.openeverest.io/v1alpha1
+            kind: Backup
+            for:
+              deletion: {}
+        - wait:
+            apiVersion: core.openeverest.io/v1alpha1
+            kind: Instance
+            for:
+              deletion: {}
+
+    - name: cleanup-backup-infra
+      try:
+        - script:
+            content: |
+              kubectl -n $NAMESPACE delete backupstorage --all --ignore-not-found=true
+              kubectl -n $NAMESPACE delete secret/rp-storage-credentials --ignore-not-found=true
+        - wait:
+            apiVersion: backup.openeverest.io/v1alpha1
+            kind: BackupStorage
+            for:
+              deletion: {}
+        - wait:
+            apiVersion: v1
+            kind: Secret
+            name: rp-storage-credentials
+            for:
+              deletion: {}
+

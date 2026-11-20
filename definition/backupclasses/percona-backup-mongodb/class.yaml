@@ -49,6 +49,10 @@ providerManaged:
     # makes the constraint visible to the UI and to other callers.
     maxPITREnabledStorages: 1
     maxStorages: 1
+  # Validates InstanceBackupStoragePITR.parameters (oplog span, oplog-only
+  # mode, compression). Applied by the provider in buildPSMDBPITRSpec.
+  pitrParametersSchema:
+    openAPIV3Schema: PerconaPITRParameters
 
 parametersSchema:
   openAPIV3Schema: PerconaBackupParameters

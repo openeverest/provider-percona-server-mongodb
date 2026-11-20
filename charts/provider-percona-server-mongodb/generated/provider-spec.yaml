@@ -356,7 +356,8 @@ spec:
           optional: true
           supportedFields:
             openAPIV3Schema:
-              properties: {}
+              properties:
+                resources: {}
         engine:
           supportedFields:
             openAPIV3Schema:
@@ -394,7 +395,8 @@ spec:
           optional: true
           supportedFields:
             openAPIV3Schema:
-              properties: {}
+              properties:
+                resources: {}
         configServer:
           supportedFields:
             openAPIV3Schema:

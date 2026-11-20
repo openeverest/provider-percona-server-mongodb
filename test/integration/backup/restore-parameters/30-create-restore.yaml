@@ -1,0 +1,22 @@
+apiVersion: backup.openeverest.io/v1alpha1
+kind: Restore
+metadata:
+  name: rp-restore
+spec:
+  instanceRef:
+    name: rp-psmdb-cluster
+  dataSource:
+    type: Backup
+    backup:
+      backupRef:
+        name: rp-backup
+  parameters:
+    selective:
+      withUsersAndRoles: true
+      namespaces:
+        - testdb.testcoll
+      nsFrom: olddb.oldcoll
+      nsTo: newdb.newcoll
+    replsetRemapping:
+      rs0: rs1
+

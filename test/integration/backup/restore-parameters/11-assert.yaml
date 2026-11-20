@@ -1,0 +1,32 @@
+apiVersion: core.openeverest.io/v1alpha1
+kind: Instance
+metadata:
+  name: rp-psmdb-cluster
+status:
+  phase: Provisioned
+  (conditions[?type == 'Ready'].status | [0]): "True"
+---
+apiVersion: psmdb.percona.com/v1
+kind: PerconaServerMongoDB
+metadata:
+  name: rp-psmdb-cluster
+spec:
+  imagePullPolicy: IfNotPresent
+  backup:
+    enabled: true
+    storages:
+      rp-storage-s3:
+        type: s3
+        s3:
+          bucket: rp-backup-bucket
+          credentialsSecret: rp-storage-credentials
+          endpointUrl: http://fake
+          insecureSkipTLSVerify: true
+          region: us-east-1
+  secrets:
+    encryptionKey: rp-psmdb-cluster-mongodb-encryption-key
+    sslInternal: rp-psmdb-cluster-ssl-internal
+    users: everest-secrets-rp-psmdb-cluster
+status:
+  state: ready
+

@@ -1,0 +1,37 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: provider-percona-server-mongodb-operator
+  namespace: provider-system
+spec:
+  replicas: 0
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: rp-storage-credentials
+type: Opaque
+---
+apiVersion: backup.openeverest.io/v1alpha1
+kind: BackupStorage
+metadata:
+  name: rp-storage-s3
+spec:
+  backupStorageClassRef:
+    name: s3
+  location:
+    objectStore:
+      bucket: rp-backup-bucket
+status:
+  (conditions[?type == 'Accepted'].status | [0]): "True"
+  (backupClasses[?name == 'percona-backup-mongodb'].compatibility | [0]): Compatible
+---
+# The class the chart installs; it carries the restore parameters schema
+# that Restore.spec.parameters is validated against.
+apiVersion: backup.openeverest.io/v1alpha1
+kind: BackupClass
+metadata:
+  name: percona-backup-mongodb
+status:
+  (conditions[?type == 'Accepted'].status | [0]): "True"
+  (providers[?name == 'percona-server-mongodb'].compatibility | [0]): Compatible
