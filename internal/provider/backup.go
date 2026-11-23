@@ -47,6 +47,7 @@ import (
 
 	"github.com/openeverest/provider-percona-server-mongodb/definition/backupclasses"
 	perconabackupmongodb "github.com/openeverest/provider-percona-server-mongodb/definition/backupclasses/percona-backup-mongodb"
+	"github.com/openeverest/provider-percona-server-mongodb/definition/components"
 	"github.com/openeverest/provider-percona-server-mongodb/internal/common"
 )
 
@@ -103,6 +104,13 @@ func buildBackupSpec(c *controller.Context) (psmdbv1.BackupSpec, error) {
 		return psmdbv1.BackupSpec{}, fmt.Errorf("get provider spec: %w", err)
 	}
 	backupAgent := c.Instance().Spec.Components[common.ComponentBackupAgent]
+	agentParams, err := decodeBackupAgentParameters(backupAgent.Parameters)
+	if err != nil {
+		return psmdbv1.BackupSpec{}, &controller.BackupConfigError{
+			Reason:  "BackupAgentParametersInvalid",
+			Message: err.Error(),
+		}
+	}
 	bs := psmdbv1.BackupSpec{
 		Image: backupAgentImage(spec, c.Instance()),
 		Configuration: psmdbv1.BackupConfig{
@@ -111,6 +119,14 @@ func buildBackupSpec(c *controller.Context) (psmdbv1.BackupSpec, error) {
 			},
 		},
 		Resources: backupAgentResources(backupAgent.Resources),
+	}
+	// These are PBM's cluster-wide "advanced" backup/restore settings: they
+	// apply to every backup and restore the cluster runs, not to a single
+	// run, so they are configured once on the backupAgent component rather
+	// than per schedule or per Backup/Restore CR.
+	applyBackupAgentParamsToBackupOptions(bs.Configuration.BackupOptions, agentParams)
+	if restoreOptions := buildRestoreOptionsFromBackupAgentParams(agentParams); restoreOptions != nil {
+		bs.Configuration.RestoreOptions = restoreOptions
 	}
 
 	backupCfg := c.Instance().Spec.Backup
@@ -246,6 +262,74 @@ func decodePITRParameters(raw *runtime.RawExtension) (perconabackupmongodb.Perco
 		return params, fmt.Errorf("unmarshal PITR parameters: %w", err)
 	}
 	return params, nil
+}
+
+// decodeBackupAgentParameters unmarshals the backupAgent component's
+// .parameters payload (spec.components.backupAgent.parameters) into
+// components.BackupParameters. These are cluster-wide "advanced" PBM
+// settings — such as NumParallelCollections — that apply to every backup or
+// restore the cluster runs, as opposed to the per-schedule/per-run
+// parameters in PerconaBackupParameters/PerconaRestoreParameters.
+func decodeBackupAgentParameters(raw *runtime.RawExtension) (components.BackupParameters, error) {
+	var params components.BackupParameters
+	if raw == nil || raw.Raw == nil {
+		return params, nil
+	}
+	if err := json.Unmarshal(raw.Raw, &params); err != nil {
+		return params, fmt.Errorf("unmarshal backupAgent parameters: %w", err)
+	}
+	return params, nil
+}
+
+// applyBackupAgentParamsToBackupOptions copies the cluster-wide "advanced"
+// backup settings from components.BackupParameters onto dst (PBM's
+// backup.* cluster config, applied via psmdbv1.BackupOptions). dst must be
+// non-nil. Unset fields leave PBM's own defaults in place.
+func applyBackupAgentParamsToBackupOptions(dst *psmdbv1.BackupOptions, params components.BackupParameters) {
+	if params.NumParallelCollections != nil {
+		dst.NumParallelCollections = int(*params.NumParallelCollections)
+	}
+	if params.BackupOplogSpanMin != nil {
+		dst.OplogSpanMin = *params.BackupOplogSpanMin
+	}
+	if params.Priority != nil {
+		dst.Priority = params.Priority
+	}
+}
+
+// buildRestoreOptionsFromBackupAgentParams returns the cluster-wide
+// "advanced" restore settings from components.BackupParameters as PBM's
+// restore.* cluster config, or nil when none of them are set (leaving
+// Configuration.RestoreOptions unset so PSMDB applies its own defaults).
+func buildRestoreOptionsFromBackupAgentParams(params components.BackupParameters) *psmdbv1.RestoreOptions {
+	if params.RestoreNumParallelCollections == nil &&
+		params.RestoreBatchSize == nil &&
+		params.RestoreNumInsertionWorkers == nil &&
+		params.RestoreNumDownloadWorkers == nil &&
+		params.RestoreMaxDownloadBufferMB == nil &&
+		params.RestoreDownloadChunkMB == nil {
+		return nil
+	}
+	out := &psmdbv1.RestoreOptions{}
+	if params.RestoreNumParallelCollections != nil {
+		out.NumParallelCollections = int(*params.RestoreNumParallelCollections)
+	}
+	if params.RestoreBatchSize != nil {
+		out.BatchSize = int(*params.RestoreBatchSize)
+	}
+	if params.RestoreNumInsertionWorkers != nil {
+		out.NumInsertionWorkers = int(*params.RestoreNumInsertionWorkers)
+	}
+	if params.RestoreNumDownloadWorkers != nil {
+		out.NumDownloadWorkers = int(*params.RestoreNumDownloadWorkers)
+	}
+	if params.RestoreMaxDownloadBufferMB != nil {
+		out.MaxDownloadBufferMb = int(*params.RestoreMaxDownloadBufferMB)
+	}
+	if params.RestoreDownloadChunkMB != nil {
+		out.DownloadChunkMb = int(*params.RestoreDownloadChunkMB)
+	}
+	return out
 }
 
 // applyBackupParamsToTask copies the user-chosen type, compression and (for

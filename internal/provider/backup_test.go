@@ -43,6 +43,7 @@ import (
 	"github.com/openeverest/openeverest/v2/provider-runtime/controller"
 
 	perconabackupmongodb "github.com/openeverest/provider-percona-server-mongodb/definition/backupclasses/percona-backup-mongodb"
+	"github.com/openeverest/provider-percona-server-mongodb/definition/components"
 	"github.com/openeverest/provider-percona-server-mongodb/internal/common"
 )
 
@@ -953,6 +954,102 @@ func TestBuildBackupSpecReportsConfigOfStoragesNotRendered(t *testing.T) {
 	var configErr *controller.BackupConfigError
 	require.ErrorAs(t, err, &configErr)
 	assert.Equal(t, "PITRConfigInvalid", configErr.Reason)
+}
+
+func TestBuildBackupSpecNumParallelCollections(t *testing.T) {
+	rawParams := func(p components.BackupParameters) *runtime.RawExtension {
+		return &runtime.RawExtension{Raw: mustMarshal(t, p)}
+	}
+
+	tests := map[string]struct {
+		parameters         *runtime.RawExtension
+		wantBackupOptions  int
+		wantRestoreOptions *int
+		wantErr            string
+	}{
+		"unset parameters leave the operator's defaults": {},
+		"numParallelCollections is applied cluster-wide for backups": {
+			parameters:        rawParams(components.BackupParameters{NumParallelCollections: pointer.ToInt32(8)}),
+			wantBackupOptions: 8,
+		},
+		"restoreNumParallelCollections configures restoreOptions": {
+			parameters:         rawParams(components.BackupParameters{RestoreNumParallelCollections: pointer.ToInt32(6)}),
+			wantRestoreOptions: pointer.ToInt(6),
+		},
+		"both are applied independently": {
+			parameters: rawParams(components.BackupParameters{
+				NumParallelCollections:        pointer.ToInt32(8),
+				RestoreNumParallelCollections: pointer.ToInt32(6),
+			}),
+			wantBackupOptions:  8,
+			wantRestoreOptions: pointer.ToInt(6),
+		},
+		"invalid parameters payload is rejected": {
+			parameters: &runtime.RawExtension{Raw: []byte(`{"numParallelCollections":`)},
+			wantErr:    "unmarshal backupAgent parameters",
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			instance := testBackupInstance()
+			instance.Spec.Components = map[string]corev1alpha1.ComponentSpec{
+				common.ComponentBackupAgent: {Parameters: tc.parameters},
+			}
+			c := backupTestContext(t, instance)
+
+			got, err := buildBackupSpec(c)
+			if tc.wantErr != "" {
+				var configErr *controller.BackupConfigError
+				require.ErrorAs(t, err, &configErr)
+				assert.Equal(t, "BackupAgentParametersInvalid", configErr.Reason)
+				assert.Contains(t, configErr.Message, tc.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			require.NotNil(t, got.Configuration.BackupOptions)
+			assert.Equal(t, tc.wantBackupOptions, got.Configuration.BackupOptions.NumParallelCollections)
+			if tc.wantRestoreOptions == nil {
+				assert.Nil(t, got.Configuration.RestoreOptions)
+			} else {
+				require.NotNil(t, got.Configuration.RestoreOptions)
+				assert.Equal(t, *tc.wantRestoreOptions, got.Configuration.RestoreOptions.NumParallelCollections)
+			}
+		})
+	}
+}
+
+func TestBuildBackupSpecAdvancedBackupAgentOptions(t *testing.T) {
+	rawParams := func(p components.BackupParameters) *runtime.RawExtension {
+		return &runtime.RawExtension{Raw: mustMarshal(t, p)}
+	}
+
+	instance := testBackupInstance()
+	instance.Spec.Components = map[string]corev1alpha1.ComponentSpec{
+		common.ComponentBackupAgent: {Parameters: rawParams(components.BackupParameters{
+			BackupOplogSpanMin:         pointer.ToFloat64(15),
+			Priority:                   map[string]float64{"*": 1, "rs0/host:27017": 2.5},
+			RestoreBatchSize:           pointer.ToInt32(500),
+			RestoreNumInsertionWorkers: pointer.ToInt32(10),
+			RestoreNumDownloadWorkers:  pointer.ToInt32(4),
+			RestoreMaxDownloadBufferMB: pointer.ToInt32(256),
+			RestoreDownloadChunkMB:     pointer.ToInt32(32),
+		})},
+	}
+	c := backupTestContext(t, instance)
+
+	got, err := buildBackupSpec(c)
+	require.NoError(t, err)
+	require.NotNil(t, got.Configuration.BackupOptions)
+	assert.Equal(t, 15.0, got.Configuration.BackupOptions.OplogSpanMin)
+	assert.Equal(t, map[string]float64{"*": 1, "rs0/host:27017": 2.5}, got.Configuration.BackupOptions.Priority)
+
+	require.NotNil(t, got.Configuration.RestoreOptions)
+	assert.Equal(t, 500, got.Configuration.RestoreOptions.BatchSize)
+	assert.Equal(t, 10, got.Configuration.RestoreOptions.NumInsertionWorkers)
+	assert.Equal(t, 4, got.Configuration.RestoreOptions.NumDownloadWorkers)
+	assert.Equal(t, 256, got.Configuration.RestoreOptions.MaxDownloadBufferMb)
+	assert.Equal(t, 32, got.Configuration.RestoreOptions.DownloadChunkMb)
 }
 
 func TestBuildExternalBackupSource(t *testing.T) {
