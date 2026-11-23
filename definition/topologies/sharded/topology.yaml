@@ -521,8 +521,8 @@ ui:
             int: true
             min: 1
           fieldParams:
-            label: "Backup parallel collections"
-            helperText: "Collections PBM backs up at once, cluster-wide. Only applies to logical backups; ignored for physical/external. Leave empty for the PBM default (half the backup-agent's CPU count, minimum 1)."
+            label: "Nº of parallel backup collections"
+            helperText: "Number of collections PBM backs up at once, cluster-wide. Only applies to logical backups; ignored for physical/external. Leave empty for the PBM default (half the backup-agent's CPU count, minimum 1)."
         restoreNumParallelCollections:
           uiType: number
           path: spec.components.backupAgent.parameters.restoreNumParallelCollections
@@ -530,8 +530,8 @@ ui:
             int: true
             min: 1
           fieldParams:
-            label: "Restore parallel collections"
-            helperText: "Collections PBM restores at once, cluster-wide. Only applies when restoring a logical backup; ignored for physical. Leave empty for the PBM default (half the backup-agent's CPU count, minimum 1)."
+            label: "Nº of parallel restore collections"
+            helperText: "Number of collections PBM restores at once, cluster-wide. Only applies when restoring a logical backup; ignored for physical. Leave empty for the PBM default (half the backup-agent's CPU count, minimum 1)."
         oplogSpanMin:
           uiType: number
           path: spec.components.backupAgent.parameters.backupOplogSpanMin

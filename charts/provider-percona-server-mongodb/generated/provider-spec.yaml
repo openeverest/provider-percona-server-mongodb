@@ -556,8 +556,8 @@ spec:
           components:
             backupNumParallelCollections:
               fieldParams:
-                helperText: Collections PBM backs up at once, cluster-wide. Only applies to logical backups; ignored for physical/external. Leave empty for the PBM default (half the backup-agent's CPU count, minimum 1).
-                label: Backup parallel collections
+                helperText: Number of collections PBM backs up at once, cluster-wide. Only applies to logical backups; ignored for physical/external. Leave empty for the PBM default (half the backup-agent's CPU count, minimum 1).
+                label: Nº of parallel backup collections
               path: spec.components.backupAgent.parameters.numParallelCollections
               uiType: number
               validation:
@@ -654,8 +654,8 @@ spec:
                 min: 1
             restoreNumParallelCollections:
               fieldParams:
-                helperText: Collections PBM restores at once, cluster-wide. Only applies when restoring a logical backup; ignored for physical. Leave empty for the PBM default (half the backup-agent's CPU count, minimum 1).
-                label: Restore parallel collections
+                helperText: Number of collections PBM restores at once, cluster-wide. Only applies when restoring a logical backup; ignored for physical. Leave empty for the PBM default (half the backup-agent's CPU count, minimum 1).
+                label: Nº of parallel restore collections
               path: spec.components.backupAgent.parameters.restoreNumParallelCollections
               uiType: number
               validation:
@@ -994,8 +994,8 @@ spec:
           components:
             backupNumParallelCollections:
               fieldParams:
-                helperText: Collections PBM backs up at once, cluster-wide. Only applies to logical backups; ignored for physical/external. Leave empty for the PBM default (half the backup-agent's CPU count, minimum 1).
-                label: Backup parallel collections
+                helperText: Number of collections PBM backs up at once, cluster-wide. Only applies to logical backups; ignored for physical/external. Leave empty for the PBM default (half the backup-agent's CPU count, minimum 1).
+                label: Nº of parallel backup collections
               path: spec.components.backupAgent.parameters.numParallelCollections
               uiType: number
               validation:
@@ -1079,8 +1079,8 @@ spec:
                 min: 1
             restoreNumParallelCollections:
               fieldParams:
-                helperText: Collections PBM restores at once, cluster-wide. Only applies when restoring a logical backup; ignored for physical. Leave empty for the PBM default (half the backup-agent's CPU count, minimum 1).
-                label: Restore parallel collections
+                helperText: Number of collections PBM restores at once, cluster-wide. Only applies when restoring a logical backup; ignored for physical. Leave empty for the PBM default (half the backup-agent's CPU count, minimum 1).
+                label: Nº of parallel restore collections
               path: spec.components.backupAgent.parameters.restoreNumParallelCollections
               uiType: number
               validation:
