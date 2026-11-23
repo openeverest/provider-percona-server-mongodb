@@ -968,7 +968,7 @@ func TestBuildBackupSpecNumParallelCollections(t *testing.T) {
 		wantErr            string
 	}{
 		"unset parameters leave the operator's defaults": {},
-		"numParallelCollections is applied cluster-wide for backups": {
+		"numParallelCollections is applied for backups": {
 			parameters:        rawParams(components.BackupParameters{NumParallelCollections: pointer.ToInt32(8)}),
 			wantBackupOptions: 8,
 		},

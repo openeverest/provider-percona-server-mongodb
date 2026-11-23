@@ -41,13 +41,14 @@ type MongosParameters struct {
 }
 
 // BackupParameters defines structured parameters for backup agents. These
-// are advanced, cluster-wide PBM settings (spec.components.backupAgent.parameters):
-// they take effect for every backup or restore the cluster runs, unlike the
-// per-schedule/per-run parameters on Backup/Restore CRs and
-// InstanceBackupSchedule entries (see the percona-backup-mongodb BackupClass).
+// are advanced PBM settings for this Instance's PBM deployment
+// (spec.components.backupAgent.parameters): they take effect for every
+// backup or restore this Instance runs, unlike the per-schedule/per-run parameters on
+// Backup/Restore CRs and InstanceBackupSchedule entries (see the
+// percona-backup-mongodb BackupClass).
 type BackupParameters struct {
 	// NumParallelCollections sets how many collections PBM backs up
-	// concurrently (PBM's `backup.numParallelCollections` cluster config).
+	// concurrently (PBM's `backup.numParallelCollections` setting).
 	// Unset uses PBM's default, half the backup-agent's visible CPU count
 	// (minimum 1). Only takes effect for logical backups (Backup type
 	// "logical"/"incremental"); PBM ignores it for "physical" and
@@ -56,7 +57,7 @@ type BackupParameters struct {
 	// +optional
 	NumParallelCollections *int32 `json:"numParallelCollections,omitempty"`
 	// RestoreNumParallelCollections sets how many collections PBM restores
-	// concurrently (PBM's `restore.numParallelCollections` cluster config).
+	// concurrently (PBM's `restore.numParallelCollections` setting).
 	// Unset uses PBM's default, half the backup-agent's visible CPU count
 	// (minimum 1). Only takes effect when restoring from a logical backup;
 	// PBM ignores it when restoring a physical backup.
@@ -66,7 +67,7 @@ type BackupParameters struct {
 
 	// BackupOplogSpanMin sets, in minutes, the interval at which PBM slices
 	// the oplog while a logical backup is running (PBM's
-	// `backup.oplogSpanMin` cluster config). This is distinct from the
+	// `backup.oplogSpanMin` setting). This is distinct from the
 	// per-storage PITR oplog span (storages[].pitr.parameters.oplogSpanMin,
 	// PBM's `pitr.oplogSpanMin`): when unset, PBM falls back to the
 	// effective PITR span (or its own 10-minute default when PITR is not
@@ -78,7 +79,7 @@ type BackupParameters struct {
 
 	// Priority maps a replica set member's host:port (or "*" for any member)
 	// to a priority score PBM uses to pick which node runs a logical backup
-	// (PBM's `backup.priority` cluster config). Higher values are
+	// (PBM's `backup.priority` setting). Higher values are
 	// preferred; a value of 0 excludes a node from being selected. Unset
 	// uses PBM's default selection (secondaries preferred over the
 	// primary).
@@ -87,7 +88,7 @@ type BackupParameters struct {
 
 	// RestoreBatchSize sets the batch size (number of documents) PBM
 	// inserts at a time during a logical restore (PBM's
-	// `restore.batchSize` cluster config). Unset uses PBM's default. Only
+	// `restore.batchSize` setting). Unset uses PBM's default. Only
 	// takes effect when restoring from a logical backup.
 	// +kubebuilder:validation:Minimum=1
 	// +optional
@@ -95,7 +96,7 @@ type BackupParameters struct {
 
 	// RestoreNumInsertionWorkers sets how many parallel workers insert
 	// documents during a logical restore (PBM's
-	// `restore.numInsertionWorkers` cluster config). Unset uses PBM's
+	// `restore.numInsertionWorkers` setting). Unset uses PBM's
 	// default. Only takes effect when restoring from a logical backup.
 	// +kubebuilder:validation:Minimum=1
 	// +optional
@@ -103,22 +104,22 @@ type BackupParameters struct {
 
 	// RestoreNumDownloadWorkers sets how many parallel workers download
 	// backup data during a restore (PBM's `restore.numDownloadWorkers`
-	// cluster config). Unset uses PBM's default.
+	// setting). Unset uses PBM's default.
 	// +kubebuilder:validation:Minimum=1
 	// +optional
 	RestoreNumDownloadWorkers *int32 `json:"restoreNumDownloadWorkers,omitempty"`
 
 	// RestoreMaxDownloadBufferMB caps, in MiB, the in-memory download
 	// buffer PBM uses while restoring (PBM's
-	// `restore.maxDownloadBufferMb` cluster config). Unset uses PBM's
+	// `restore.maxDownloadBufferMb` setting). Unset uses PBM's
 	// default.
 	// +kubebuilder:validation:Minimum=1
 	// +optional
 	RestoreMaxDownloadBufferMB *int32 `json:"restoreMaxDownloadBufferMb,omitempty"`
 
 	// RestoreDownloadChunkMB sets, in MiB, the chunk size PBM downloads at a
-	// time while restoring (PBM's `restore.downloadChunkMb` cluster
-	// config). Unset uses PBM's default.
+	// time while restoring (PBM's `restore.downloadChunkMb`
+	// setting). Unset uses PBM's default.
 	// +kubebuilder:validation:Minimum=1
 	// +optional
 	RestoreDownloadChunkMB *int32 `json:"restoreDownloadChunkMb,omitempty"`

@@ -42,16 +42,17 @@ spec:
         openAPIV3Schema:
           description: |-
             BackupParameters defines structured parameters for backup agents. These
-            are advanced, cluster-wide PBM settings (spec.components.backupAgent.parameters):
-            they take effect for every backup or restore the cluster runs, unlike the
-            per-schedule/per-run parameters on Backup/Restore CRs and
-            InstanceBackupSchedule entries (see the percona-backup-mongodb BackupClass).
+            are advanced PBM settings for this Instance's PBM deployment
+            (spec.components.backupAgent.parameters): they take effect for every
+            backup or restore this Instance runs, unlike the per-schedule/per-run parameters on
+            Backup/Restore CRs and InstanceBackupSchedule entries (see the
+            percona-backup-mongodb BackupClass).
           properties:
             backupOplogSpanMin:
               description: |-
                 BackupOplogSpanMin sets, in minutes, the interval at which PBM slices
                 the oplog while a logical backup is running (PBM's
-                `backup.oplogSpanMin` cluster config). This is distinct from the
+                `backup.oplogSpanMin` setting). This is distinct from the
                 per-storage PITR oplog span (storages[].pitr.parameters.oplogSpanMin,
                 PBM's `pitr.oplogSpanMin`): when unset, PBM falls back to the
                 effective PITR span (or its own 10-minute default when PITR is not
@@ -62,7 +63,7 @@ spec:
             numParallelCollections:
               description: |-
                 NumParallelCollections sets how many collections PBM backs up
-                concurrently (PBM's `backup.numParallelCollections` cluster config).
+                concurrently (PBM's `backup.numParallelCollections` setting).
                 Unset uses PBM's default, half the backup-agent's visible CPU count
                 (minimum 1). Only takes effect for logical backups (Backup type
                 "logical"/"incremental"); PBM ignores it for "physical" and
@@ -76,7 +77,7 @@ spec:
               description: |-
                 Priority maps a replica set member's host:port (or "*" for any member)
                 to a priority score PBM uses to pick which node runs a logical backup
-                (PBM's `backup.priority` cluster config). Higher values are
+                (PBM's `backup.priority` setting). Higher values are
                 preferred; a value of 0 excludes a node from being selected. Unset
                 uses PBM's default selection (secondaries preferred over the
                 primary).
@@ -85,7 +86,7 @@ spec:
               description: |-
                 RestoreBatchSize sets the batch size (number of documents) PBM
                 inserts at a time during a logical restore (PBM's
-                `restore.batchSize` cluster config). Unset uses PBM's default. Only
+                `restore.batchSize` setting). Unset uses PBM's default. Only
                 takes effect when restoring from a logical backup.
               format: int32
               minimum: 1
@@ -93,8 +94,8 @@ spec:
             restoreDownloadChunkMb:
               description: |-
                 RestoreDownloadChunkMB sets, in MiB, the chunk size PBM downloads at a
-                time while restoring (PBM's `restore.downloadChunkMb` cluster
-                config). Unset uses PBM's default.
+                time while restoring (PBM's `restore.downloadChunkMb`
+                setting). Unset uses PBM's default.
               format: int32
               minimum: 1
               type: integer
@@ -102,7 +103,7 @@ spec:
               description: |-
                 RestoreMaxDownloadBufferMB caps, in MiB, the in-memory download
                 buffer PBM uses while restoring (PBM's
-                `restore.maxDownloadBufferMb` cluster config). Unset uses PBM's
+                `restore.maxDownloadBufferMb` setting). Unset uses PBM's
                 default.
               format: int32
               minimum: 1
@@ -111,7 +112,7 @@ spec:
               description: |-
                 RestoreNumDownloadWorkers sets how many parallel workers download
                 backup data during a restore (PBM's `restore.numDownloadWorkers`
-                cluster config). Unset uses PBM's default.
+                setting). Unset uses PBM's default.
               format: int32
               minimum: 1
               type: integer
@@ -119,7 +120,7 @@ spec:
               description: |-
                 RestoreNumInsertionWorkers sets how many parallel workers insert
                 documents during a logical restore (PBM's
-                `restore.numInsertionWorkers` cluster config). Unset uses PBM's
+                `restore.numInsertionWorkers` setting). Unset uses PBM's
                 default. Only takes effect when restoring from a logical backup.
               format: int32
               minimum: 1
@@ -127,7 +128,7 @@ spec:
             restoreNumParallelCollections:
               description: |-
                 RestoreNumParallelCollections sets how many collections PBM restores
-                concurrently (PBM's `restore.numParallelCollections` cluster config).
+                concurrently (PBM's `restore.numParallelCollections` setting).
                 Unset uses PBM's default, half the backup-agent's visible CPU count
                 (minimum 1). Only takes effect when restoring from a logical backup;
                 PBM ignores it when restoring a physical backup.
@@ -556,7 +557,7 @@ spec:
           components:
             backupNumParallelCollections:
               fieldParams:
-                helperText: Number of collections PBM backs up at once, cluster-wide. Only applies to logical backups; ignored for physical/external. Leave empty for the PBM default (half the backup-agent's CPU count, minimum 1).
+                helperText: Number of collections PBM backs up at once. Applies to every backup this database runs. Only applies to logical backups; ignored for physical/external. Leave empty for the PBM default (half the backup-agent's CPU count, minimum 1).
                 label: Nº of parallel backup collections
               path: spec.components.backupAgent.parameters.numParallelCollections
               uiType: number
@@ -590,7 +591,7 @@ spec:
               uiType: select
             oplogSpanMin:
               fieldParams:
-                helperText: How often PBM slices the oplog during a logical backup run, cluster-wide. Distinct from a storage's PITR oplog span; falls back to it when left empty.
+                helperText: How often PBM slices the oplog during a logical backup run of this database. Distinct from a storage's PITR oplog span; falls back to it when left empty.
                 label: Backup oplog slicer interval (minutes)
               path: spec.components.backupAgent.parameters.backupOplogSpanMin
               uiType: number
@@ -609,7 +610,7 @@ spec:
               uiType: group
             restoreBatchSize:
               fieldParams:
-                helperText: Documents PBM inserts per batch when restoring a logical backup, cluster-wide. Leave empty for the PBM default.
+                helperText: Documents PBM inserts per batch when restoring a logical backup of this database. Leave empty for the PBM default.
                 label: Restore batch size
               path: spec.components.backupAgent.parameters.restoreBatchSize
               uiType: number
@@ -618,7 +619,7 @@ spec:
                 min: 1
             restoreDownloadChunkMb:
               fieldParams:
-                helperText: Chunk size PBM downloads at a time when restoring, cluster-wide. Leave empty for the PBM default.
+                helperText: Chunk size PBM downloads at a time when restoring this database. Leave empty for the PBM default.
                 label: Restore download chunk size (MiB)
               path: spec.components.backupAgent.parameters.restoreDownloadChunkMb
               uiType: number
@@ -627,7 +628,7 @@ spec:
                 min: 1
             restoreMaxDownloadBufferMb:
               fieldParams:
-                helperText: In-memory download buffer cap PBM uses when restoring, cluster-wide. Leave empty for the PBM default.
+                helperText: In-memory download buffer cap PBM uses when restoring this database. Leave empty for the PBM default.
                 label: Restore max download buffer (MiB)
               path: spec.components.backupAgent.parameters.restoreMaxDownloadBufferMb
               uiType: number
@@ -636,7 +637,7 @@ spec:
                 min: 1
             restoreNumDownloadWorkers:
               fieldParams:
-                helperText: Parallel workers PBM uses to download backup data when restoring, cluster-wide. Leave empty for the PBM default.
+                helperText: Parallel workers PBM uses to download backup data when restoring this database. Leave empty for the PBM default.
                 label: Restore download workers
               path: spec.components.backupAgent.parameters.restoreNumDownloadWorkers
               uiType: number
@@ -645,7 +646,7 @@ spec:
                 min: 1
             restoreNumInsertionWorkers:
               fieldParams:
-                helperText: Parallel workers PBM uses to insert documents when restoring a logical backup, cluster-wide. Leave empty for the PBM default.
+                helperText: Parallel workers PBM uses to insert documents when restoring a logical backup of this database. Leave empty for the PBM default.
                 label: Restore insertion workers
               path: spec.components.backupAgent.parameters.restoreNumInsertionWorkers
               uiType: number
@@ -654,7 +655,7 @@ spec:
                 min: 1
             restoreNumParallelCollections:
               fieldParams:
-                helperText: Number of collections PBM restores at once, cluster-wide. Only applies when restoring a logical backup; ignored for physical. Leave empty for the PBM default (half the backup-agent's CPU count, minimum 1).
+                helperText: Number of collections PBM restores at once. Applies to every restore of this database. Only applies when restoring a logical backup; ignored for physical. Leave empty for the PBM default (half the backup-agent's CPU count, minimum 1).
                 label: Nº of parallel restore collections
               path: spec.components.backupAgent.parameters.restoreNumParallelCollections
               uiType: number
@@ -994,7 +995,7 @@ spec:
           components:
             backupNumParallelCollections:
               fieldParams:
-                helperText: Number of collections PBM backs up at once, cluster-wide. Only applies to logical backups; ignored for physical/external. Leave empty for the PBM default (half the backup-agent's CPU count, minimum 1).
+                helperText: Number of collections PBM backs up at once. Applies to every backup this database runs. Only applies to logical backups; ignored for physical/external. Leave empty for the PBM default (half the backup-agent's CPU count, minimum 1).
                 label: Nº of parallel backup collections
               path: spec.components.backupAgent.parameters.numParallelCollections
               uiType: number
@@ -1015,7 +1016,7 @@ spec:
               uiType: text
             oplogSpanMin:
               fieldParams:
-                helperText: How often PBM slices the oplog during a logical backup run, cluster-wide. Distinct from a storage's PITR oplog span; falls back to it when left empty.
+                helperText: How often PBM slices the oplog during a logical backup run of this database. Distinct from a storage's PITR oplog span; falls back to it when left empty.
                 label: Backup oplog slicer interval (minutes)
               path: spec.components.backupAgent.parameters.backupOplogSpanMin
               uiType: number
@@ -1034,7 +1035,7 @@ spec:
               uiType: group
             restoreBatchSize:
               fieldParams:
-                helperText: Documents PBM inserts per batch when restoring a logical backup, cluster-wide. Leave empty for the PBM default.
+                helperText: Documents PBM inserts per batch when restoring a logical backup of this database. Leave empty for the PBM default.
                 label: Restore batch size
               path: spec.components.backupAgent.parameters.restoreBatchSize
               uiType: number
@@ -1043,7 +1044,7 @@ spec:
                 min: 1
             restoreDownloadChunkMb:
               fieldParams:
-                helperText: Chunk size PBM downloads at a time when restoring, cluster-wide. Leave empty for the PBM default.
+                helperText: Chunk size PBM downloads at a time when restoring this database. Leave empty for the PBM default.
                 label: Restore download chunk size (MiB)
               path: spec.components.backupAgent.parameters.restoreDownloadChunkMb
               uiType: number
@@ -1052,7 +1053,7 @@ spec:
                 min: 1
             restoreMaxDownloadBufferMb:
               fieldParams:
-                helperText: In-memory download buffer cap PBM uses when restoring, cluster-wide. Leave empty for the PBM default.
+                helperText: In-memory download buffer cap PBM uses when restoring this database. Leave empty for the PBM default.
                 label: Restore max download buffer (MiB)
               path: spec.components.backupAgent.parameters.restoreMaxDownloadBufferMb
               uiType: number
@@ -1061,7 +1062,7 @@ spec:
                 min: 1
             restoreNumDownloadWorkers:
               fieldParams:
-                helperText: Parallel workers PBM uses to download backup data when restoring, cluster-wide. Leave empty for the PBM default.
+                helperText: Parallel workers PBM uses to download backup data when restoring this database. Leave empty for the PBM default.
                 label: Restore download workers
               path: spec.components.backupAgent.parameters.restoreNumDownloadWorkers
               uiType: number
@@ -1070,7 +1071,7 @@ spec:
                 min: 1
             restoreNumInsertionWorkers:
               fieldParams:
-                helperText: Parallel workers PBM uses to insert documents when restoring a logical backup, cluster-wide. Leave empty for the PBM default.
+                helperText: Parallel workers PBM uses to insert documents when restoring a logical backup of this database. Leave empty for the PBM default.
                 label: Restore insertion workers
               path: spec.components.backupAgent.parameters.restoreNumInsertionWorkers
               uiType: number
@@ -1079,7 +1080,7 @@ spec:
                 min: 1
             restoreNumParallelCollections:
               fieldParams:
-                helperText: Number of collections PBM restores at once, cluster-wide. Only applies when restoring a logical backup; ignored for physical. Leave empty for the PBM default (half the backup-agent's CPU count, minimum 1).
+                helperText: Number of collections PBM restores at once. Applies to every restore of this database. Only applies when restoring a logical backup; ignored for physical. Leave empty for the PBM default (half the backup-agent's CPU count, minimum 1).
                 label: Nº of parallel restore collections
               path: spec.components.backupAgent.parameters.restoreNumParallelCollections
               uiType: number

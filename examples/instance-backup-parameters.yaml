@@ -58,11 +58,9 @@ spec:
           cpu: 500m
           memory: 750M
       parameters:
-        # Cluster-wide, "advanced" PBM settings: they apply to every backup
-        # and restore this cluster runs (not just this schedule/this
-        # on-demand backup), so they live on the backupAgent component
-        # rather than under backup.storages[].schedules[].parameters or
-        # Backup/Restore.spec.parameters. PBM only honors them for logical
+        # "Advanced" PBM settings for this Instance: they apply to every
+        # backup and restore this database runs (not just this
+        # schedule/this on-demand backup. PBM only honors them for logical
         # backups/restores (the "nightly" schedule above uses type: logical);
         # they are silently ignored for physical/external ones.
         numParallelCollections: 8

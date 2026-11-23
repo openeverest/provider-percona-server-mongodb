@@ -120,10 +120,10 @@ func buildBackupSpec(c *controller.Context) (psmdbv1.BackupSpec, error) {
 		},
 		Resources: backupAgentResources(backupAgent.Resources),
 	}
-	// These are PBM's cluster-wide "advanced" backup/restore settings: they
-	// apply to every backup and restore the cluster runs, not to a single
-	// run, so they are configured once on the backupAgent component rather
-	// than per schedule or per Backup/Restore CR.
+	// These are PBM's "advanced" backup/restore settings for this Instance:
+	// they apply to every backup and restore this Instance runs, not to a
+	// single run, so they are configured once on the backupAgent component
+	// rather than per schedule or per Backup/Restore CR.
 	applyBackupAgentParamsToBackupOptions(bs.Configuration.BackupOptions, agentParams)
 	if restoreOptions := buildRestoreOptionsFromBackupAgentParams(agentParams); restoreOptions != nil {
 		bs.Configuration.RestoreOptions = restoreOptions
@@ -266,9 +266,9 @@ func decodePITRParameters(raw *runtime.RawExtension) (perconabackupmongodb.Perco
 
 // decodeBackupAgentParameters unmarshals the backupAgent component's
 // .parameters payload (spec.components.backupAgent.parameters) into
-// components.BackupParameters. These are cluster-wide "advanced" PBM
-// settings — such as NumParallelCollections — that apply to every backup or
-// restore the cluster runs, as opposed to the per-schedule/per-run
+// components.BackupParameters. These are "advanced" PBM settings for this
+// Instance — such as NumParallelCollections — that apply to every backup or
+// restore this Instance runs, as opposed to the per-schedule/per-run
 // parameters in PerconaBackupParameters/PerconaRestoreParameters.
 func decodeBackupAgentParameters(raw *runtime.RawExtension) (components.BackupParameters, error) {
 	var params components.BackupParameters
@@ -281,9 +281,9 @@ func decodeBackupAgentParameters(raw *runtime.RawExtension) (components.BackupPa
 	return params, nil
 }
 
-// applyBackupAgentParamsToBackupOptions copies the cluster-wide "advanced"
+// applyBackupAgentParamsToBackupOptions copies this Instance's "advanced"
 // backup settings from components.BackupParameters onto dst (PBM's
-// backup.* cluster config, applied via psmdbv1.BackupOptions). dst must be
+// backup.* settings, applied via psmdbv1.BackupOptions). dst must be
 // non-nil. Unset fields leave PBM's own defaults in place.
 func applyBackupAgentParamsToBackupOptions(dst *psmdbv1.BackupOptions, params components.BackupParameters) {
 	if params.NumParallelCollections != nil {
@@ -297,9 +297,9 @@ func applyBackupAgentParamsToBackupOptions(dst *psmdbv1.BackupOptions, params co
 	}
 }
 
-// buildRestoreOptionsFromBackupAgentParams returns the cluster-wide
+// buildRestoreOptionsFromBackupAgentParams returns this Instance's
 // "advanced" restore settings from components.BackupParameters as PBM's
-// restore.* cluster config, or nil when none of them are set (leaving
+// restore.* settings, or nil when none of them are set (leaving
 // Configuration.RestoreOptions unset so PSMDB applies its own defaults).
 func buildRestoreOptionsFromBackupAgentParams(params components.BackupParameters) *psmdbv1.RestoreOptions {
 	if params.RestoreNumParallelCollections == nil &&
