@@ -10,7 +10,7 @@ require (
 	github.com/hashicorp/go-version v1.9.0
 	github.com/openeverest/monitoring-pmm/api v0.0.0-20261110082751-22ff528eb0dc
 	github.com/openeverest/openeverest/v2 v2.0.0-alpha.1
-  github.com/percona/percona-backup-mongodb v1.8.1-0.20260617122520-9641a911c853
+	github.com/percona/percona-backup-mongodb v1.8.1-0.20260617122520-9641a911c853
 	github.com/percona/percona-server-mongodb-operator v1.23.1
 	github.com/stretchr/testify v1.12.1
 	k8s.io/api v0.37.2
