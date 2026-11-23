@@ -144,6 +144,10 @@ test-integration-backup-datasource: ## Run backup datasource integration tests.
 test-integration-backup-restore-parameters: ## Run restore parameters (selective restore, replset remapping) integration tests.
 	. ./test/vars.sh && chainsaw test --config ./test/integration/.chainsaw.yaml ./test/integration/backup/restore-parameters
 
+.PHONY: test-integration-backup-agent-parameters
+test-integration-backup-agent-parameters: ## Run backupAgent component advanced PBM parameters integration tests.
+	. ./test/vars.sh && chainsaw test --config ./test/integration/.chainsaw.yaml ./test/integration/backup/agent-parameters
+
 .PHONY: test-e2e-cluster
 test-e2e-cluster: ## Run E2E cluster tests (requires PSMDB operator).
 	. ./test/vars.sh && chainsaw test --config ./test/e2e-cluster/.chainsaw.yaml ./test/e2e-cluster

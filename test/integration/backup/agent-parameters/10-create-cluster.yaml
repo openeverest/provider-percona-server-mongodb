@@ -1,0 +1,44 @@
+apiVersion: core.openeverest.io/v1alpha1
+kind: Instance
+metadata:
+  name: ap-psmdb-cluster
+spec:
+  providerRef:
+    name: percona-server-mongodb
+  components:
+    engine:
+      type: mongod
+      replicas: 3
+      resources:
+        limits:
+          cpu: "1"
+          memory: 4G
+        requests:
+          cpu: 500m
+          memory: 2G
+      storage:
+        size: 25Gi
+        storageClass: standard
+    backupAgent:
+      type: backup
+      resources:
+        limits:
+          cpu: 500m
+          memory: 750M
+      parameters:
+        # These advanced PBM settings apply regardless of whether backups
+        # are enabled on this Instance (backups are disabled here) and
+        # independent of any backup schedule or on-demand backup/restore
+        # parameters.
+        numParallelCollections: 8
+        restoreNumParallelCollections: 6
+        backupOplogSpanMin: 15
+        priority:
+          "*": 1
+          "rs0/host:27017": 2.5
+        restoreBatchSize: 500
+        restoreNumInsertionWorkers: 10
+        restoreNumDownloadWorkers: 4
+        restoreMaxDownloadBufferMb: 256
+        restoreDownloadChunkMb: 32
+
