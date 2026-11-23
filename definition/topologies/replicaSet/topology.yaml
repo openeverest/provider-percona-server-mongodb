@@ -413,7 +413,7 @@ ui:
             min: 1
           fieldParams:
             label: "Nº of parallel backup collections"
-            helperText: "Number of collections PBM backs up at once. Applies to every backup this database runs. Only applies to logical backups; ignored for physical/external. Leave empty for the PBM default (half the backup-agent's CPU count, minimum 1)."
+            helperText: "PBM's backup.numParallelCollections setting. Number of collections PBM backs up at once. Applies to every backup this database runs. Only applies to logical backups; ignored for physical/external. Leave empty for the PBM default (half the backup-agent's CPU count, minimum 1)."
         restoreNumParallelCollections:
           uiType: number
           path: spec.components.backupAgent.parameters.restoreNumParallelCollections
@@ -422,7 +422,7 @@ ui:
             min: 1
           fieldParams:
             label: "Nº of parallel restore collections"
-            helperText: "Number of collections PBM restores at once. Applies to every restore of this database. Only applies when restoring a logical backup; ignored for physical. Leave empty for the PBM default (half the backup-agent's CPU count, minimum 1)."
+            helperText: "PBM's restore.numParallelCollections setting. Number of collections PBM restores at once. Applies to every restore of this database. Only applies when restoring a logical backup; ignored for physical. Leave empty for the PBM default (half the backup-agent's CPU count, minimum 1)."
         oplogSpanMin:
           uiType: number
           path: spec.components.backupAgent.parameters.backupOplogSpanMin
@@ -430,7 +430,7 @@ ui:
             min: 0
           fieldParams:
             label: "Backup oplog slicer interval (minutes)"
-            helperText: "How often PBM slices the oplog during a logical backup run of this database. Distinct from a storage's PITR oplog span; falls back to it when left empty."
+            helperText: "PBM's backup.oplogSpanMin setting. How often PBM slices the oplog during a logical backup run of this database. Distinct from a storage's PITR oplog span; falls back to it when left empty."
         restoreBatchSize:
           uiType: number
           path: spec.components.backupAgent.parameters.restoreBatchSize
@@ -439,7 +439,7 @@ ui:
             min: 1
           fieldParams:
             label: "Restore batch size"
-            helperText: "Documents PBM inserts per batch when restoring a logical backup of this database. Leave empty for the PBM default."
+            helperText: "PBM's restore.batchSize setting. Documents PBM inserts per batch when restoring a logical backup of this database. Leave empty for the PBM default."
         restoreNumInsertionWorkers:
           uiType: number
           path: spec.components.backupAgent.parameters.restoreNumInsertionWorkers
@@ -448,7 +448,7 @@ ui:
             min: 1
           fieldParams:
             label: "Restore insertion workers"
-            helperText: "Parallel workers PBM uses to insert documents when restoring a logical backup of this database. Leave empty for the PBM default."
+            helperText: "PBM's restore.numInsertionWorkers setting. Parallel workers PBM uses to insert documents when restoring a logical backup of this database. Leave empty for the PBM default."
         restoreNumDownloadWorkers:
           uiType: number
           path: spec.components.backupAgent.parameters.restoreNumDownloadWorkers
@@ -457,7 +457,7 @@ ui:
             min: 1
           fieldParams:
             label: "Restore download workers"
-            helperText: "Parallel workers PBM uses to download backup data when restoring this database. Leave empty for the PBM default."
+            helperText: "PBM's restore.numDownloadWorkers setting. Parallel workers PBM uses to download backup data when restoring this database. Leave empty for the PBM default."
         restoreMaxDownloadBufferMb:
           uiType: number
           path: spec.components.backupAgent.parameters.restoreMaxDownloadBufferMb
@@ -466,7 +466,7 @@ ui:
             min: 1
           fieldParams:
             label: "Restore max download buffer (MiB)"
-            helperText: "In-memory download buffer cap PBM uses when restoring this database. Leave empty for the PBM default."
+            helperText: "PBM's restore.maxDownloadBufferMb setting. In-memory download buffer cap PBM uses when restoring this database. Leave empty for the PBM default."
         restoreDownloadChunkMb:
           uiType: number
           path: spec.components.backupAgent.parameters.restoreDownloadChunkMb
@@ -475,7 +475,7 @@ ui:
             min: 1
           fieldParams:
             label: "Restore download chunk size (MiB)"
-            helperText: "Chunk size PBM downloads at a time when restoring this database. Leave empty for the PBM default."
+            helperText: "PBM's restore.downloadChunkMb setting. Chunk size PBM downloads at a time when restoring this database. Leave empty for the PBM default."
       componentsOrder:
         - externalAccess
         - configuration
