@@ -104,7 +104,7 @@ func buildBackupSpec(c *controller.Context) (psmdbv1.BackupSpec, error) {
 		return psmdbv1.BackupSpec{}, fmt.Errorf("get provider spec: %w", err)
 	}
 	backupAgent := c.Instance().Spec.Components[common.ComponentBackupAgent]
-	agentParams, err := decodeBackupAgentParameters(backupAgent.Parameters)
+	agentParams, err := decodeBackupAgentParameters(spec, backupAgent.Parameters)
 	if err != nil {
 		return psmdbv1.BackupSpec{}, &controller.BackupConfigError{
 			Reason:  "BackupAgentParametersInvalid",
@@ -300,16 +300,26 @@ func decodePITRParameters(raw *runtime.RawExtension) (perconabackupmongodb.Perco
 	return params, nil
 }
 
-// decodeBackupAgentParameters unmarshals the backupAgent component's
-// .parameters payload (spec.components.backupAgent.parameters) into
-// components.BackupParameters. These are "advanced" PBM settings for this
-// Instance — such as NumParallelCollections — that apply to every backup or
-// restore this Instance runs, as opposed to the per-schedule/per-run
-// parameters in PerconaBackupParameters/PerconaRestoreParameters.
-func decodeBackupAgentParameters(raw *runtime.RawExtension) (components.BackupParameters, error) {
+// decodeBackupAgentParameters validates the backupAgent component's
+// .parameters payload (spec.components.backupAgent.parameters) against the
+// schema the provider publishes for it (Provider.spec.components.backupAgent
+// .parametersSchema, generated from components.BackupParameters -- e.g. the
+// Minimum=1 constraints on numParallelCollections and friends), then
+// unmarshals it into components.BackupParameters. These are "advanced" PBM
+// settings for this Instance — such as NumParallelCollections — that apply
+// to every backup or restore this Instance runs, as opposed to the
+// per-schedule/per-run parameters in PerconaBackupParameters/PerconaRestoreParameters.
+// A missing schema (e.g. in tests that build a bare Provider) skips
+// validation rather than rejecting every payload.
+func decodeBackupAgentParameters(spec *corev1alpha1.ProviderSpec, raw *runtime.RawExtension) (components.BackupParameters, error) {
 	var params components.BackupParameters
 	if raw == nil || raw.Raw == nil {
 		return params, nil
+	}
+	if schema := spec.Components[common.ComponentBackupAgent].ParametersSchema; schema != nil {
+		if err := schema.Validate(raw); err != nil {
+			return params, fmt.Errorf("validate backupAgent parameters: %w", err)
+		}
 	}
 	if err := json.Unmarshal(raw.Raw, &params); err != nil {
 		return params, fmt.Errorf("unmarshal backupAgent parameters: %w", err)

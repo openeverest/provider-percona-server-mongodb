@@ -28,6 +28,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -1196,6 +1197,87 @@ func TestBuildBackupSpecNumParallelCollections(t *testing.T) {
 				require.NotNil(t, got.Configuration.RestoreOptions)
 				assert.Equal(t, *tc.wantRestoreOptions, got.Configuration.RestoreOptions.NumParallelCollections)
 			}
+		})
+	}
+}
+
+// TestBuildBackupSpecValidatesBackupAgentParametersSchema covers the
+// backupAgent component's "advanced" parameters (components.BackupParameters,
+// e.g. numParallelCollections), the other RawExtension payload this provider
+// reads besides Backup.spec.parameters. It carries the same kind of
+// kubebuilder constraints (Minimum=1) as PerconaBackupParameters, published
+// on Provider.spec.components.backupAgent.parametersSchema (see
+// charts/.../generated/provider-spec.yaml) -- this test builds a Provider
+// with that schema directly (there is no embedded Go accessor for it, unlike
+// backupclasses.Shipped() for BackupClasses) to confirm buildBackupSpec
+// actually validates against it instead of accepting any value PBM might
+// reject at runtime.
+func TestBuildBackupSpecValidatesBackupAgentParametersSchema(t *testing.T) {
+	schema := &commonv1alpha1.ParametersSchema{
+		OpenAPIV3Schema: &apiextensionsv1.JSONSchemaProps{
+			Type: "object",
+			Properties: map[string]apiextensionsv1.JSONSchemaProps{
+				"numParallelCollections": {Type: "integer", Minimum: pointer.ToFloat64(1)},
+			},
+		},
+	}
+	rawParams := func(raw string) *runtime.RawExtension {
+		return &runtime.RawExtension{Raw: []byte(raw)}
+	}
+
+	tests := map[string]struct {
+		parameters *runtime.RawExtension
+		wantErr    string
+		wantValue  int
+	}{
+		"a value within the schema's range is accepted": {
+			parameters: rawParams(`{"numParallelCollections":4}`),
+			wantValue:  4,
+		},
+		"a value below the schema's declared minimum is rejected": {
+			parameters: rawParams(`{"numParallelCollections":-1}`),
+			wantErr:    "validate backupAgent parameters",
+		},
+		"an unknown field is rejected": {
+			parameters: rawParams(`{"bogus":true}`),
+			wantErr:    "validate backupAgent parameters",
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			scheme := runtime.NewScheme()
+			require.NoError(t, corev1.AddToScheme(scheme))
+			require.NoError(t, corev1alpha1.AddToScheme(scheme))
+			require.NoError(t, backupv1alpha1.AddToScheme(scheme))
+			require.NoError(t, psmdbv1.SchemeBuilder.AddToScheme(scheme))
+
+			instance := testBackupInstance()
+			instance.Spec.Components = map[string]corev1alpha1.ComponentSpec{
+				common.ComponentBackupAgent: {Parameters: tc.parameters},
+			}
+			provider := &corev1alpha1.Provider{
+				ObjectMeta: metav1.ObjectMeta{Name: "percona-server-mongodb"},
+				Spec: corev1alpha1.ProviderSpec{
+					Components: map[string]corev1alpha1.Component{
+						common.ComponentBackupAgent: {Type: "backup", ParametersSchema: schema},
+					},
+				},
+			}
+			cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(instance, provider).Build()
+			c := controller.NewContext(context.Background(), cl, instance, "percona-server-mongodb")
+
+			got, err := buildBackupSpec(c)
+			if tc.wantErr != "" {
+				var configErr *controller.BackupConfigError
+				require.ErrorAs(t, err, &configErr)
+				assert.Equal(t, "BackupAgentParametersInvalid", configErr.Reason)
+				assert.Contains(t, configErr.Message, tc.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			require.NotNil(t, got.Configuration.BackupOptions)
+			assert.Equal(t, tc.wantValue, got.Configuration.BackupOptions.NumParallelCollections)
 		})
 	}
 }
