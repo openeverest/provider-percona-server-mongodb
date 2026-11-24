@@ -238,6 +238,42 @@ func decodeBackupParameters(raw *runtime.RawExtension) (perconabackupmongodb.Per
 	return params, nil
 }
 
+// parseBackupParameters decodes Backup.spec.parameters and validates it
+// against the resolved BackupClass's parametersSchema (the same schema the
+// generated BackupClass manifest carries, e.g. the type/compressionType
+// enums and the compressionLevel range), so a value the class does not
+// support is rejected instead of silently falling back to engine defaults.
+func parseBackupParameters(c *controller.Context, backup *backupv1alpha1.Backup) (perconabackupmongodb.PerconaBackupParameters, controller.BackupExecutionStatus, error) {
+	var params perconabackupmongodb.PerconaBackupParameters
+	raw := backup.Spec.Parameters
+	if raw == nil || raw.Raw == nil {
+		return params, controller.BackupExecutionStatus{}, nil
+	}
+
+	bc, err := c.BackupClass(backup.Spec.ClassRef.Name)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			return params, controller.BackupExecutionStatus{
+				State:   backupv1alpha1.BackupStatePending,
+				Message: fmt.Sprintf("Waiting for BackupClass %q to exist", backup.Spec.ClassRef.Name),
+			}, nil
+		}
+		return params, controller.BackupExecutionStatus{}, fmt.Errorf("get BackupClass %q: %w", backup.Spec.ClassRef.Name, err)
+	}
+
+	if err := bc.Spec.ParametersSchema.Validate(raw); err != nil {
+		return params, controller.BackupExecutionStatus{
+			State:   backupv1alpha1.BackupStateFailed,
+			Message: fmt.Sprintf("Invalid parameters for BackupClass %q: %v", bc.Name, err),
+		}, nil
+	}
+
+	if err := json.Unmarshal(raw.Raw, &params); err != nil {
+		return params, controller.BackupExecutionStatus{}, fmt.Errorf("unmarshal backup parameters: %w", err)
+	}
+	return params, controller.BackupExecutionStatus{}, nil
+}
+
 // decodeRestoreParameters unmarshals a Restore.spec.parameters payload into
 // PerconaRestoreParameters.
 func decodeRestoreParameters(raw *runtime.RawExtension) (perconabackupmongodb.PerconaRestoreParameters, error) {
@@ -632,6 +668,14 @@ func psmdbStorage(c *controller.Context, bs *backupv1alpha1.BackupStorage, prefi
 // backup.spec.parameters (type, compression, volumeSnapshotClass) are applied
 // onto the operator backup; unset fields leave the operator's defaults.
 func (p *PSMDBProvider) SyncBackup(c *controller.Context, backup *backupv1alpha1.Backup) (controller.BackupExecutionStatus, error) {
+	params, exec, err := parseBackupParameters(c, backup)
+	if err != nil {
+		return controller.BackupExecutionStatus{}, err
+	}
+	if exec.State != "" {
+		return exec, nil
+	}
+
 	psmdb := &psmdbv1.PerconaServerMongoDB{}
 	if err := c.Get(psmdb, c.Name()); err != nil {
 		if apierrors.IsNotFound(err) {
@@ -651,11 +695,6 @@ func (p *PSMDBProvider) SyncBackup(c *controller.Context, backup *backupv1alpha1
 			State:   backupv1alpha1.BackupStatePending,
 			Message: fmt.Sprintf("Waiting for storage %q to be registered on PSMDB cluster", backup.Spec.StorageRef.Name),
 		}, nil
-	}
-
-	params, err := decodeBackupParameters(backup.Spec.Parameters)
-	if err != nil {
-		return controller.BackupExecutionStatus{}, fmt.Errorf("decode backup parameters: %w", err)
 	}
 
 	psmdbBackup := &psmdbv1.PerconaServerMongoDBBackup{
@@ -691,7 +730,7 @@ func (p *PSMDBProvider) SyncBackup(c *controller.Context, backup *backupv1alpha1
 		return controller.BackupExecutionStatus{}, fmt.Errorf("create or update PSMDB backup: %w", err)
 	}
 
-	exec := controller.BackupExecutionStatus{
+	exec = controller.BackupExecutionStatus{
 		OperatorBackupRef: &commonv1alpha1.TypedObjectRef{
 			Group: psmdbv1.SchemeGroupVersion.Group,
 			Kind:  "PerconaServerMongoDBBackup",

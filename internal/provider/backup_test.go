@@ -42,6 +42,7 @@ import (
 	"github.com/openeverest/openeverest/v2/backupstorageclasses/s3"
 	"github.com/openeverest/openeverest/v2/provider-runtime/controller"
 
+	"github.com/openeverest/provider-percona-server-mongodb/definition/backupclasses"
 	perconabackupmongodb "github.com/openeverest/provider-percona-server-mongodb/definition/backupclasses/percona-backup-mongodb"
 	"github.com/openeverest/provider-percona-server-mongodb/definition/components"
 	"github.com/openeverest/provider-percona-server-mongodb/internal/common"
@@ -660,6 +661,186 @@ func TestSyncBackupWaitsForClusterRollout(t *testing.T) {
 			}
 		})
 	}
+}
+
+// readySyncBackupCluster returns a PerconaServerMongoDB that has rolled out
+// (ObservedGeneration == Generation, AppStateReady) and has storage
+// registered, so SyncBackup proceeds straight to requesting the operator
+// backup instead of reporting a Pending rollout wait.
+func readySyncBackupCluster(ns, cluster, storage string) *psmdbv1.PerconaServerMongoDB {
+	return &psmdbv1.PerconaServerMongoDB{
+		ObjectMeta: metav1.ObjectMeta{Name: cluster, Namespace: ns, Generation: 1},
+		Spec: psmdbv1.PerconaServerMongoDBSpec{Backup: psmdbv1.BackupSpec{
+			Enabled:  true,
+			Storages: map[string]psmdbv1.BackupStorageSpec{storage: {Type: psmdbv1.BackupStorageS3}},
+		}},
+		Status: psmdbv1.PerconaServerMongoDBStatus{ObservedGeneration: 1, State: psmdbv1.AppStateReady},
+	}
+}
+
+// TestSyncBackupParameterValidation covers the gap reported against v0.6.0:
+// spec.parameters.type was neither validated against the BackupClass's
+// parametersSchema nor applied onto the operator backup, so e.g. a
+// requested "physical" backup silently ran as "logical". It validates
+// against the actual shipped BackupClass (definition/backupclasses), not a
+// hand-rolled copy of its enums, so a schema change cannot silently drift
+// out of sync with this test, as happened to a hardcoded "external" gap in
+// an earlier version of this fix.
+func TestSyncBackupParameterValidation(t *testing.T) {
+	const ns, cluster, storage = "db", "my-mongo", "s3"
+
+	rawParams := func(raw string) *runtime.RawExtension {
+		return &runtime.RawExtension{Raw: []byte(raw)}
+	}
+
+	tests := []struct {
+		name          string
+		parameters    *runtime.RawExtension
+		classRef      string
+		wantState     backupv1alpha1.BackupState
+		wantMsg       string
+		wantRequested bool
+		wantType      defs.BackupType
+	}{
+		{
+			name:          "no parameters: operator defaults apply",
+			wantState:     backupv1alpha1.BackupStatePending,
+			wantRequested: true,
+		},
+		{
+			name:          "type physical is applied onto the operator backup",
+			parameters:    rawParams(`{"type":"physical"}`),
+			wantState:     backupv1alpha1.BackupStatePending,
+			wantRequested: true,
+			wantType:      defs.BackupType("physical"),
+		},
+		{
+			name:          "type external is accepted by the class schema",
+			parameters:    rawParams(`{"type":"external"}`),
+			wantState:     backupv1alpha1.BackupStatePending,
+			wantRequested: true,
+			wantType:      defs.BackupType("external"),
+		},
+		{
+			name:       "an unsupported type is rejected instead of silently defaulting",
+			parameters: rawParams(`{"type":"foo"}`),
+			wantState:  backupv1alpha1.BackupStateFailed,
+			wantMsg:    `Invalid parameters for BackupClass "percona-backup-mongodb"`,
+		},
+		{
+			name:       "a compressionLevel out of the class's declared range is rejected",
+			parameters: rawParams(`{"compressionLevel":99}`),
+			wantState:  backupv1alpha1.BackupStateFailed,
+			wantMsg:    `Invalid parameters for BackupClass "percona-backup-mongodb"`,
+		},
+		{
+			name:       "an unknown parameter is rejected",
+			parameters: rawParams(`{"unknownField":true}`),
+			wantState:  backupv1alpha1.BackupStateFailed,
+			wantMsg:    `Invalid parameters for BackupClass "percona-backup-mongodb"`,
+		},
+		{
+			name:       "a BackupClass that does not exist yet reports pending",
+			parameters: rawParams(`{"type":"physical"}`),
+			classRef:   "does-not-exist",
+			wantState:  backupv1alpha1.BackupStatePending,
+			wantMsg:    `Waiting for BackupClass "does-not-exist"`,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			scheme := runtime.NewScheme()
+			require.NoError(t, corev1alpha1.AddToScheme(scheme))
+			require.NoError(t, backupv1alpha1.AddToScheme(scheme))
+			require.NoError(t, psmdbv1.SchemeBuilder.AddToScheme(scheme))
+
+			classRef := tc.classRef
+			if classRef == "" {
+				classRef = backupClassName
+			}
+			instance := &corev1alpha1.Instance{ObjectMeta: metav1.ObjectMeta{Name: cluster, Namespace: ns}}
+			backup := &backupv1alpha1.Backup{
+				ObjectMeta: metav1.ObjectMeta{Name: "b1", Namespace: ns},
+				Spec: backupv1alpha1.BackupSpec{
+					StorageRef: commonv1alpha1.ObjectRef{Name: storage},
+					ClassRef:   commonv1alpha1.ObjectRef{Name: classRef},
+					Parameters: tc.parameters,
+				},
+			}
+			shipped := backupclasses.Shipped()
+			require.Len(t, shipped, 1)
+			bc := shipped[0].DeepCopy()
+
+			objects := []client.Object{instance, backup, readySyncBackupCluster(ns, cluster, storage), bc}
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(objects...).Build()
+			c := controller.NewContext(context.Background(), fakeClient, instance, "percona-server-mongodb")
+
+			got, err := (&PSMDBProvider{}).SyncBackup(c, backup)
+			require.NoError(t, err)
+			assert.Equal(t, tc.wantState, got.State)
+			if tc.wantMsg != "" {
+				assert.Contains(t, got.Message, tc.wantMsg)
+			}
+
+			opBackup := &psmdbv1.PerconaServerMongoDBBackup{}
+			err = fakeClient.Get(context.Background(), client.ObjectKey{Namespace: ns, Name: "b1"}, opBackup)
+			if !tc.wantRequested {
+				assert.True(t, apierrors.IsNotFound(err), "operator backup must not be requested, got %v", err)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tc.wantType, opBackup.Spec.Type)
+		})
+	}
+}
+
+// TestSyncBackupSucceedsOnReadyRegardlessOfRequestedType documents why
+// SyncBackup does not re-check the requested type against the operator
+// backup once it is Ready: the PSMDB operator sets status.type directly
+// from spec.type (pkg/controller/perconaservermongodbbackup/backup.go,
+// managedBackups.Status: "status.Type = cr.Spec.Type") rather than
+// deriving it from what PBM actually ran. Since SyncBackup itself writes
+// spec.type from the requested parameters, status.type can never disagree
+// with what was requested once the operator reports Ready, so a Ready
+// backup is always reported Succeeded -- there is no "run it and then
+// discover it was the wrong type" scenario to guard against post-hoc.
+func TestSyncBackupSucceedsOnReadyRegardlessOfRequestedType(t *testing.T) {
+	const ns, cluster, storage = "db", "my-mongo", "s3"
+
+	scheme := runtime.NewScheme()
+	require.NoError(t, corev1alpha1.AddToScheme(scheme))
+	require.NoError(t, backupv1alpha1.AddToScheme(scheme))
+	require.NoError(t, psmdbv1.SchemeBuilder.AddToScheme(scheme))
+
+	instance := &corev1alpha1.Instance{ObjectMeta: metav1.ObjectMeta{Name: cluster, Namespace: ns}}
+	backup := &backupv1alpha1.Backup{
+		ObjectMeta: metav1.ObjectMeta{Name: "b1", Namespace: ns},
+		Spec: backupv1alpha1.BackupSpec{
+			StorageRef: commonv1alpha1.ObjectRef{Name: storage},
+			ClassRef:   commonv1alpha1.ObjectRef{Name: backupClassName},
+			Parameters: &runtime.RawExtension{Raw: []byte(`{"type":"physical"}`)},
+		},
+	}
+	// As the real operator would report it: status.type mirrors spec.type.
+	existingOpBackup := &psmdbv1.PerconaServerMongoDBBackup{
+		ObjectMeta: metav1.ObjectMeta{Name: "b1", Namespace: ns},
+		Spec:       psmdbv1.PerconaServerMongoDBBackupSpec{ClusterName: cluster, StorageName: storage, Type: "physical"},
+		Status:     psmdbv1.PerconaServerMongoDBBackupStatus{State: psmdbv1.BackupStateReady, Type: "physical"},
+	}
+
+	shipped := backupclasses.Shipped()
+	require.Len(t, shipped, 1)
+	bc := shipped[0].DeepCopy()
+
+	objects := []client.Object{instance, backup, readySyncBackupCluster(ns, cluster, storage), bc, existingOpBackup}
+	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(objects...).Build()
+	c := controller.NewContext(context.Background(), fakeClient, instance, "percona-server-mongodb")
+
+	got, err := (&PSMDBProvider{}).SyncBackup(c, backup)
+	require.NoError(t, err)
+	assert.Equal(t, backupv1alpha1.BackupStateSucceeded, got.State)
+	require.NotNil(t, got.CompletedAt)
 }
 
 const (
