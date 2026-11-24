@@ -113,8 +113,13 @@ helm install provider-percona-server-mongodb \
 - The install fails, before anything is applied, when the OpenEverest in the cluster does not
   serve the OpenEverest the chart is built for, and the error names the OpenEverest it needs.
   To install anyway, set `compatibility.acknowledge.coreVersion` to the OpenEverest version the
-  cluster runs, which the error also names; it applies to that release only, so the next
-  OpenEverest upgrade is checked again.
+  cluster runs, which the error also names. It holds on that release and on later ones that keep
+  its contract, such as its patch releases, and expires with the first OpenEverest release that
+  changes the contract, which is checked again.
+- Argo CD renders the chart without reading the cluster, so that check passes there. Instead,
+  the `Provider`, its `BackupClass` and the presets are at sync wave `-1`: Argo CD applies them
+  after OpenEverest's CRDs and before the provider's `Deployment` and the bundled operator, so
+  when OpenEverest refuses them the sync stops before anything runs.
 
 Upgrade and uninstall:
 

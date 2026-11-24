@@ -8,6 +8,6 @@ of the objects OpenEverest interprets that the chart applies.
 {{- include "openeverest.contract.check" (dict
   "root" .
   "stamp" (index .Chart.Annotations "openeverest.io/contract-version")
-  "crds" (list "providers.core.openeverest.io" "backupclasses.backup.openeverest.io")
+  "crds" (list "providers.core.openeverest.io" "backupclasses.backup.openeverest.io" "clusterinstancepresets.core.openeverest.io")
   "object" (dict "apiVersion" "core.openeverest.io/v1alpha1" "kind" "Provider" "crd" "providers.core.openeverest.io" "name" (.Values.provider | default dict).name)
 ) -}}
