@@ -159,7 +159,7 @@ ui:
                   components:
                     cpu:
                       path: "spec.components.engine.resources.limits.cpu"
-                      uiType: number
+                      uiType: quantity
                       fieldParams:
                         label: "CPU"
                         defaultValue: 1
@@ -169,24 +169,22 @@ ui:
                         required: true
                     memory:
                       path: "spec.components.engine.resources.limits.memory"
-                      uiType: number
+                      uiType: quantity
                       fieldParams:
                         label: "Memory"
                         defaultValue: 4
                         step: 0.1
-                        badge: "Gi"
-                        badgeToApi: true
+                        unit: "Gi"
                       validation:
                         min: 0.512
                         required: true
                     disk:
                       path: "spec.components.engine.storage.size"
-                      uiType: number
+                      uiType: quantity
                       fieldParams:
                         label: "Disk"
                         defaultValue: 25
-                        badge: "Gi"
-                        badgeToApi: true
+                        unit: "Gi"
                       validation:
                         min: 1
                         int: true
@@ -249,7 +247,7 @@ ui:
                   components:
                     cpu:
                       path: "spec.components.configServer.resources.limits.cpu"
-                      uiType: number
+                      uiType: quantity
                       fieldParams:
                         label: "CPU"
                         defaultValue: 1
@@ -259,26 +257,24 @@ ui:
                         required: true
                     memory:
                       path: "spec.components.configServer.resources.limits.memory"
-                      uiType: number
+                      uiType: quantity
                       fieldParams:
                         label: "Memory"
                         defaultValue: 2
                         step: 0.1
-                        badge: "Gi"
-                        badgeToApi: true
+                        unit: "Gi"
                       validation:
                         min: 0.512
                         required: true
                     disk:
                       path: "spec.components.configServer.storage.size"
-                      uiType: number
+                      uiType: quantity
                       fieldParams:
                         label: "Disk"
                         # Matches the size the provider falls back to when none is
                         # set, so instances created without it keep their volumes.
                         defaultValue: 10
-                        badge: "Gi"
-                        badgeToApi: true
+                        unit: "Gi"
                       validation:
                         min: 1
                         int: true
@@ -361,7 +357,7 @@ ui:
           components:
             cpu:
               path: "spec.components.proxy.resources.limits.cpu"
-              uiType: number
+              uiType: quantity
               fieldParams:
                 label: "CPU"
                 defaultValue: 1
@@ -371,13 +367,12 @@ ui:
                 required: true
             memory:
               path: "spec.components.proxy.resources.limits.memory"
-              uiType: number
+              uiType: quantity
               fieldParams:
                 label: "Memory"
                 defaultValue: 2
                 step: 0.1
-                badge: "Gi"
-                badgeToApi: true
+                unit: "Gi"
               validation:
                 min: 0
                 required: true
