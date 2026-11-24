@@ -35,6 +35,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/validation/field"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -376,6 +377,60 @@ func buildRestoreOptionsFromBackupAgentParams(params components.BackupParameters
 		out.DownloadChunkMb = int(*params.RestoreDownloadChunkMB)
 	}
 	return out
+}
+
+// validateBackupScheduleParameters checks each storage's schedule
+// .parameters against the BackupClass's ParametersSchema (the same schema
+// Backup.spec.parameters is validated against in parseBackupParameters), and
+// each storage's PITR .parameters against the BackupClass's
+// ProviderManaged.PITRParametersSchema. Without this, an invalid value (e.g.
+// a schedule's parameters.type of "foo") is not rejected until the operator
+// CR itself fails PSMDB's own CRD enum validation, leaving the Instance
+// stuck with a confusing BackupConfigured=False/ReconcileError instead of a
+// clean admission-time rejection naming the offending field.
+func validateBackupScheduleParameters(c *controller.Context) (field.ErrorList, error) {
+	backupCfg := c.Instance().Spec.Backup
+	if backupCfg == nil {
+		return nil, nil
+	}
+
+	bc, err := c.BackupClassForInstance()
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			// Missing BackupClass is surfaced elsewhere; nothing to validate against.
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get BackupClass for Instance: %w", err)
+	}
+	if bc == nil {
+		return nil, nil
+	}
+
+	storagesPath := field.NewPath("spec", "backup", "storages")
+	var errs field.ErrorList
+	for i, st := range backupCfg.Storages {
+		storagePath := storagesPath.Index(i)
+		for j, s := range st.Schedules {
+			if s.Parameters == nil || s.Parameters.Raw == nil {
+				continue
+			}
+			if err := bc.Spec.ParametersSchema.Validate(s.Parameters); err != nil {
+				errs = append(errs, field.Invalid(
+					storagePath.Child("schedules").Index(j).Child("parameters"), "", err.Error(),
+				))
+			}
+		}
+		if st.PITR == nil || st.PITR.Parameters == nil || st.PITR.Parameters.Raw == nil {
+			continue
+		}
+		if bc.Spec.ProviderManaged == nil || bc.Spec.ProviderManaged.PITRParametersSchema == nil {
+			continue
+		}
+		if err := bc.Spec.ProviderManaged.PITRParametersSchema.Validate(st.PITR.Parameters); err != nil {
+			errs = append(errs, field.Invalid(storagePath.Child("pitr", "parameters"), "", err.Error()))
+		}
+	}
+	return errs, nil
 }
 
 // applyBackupParamsToTask copies the user-chosen type, compression and (for

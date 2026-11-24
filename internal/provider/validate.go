@@ -101,8 +101,15 @@ func (p *PSMDBProvider) ValidateReferences(c *controller.Context) (field.ErrorLi
 	if err != nil {
 		return nil, err
 	}
+	errs = append(errs, tlsErrs...)
 
-	return append(errs, tlsErrs...), nil
+	scheduleErrs, err := validateBackupScheduleParameters(c)
+	if err != nil {
+		return nil, err
+	}
+	errs = append(errs, scheduleErrs...)
+
+	return errs, nil
 }
 
 // validateName checks the Instance name.
