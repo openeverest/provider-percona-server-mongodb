@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"testing"
 
+	cmmeta "github.com/cert-manager/cert-manager/pkg/apis/meta/v1"
 	psmdbv1 "github.com/percona/percona-server-mongodb-operator/pkg/apis/psmdb/v1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -124,6 +125,7 @@ func TestTLSParameters(t *testing.T) {
 
 		require.NoError(t, err)
 		assert.Equal(t, definition.IssuerKindIssuer, tls.Issuer.Kind)
+		assert.Equal(t, "cert-manager.io", tls.Issuer.Group)
 	})
 }
 
@@ -151,6 +153,19 @@ func TestConfigureTLS(t *testing.T) {
 		assert.Equal(t, "corp-ca", psmdb.Spec.TLS.IssuerConf.Name)
 		assert.Equal(t, "ClusterIssuer", psmdb.Spec.TLS.IssuerConf.Kind)
 		assert.Equal(t, "cert-manager.io", psmdb.Spec.TLS.IssuerConf.Group)
+	})
+
+	t.Run("external issuer", func(t *testing.T) {
+		t.Parallel()
+
+		psmdb := &psmdbv1.PerconaServerMongoDB{}
+		configureTLS(psmdb, definition.TLSParameters{
+			Mode:   definition.TLSModePrefer,
+			Issuer: &definition.IssuerReference{Name: "pca", Kind: "AWSPCAClusterIssuer", Group: "awspca.cert-manager.io"},
+		}, false)
+
+		assert.Equal(t, "AWSPCAClusterIssuer", psmdb.Spec.TLS.IssuerConf.Kind)
+		assert.Equal(t, "awspca.cert-manager.io", psmdb.Spec.TLS.IssuerConf.Group)
 	})
 
 	t.Run("kept certificates are never replaced", func(t *testing.T) {
@@ -387,6 +402,23 @@ func TestValidateTLSReferences(t *testing.T) {
 			name:      "issuer added to a running instance",
 			tls:       &definition.TLSParameters{Issuer: &definition.IssuerReference{Name: "ca"}},
 			objs:      []client.Object{runningPSMDB(nil)},
+			expectErr: "can't change on an existing instance",
+		},
+		{
+			name: "issuer kept on a running instance",
+			tls:  &definition.TLSParameters{Issuer: &definition.IssuerReference{Name: "ca"}},
+			objs: []client.Object{runningPSMDB(func(p *psmdbv1.PerconaServerMongoDB) {
+				p.Spec.TLS = &psmdbv1.TLSSpec{IssuerConf: cmmeta.IssuerReference{Name: "ca", Kind: "Issuer", Group: "cert-manager.io"}}
+			})},
+		},
+		{
+			name: "issuer group changed on a running instance",
+			tls: &definition.TLSParameters{Issuer: &definition.IssuerReference{
+				Name: "ca", Kind: "CAIssuer", Group: "other.example.com",
+			}},
+			objs: []client.Object{runningPSMDB(func(p *psmdbv1.PerconaServerMongoDB) {
+				p.Spec.TLS = &psmdbv1.TLSSpec{IssuerConf: cmmeta.IssuerReference{Name: "ca", Kind: "CAIssuer", Group: "example.com"}}
+			})},
 			expectErr: "can't change on an existing instance",
 		},
 		{

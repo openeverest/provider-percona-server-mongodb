@@ -76,8 +76,20 @@ type TLSParameters struct {
 
 	// Issuer is the cert-manager issuer that signs the instance's
 	// certificates, instead of a self-signed CA created for the instance.
+	// The issuer must write its CA certificate to ca.crt, as the CA and
+	// Vault issuers do.
 	// +optional
 	Issuer *IssuerReference `json:"issuer,omitempty"`
+
+	// AdditionalNames are DNS names the certificates would be valid for
+	// besides the instance's in-cluster names, such as an external name
+	// clients connect to. Not supported yet: the Percona Operator for
+	// MongoDB can't add names to the certificates it requests
+	// (https://perconadev.atlassian.net/browse/K8SPSMDB-1228), so it is
+	// rejected. Meanwhile, issue a certificate with the names and set
+	// certificateSecretName.
+	// +optional
+	AdditionalNames []string `json:"additionalNames,omitempty"`
 }
 
 // IssuerKind is the kind of a cert-manager issuer.
@@ -97,8 +109,15 @@ type IssuerReference struct {
 	// +optional
 	Name string `json:"name,omitempty"`
 
-	// Kind of the issuer.
+	// Kind of the issuer: Issuer or ClusterIssuer, or the kind of an
+	// external issuer of group, such as AWSPCAClusterIssuer.
 	// +default="Issuer"
 	// +optional
 	Kind IssuerKind `json:"kind,omitempty"`
+
+	// Group is the API group of an external issuer, such as
+	// awspca.cert-manager.io.
+	// +default="cert-manager.io"
+	// +optional
+	Group string `json:"group,omitempty"`
 }

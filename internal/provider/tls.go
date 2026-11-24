@@ -15,6 +15,7 @@
 package provider
 
 import (
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"slices"
@@ -26,6 +27,7 @@ import (
 	psmdbv1 "github.com/percona/percona-server-mongodb-operator/pkg/apis/psmdb/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	"sigs.k8s.io/yaml"
 
@@ -41,6 +43,10 @@ const (
 	// caKey is the key holding the CA certificate, in the certificate
 	// secrets and in the connection secret.
 	caKey = "ca.crt"
+
+	// additionalNamesIssue tracks the operator support additionalNames
+	// waits for.
+	additionalNamesIssue = "https://perconadev.atlassian.net/browse/K8SPSMDB-1228"
 
 	// clientCertificateOptionalToken approves the rolling restart that lets
 	// an existing instance accept TLS clients without a client certificate.
@@ -74,8 +80,11 @@ func instanceTLSParameters(in *corev1alpha1.Instance) (definition.TLSParameters,
 	if tls.Issuer != nil && tls.Issuer.Name == "" {
 		tls.Issuer = nil
 	}
-	if tls.Issuer != nil && tls.Issuer.Kind == "" {
-		tls.Issuer.Kind = definition.IssuerKindIssuer
+	if tls.Issuer != nil {
+		issuer := *tls.Issuer
+		issuer.Kind = cmp.Or(issuer.Kind, definition.IssuerKindIssuer)
+		issuer.Group = cmp.Or(issuer.Group, certManagerGroup)
+		tls.Issuer = &issuer
 	}
 
 	return tls, nil
@@ -106,7 +115,7 @@ func configureTLS(psmdb *psmdbv1.PerconaServerMongoDB, tls definition.TLSParamet
 		spec.IssuerConf = cmmeta.IssuerReference{
 			Name:  tls.Issuer.Name,
 			Kind:  string(tls.Issuer.Kind),
-			Group: certManagerGroup,
+			Group: cmp.Or(tls.Issuer.Group, certManagerGroup),
 		}
 	}
 
@@ -272,8 +281,11 @@ func validateTLS(in *corev1alpha1.Instance) field.ErrorList {
 	if !slices.Contains(tlsModes, tls.Mode) {
 		errs = append(errs, field.NotSupported(path.Child("mode"), tls.Mode, tlsModes))
 	}
-	if tls.Issuer != nil && !slices.Contains(issuerKinds, tls.Issuer.Kind) {
-		errs = append(errs, field.NotSupported(path.Child("issuer", "kind"), tls.Issuer.Kind, issuerKinds))
+	errs = append(errs, validateIssuer(path.Child("issuer"), tls.Issuer)...)
+	if len(tls.AdditionalNames) > 0 {
+		errs = append(errs, field.Forbidden(path.Child("additionalNames"),
+			"not supported yet: the Percona Operator for MongoDB can't add names to its certificates ("+
+				additionalNamesIssue+"); issue a certificate with the names and set certificateSecretName instead"))
 	}
 
 	customCertificates := tls.CertificateSecretName != "" || tls.InternalCertificateSecretName != ""
@@ -288,6 +300,30 @@ func validateTLS(in *corev1alpha1.Instance) field.ErrorList {
 		errs = append(errs, field.Forbidden(path.Child("issuer"), "use either certificate secrets or an issuer, not both"))
 	}
 
+	return errs
+}
+
+// validateIssuer checks an issuer reference with defaults applied. The
+// operator takes the kinds Issuer and ClusterIssuer for cert-manager's own,
+// whatever the group, and creates a CA issuer of that name; any other kind
+// is an external issuer it leaves to its controller.
+func validateIssuer(path *field.Path, issuer *definition.IssuerReference) field.ErrorList {
+	if issuer == nil {
+		return nil
+	}
+	var errs field.ErrorList
+	if msgs := validation.IsDNS1123Subdomain(issuer.Group); len(msgs) > 0 {
+		errs = append(errs, field.Invalid(path.Child("group"), issuer.Group, strings.Join(msgs, "; ")))
+	}
+	cmKind := slices.Contains(issuerKinds, issuer.Kind)
+	switch {
+	case issuer.Group == certManagerGroup && !cmKind:
+		errs = append(errs, field.NotSupported(path.Child("kind"), issuer.Kind, issuerKinds))
+	case issuer.Group != certManagerGroup && cmKind:
+		errs = append(errs, field.Invalid(path.Child("kind"), issuer.Kind,
+			"set the kind of the external issuer, such as AWSPCAClusterIssuer: the operator takes "+
+				"Issuer and ClusterIssuer for cert-manager's own"))
+	}
 	return errs
 }
 
@@ -334,11 +370,19 @@ func reconciledBefore(in *corev1alpha1.Instance) bool {
 
 // certificateSource identifies where an instance's certificates come from.
 func certificateSource(tls definition.TLSParameters) string {
-	issuer := "/"
+	issuer := ""
 	if tls.Issuer != nil {
-		issuer = string(tls.Issuer.Kind) + "/" + tls.Issuer.Name
+		issuer = issuerKey(string(tls.Issuer.Kind), tls.Issuer.Name, tls.Issuer.Group)
 	}
 	return issuer + " " + tls.CertificateSecretName + " " + tls.InternalCertificateSecretName
+}
+
+// issuerKey identifies an issuer, with defaults applied; empty for none.
+func issuerKey(kind, name, group string) string {
+	if name == "" {
+		return ""
+	}
+	return cmp.Or(kind, string(definition.IssuerKindIssuer)) + "/" + name + "." + cmp.Or(group, certManagerGroup)
 }
 
 // validateTLSReferences checks that the certificate secrets hold a
@@ -417,9 +461,10 @@ func validateTLSChange(c *controller.Context, tls definition.TLSParameters) (fie
 		errs = append(errs, field.Forbidden(path.Child("mode"), "TLS can't be turned on or off on an existing instance"))
 	}
 
-	currentIssuer, currentSecret, currentInternalSecret := "/", "", ""
+	currentIssuer, currentSecret, currentInternalSecret := "", "", ""
 	if current.Spec.TLS != nil {
-		currentIssuer = current.Spec.TLS.IssuerConf.Kind + "/" + current.Spec.TLS.IssuerConf.Name
+		conf := current.Spec.TLS.IssuerConf
+		currentIssuer = issuerKey(conf.Kind, conf.Name, conf.Group)
 	}
 	if current.Spec.Secrets != nil {
 		currentInternalSecret = current.Spec.Secrets.SSLInternal
@@ -427,9 +472,9 @@ func validateTLSChange(c *controller.Context, tls definition.TLSParameters) (fie
 			currentSecret = current.Spec.Secrets.SSL
 		}
 	}
-	wantIssuer := "/"
+	wantIssuer := ""
 	if tls.Issuer != nil {
-		wantIssuer = string(tls.Issuer.Kind) + "/" + tls.Issuer.Name
+		wantIssuer = issuerKey(string(tls.Issuer.Kind), tls.Issuer.Name, tls.Issuer.Group)
 	}
 	if currentIssuer != wantIssuer || currentSecret != tls.CertificateSecretName ||
 		(currentInternalSecret != "" && currentInternalSecret != internalCertificateSecretName(c, tls)) {

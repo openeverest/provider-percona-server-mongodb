@@ -302,7 +302,9 @@ spec:
       internalCertificateSecretName: my-tls-internal  # optional; members only
       issuer:                          # cert-manager
         name: corp-ca
-        kind: ClusterIssuer            # Issuer (default) | ClusterIssuer
+        kind: ClusterIssuer            # Issuer (default) | ClusterIssuer | an external issuer's kind
+        group: cert-manager.io         # default; an external issuer's group, e.g. awspca.cert-manager.io
+      # additionalNames: [mongo.example.com]  # not supported yet, see below
 ```
 
 - **`preferTLS`** encrypts traffic between members and lets clients choose; **`requireTLS`**
@@ -317,18 +319,64 @@ spec:
      secret works, and renewals roll out automatically; the operator never replaces the
      secrets with its own;
   2. a cert-manager `issuer` — a `ClusterIssuer` requires cert-manager in the
-     `cert-manager` namespace;
+     `cert-manager` namespace. An external issuer (AWS Private CA, Google CAS, …) takes its
+     own `kind` and `group`, e.g. `AWSPCAClusterIssuer` of `awspca.cert-manager.io`; with a
+     group other than `cert-manager.io` the kind can't be `Issuer` or `ClusterIssuer`. The
+     issuer must write its CA certificate to `ca.crt`;
   3. otherwise the operator issues them: through cert-manager with a CA of its own when
      cert-manager is installed (renewed automatically), or else from a CA it generates once,
      valid without expiry. Such an instance keeps its certificates if cert-manager is
      installed later: the operator's migration to cert-manager does not complete.
 
   The certificate source can't be changed after creation.
+- **`additionalNames`** (DNS names clients connect to, such as `mongo.example.com`) are
+  rejected for now: the operator can't add names to the certificates it requests
+  ([K8SPSMDB-1228](https://perconadev.atlassian.net/browse/K8SPSMDB-1228)). Until it can,
+  issue a certificate carrying them and set `certificateSecretName`.
 - **Clients** authenticate with their password and need only the CA to verify the instance:
   the connection secret (`<instance>-conn`) carries it as `ca.crt`, and its `uri` sets `tls`
   to match the mode. TLS clients don't need a client certificate; on instances created
   before this was supported, accepting them waits for the
   `tls-clients-without-certificates` maintenance approval (a rolling restart).
+
+#### Bring your own CA
+
+To have your company CA sign the certificates, give cert-manager the CA as a
+`ClusterIssuer` and point the instance at it:
+
+```sh
+kubectl -n cert-manager create secret tls company-ca --cert=ca.crt --key=ca.key
+```
+
+```yaml
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: company-ca
+spec:
+  ca:
+    secretName: company-ca
+---
+apiVersion: core.openeverest.io/v1alpha1
+kind: Instance
+metadata:
+  name: my-mongodb
+spec:
+  providerRef:
+    name: percona-server-mongodb
+  parameters:
+    tls:
+      mode: requireTLS
+      issuer:
+        name: company-ca
+        kind: ClusterIssuer
+  # components: ...
+```
+
+Clients that trust the company CA verify the instance without extra configuration; the
+connection secret's `ca.crt` is the company CA as well. To connect with an external name
+such as `mongo.company.com`, issue a certificate with a cert-manager `Certificate` that lists
+it next to the in-cluster names above, and set `certificateSecretName` to its secret.
 
 ### Pod scheduling
 
