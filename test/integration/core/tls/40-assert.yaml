@@ -1,0 +1,13 @@
+# The operator leaves an external issuer to its controller and requests the
+# certificates from it.
+apiVersion: psmdb.percona.com/v1
+kind: PerconaServerMongoDB
+metadata:
+  name: psmdb-tls-issuer
+spec:
+  tls:
+    mode: preferTLS
+    issuerConf:
+      name: corp-pca
+      kind: AWSPCAClusterIssuer
+      group: awspca.cert-manager.io

@@ -289,6 +289,29 @@ func TestValidate(t *testing.T) {
 			want:    []string{"spec.parameters.tls.issuer.kind"},
 		},
 		{
+			name:    "external issuer",
+			fixture: replicaSetFixture,
+			mutate:  parameters(`{"tls":{"issuer":{"name":"pca","kind":"AWSPCAClusterIssuer","group":"awspca.cert-manager.io"}}}`),
+		},
+		{
+			name:    "external issuer group with a cert-manager kind",
+			fixture: replicaSetFixture,
+			mutate:  parameters(`{"tls":{"issuer":{"name":"pca","kind":"ClusterIssuer","group":"awspca.cert-manager.io"}}}`),
+			want:    []string{"spec.parameters.tls.issuer.kind"},
+		},
+		{
+			name:    "invalid issuer group",
+			fixture: replicaSetFixture,
+			mutate:  parameters(`{"tls":{"issuer":{"name":"pca","kind":"AWSPCAIssuer","group":"AWS PCA"}}}`),
+			want:    []string{"spec.parameters.tls.issuer.group"},
+		},
+		{
+			name:    "additional names",
+			fixture: replicaSetFixture,
+			mutate:  parameters(`{"tls":{"issuer":{"name":"corp-ca"},"additionalNames":["mongo.example.com"]}}`),
+			want:    []string{"spec.parameters.tls.additionalNames"},
+		},
+		{
 			name:    "certificates without TLS",
 			fixture: replicaSetFixture,
 			mutate:  parameters(`{"tls":{"mode":"disabled","certificateSecretName":"mine"}}`),
@@ -378,6 +401,17 @@ func TestValidateTLSTransition(t *testing.T) {
 			name: "issuer added",
 			old:  stored(true, ""),
 			raw:  `{"tls":{"issuer":{"name":"corp-ca"}}}`,
+			want: []string{"spec.parameters.tls"},
+		},
+		{
+			name: "default issuer group spelled out",
+			old:  stored(true, `{"tls":{"issuer":{"name":"corp-ca"}}}`),
+			raw:  `{"tls":{"issuer":{"name":"corp-ca","kind":"Issuer","group":"cert-manager.io"}}}`,
+		},
+		{
+			name: "issuer group changed",
+			old:  stored(true, `{"tls":{"issuer":{"name":"pca","kind":"AWSPCAIssuer","group":"awspca.cert-manager.io"}}}`),
+			raw:  `{"tls":{"issuer":{"name":"pca","kind":"AWSPCAIssuer","group":"other.example.com"}}}`,
 			want: []string{"spec.parameters.tls"},
 		},
 		{
