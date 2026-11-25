@@ -25,6 +25,10 @@ import (
 // (TestConfigureHidden covers them).
 const hiddenNeedsReplicas = "applies only with spec.components.hidden.replicas set"
 
+// mapNeedsHarness covers the map fields: the harness generates no value for a
+// map yet (TestConfigureExpose covers the annotations).
+const mapNeedsHarness = "the harness cannot generate a map value yet"
+
 var unverifiable = map[string]string{
 	// The harness sets one field at a time; the kind takes effect only
 	// together with issuer.name (TestConfigureTLS covers it).
@@ -33,6 +37,8 @@ var unverifiable = map[string]string{
 	"spec.components.hidden.resources.limits.memory": hiddenNeedsReplicas,
 	"spec.components.hidden.storage.size":            hiddenNeedsReplicas,
 	"spec.components.hidden.storage.storageClass":    hiddenNeedsReplicas,
+	"spec.components.engine.service.annotations":     mapNeedsHarness,
+	"spec.components.proxy.service.annotations":      mapNeedsHarness,
 }
 
 func TestUISchemaIsReconciled(t *testing.T) {
