@@ -227,7 +227,9 @@ require (
 	github.com/nishanths/exhaustive v0.13.0 // indirect
 	github.com/nishanths/predeclared v0.2.2 // indirect
 	github.com/nunnatsa/ginkgolinter v0.24.0 // indirect
-	github.com/openeverest/provider-sdk v0.4.1-0.20261125185722-f7ae82ac9111 // indirect
+	github.com/opencontainers/go-digest v1.0.0 // indirect
+	github.com/opencontainers/image-spec v1.1.1 // indirect
+	github.com/openeverest/provider-sdk v0.4.1-0.20261125224956-add2fdc30c65 // indirect
 	github.com/pelletier/go-toml/v2 v2.4.3 // indirect
 	github.com/percona/percona-backup-mongodb v1.8.1-0.20260617122520-9641a911c853 // indirect
 	github.com/pierrec/lz4 v2.6.1+incompatible // indirect
@@ -336,6 +338,7 @@ require (
 	k8s.io/utils v0.0.0-20260707023825-cf1189d6abe3 // indirect
 	mvdan.cc/gofumpt v0.12.0 // indirect
 	mvdan.cc/unparam v0.0.0-20260823230713-2fa3d841b0c8 // indirect
+	oras.land/oras-go/v2 v2.6.2 // indirect
 	sigs.k8s.io/controller-tools v0.23.0 // indirect
 	sigs.k8s.io/gateway-api v1.6.0 // indirect
 	sigs.k8s.io/json v0.0.0-20250730193827-2d320260d730 // indirect
