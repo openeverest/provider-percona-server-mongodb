@@ -9,7 +9,7 @@ require (
 	github.com/cert-manager/cert-manager v1.21.0
 	github.com/hashicorp/go-version v1.9.0
 	github.com/openeverest/monitoring-pmm/api v0.0.0-20261110082751-22ff528eb0dc
-	github.com/openeverest/openeverest/v2 v2.0.0-dev.2.0.20261125163324-baa7302420dd
+	github.com/openeverest/openeverest/v2 v2.0.0-dev.2.0.20261125185706-a1ddf4732eeb
 	github.com/percona/percona-server-mongodb-operator v1.23.1
 	github.com/stretchr/testify v1.12.1
 	k8s.io/api v0.37.2
@@ -227,7 +227,7 @@ require (
 	github.com/nishanths/exhaustive v0.13.0 // indirect
 	github.com/nishanths/predeclared v0.2.2 // indirect
 	github.com/nunnatsa/ginkgolinter v0.24.0 // indirect
-	github.com/openeverest/provider-sdk v0.4.1-0.20261125181151-9bdf7ebde95a // indirect
+	github.com/openeverest/provider-sdk v0.4.1-0.20261125185722-f7ae82ac9111 // indirect
 	github.com/pelletier/go-toml/v2 v2.4.3 // indirect
 	github.com/percona/percona-backup-mongodb v1.8.1-0.20260617122520-9641a911c853 // indirect
 	github.com/pierrec/lz4 v2.6.1+incompatible // indirect
