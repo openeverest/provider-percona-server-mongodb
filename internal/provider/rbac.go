@@ -27,6 +27,12 @@ package provider
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 // +kubebuilder:rbac:groups=events.k8s.io,resources=events,verbs=create;patch
 
+// Startup gate (provider-runtime holds a new build until the installed
+// OpenEverest supports its contract version, then records that version on
+// this provider's Provider):
+// +kubebuilder:rbac:groups=apiextensions.k8s.io,resources=customresourcedefinitions,resourceNames=providers.core.openeverest.io,verbs=get
+// +kubebuilder:rbac:groups=core.openeverest.io,resources=providers/status,resourceNames=percona-server-mongodb,verbs=patch
+
 // Operator-version discovery (crVersion convergence reads the running
 // operator's Deployment image tag):
 // +kubebuilder:rbac:groups=apps,resources=deployments,verbs=list;watch
