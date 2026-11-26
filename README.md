@@ -56,10 +56,6 @@ manages pods directly — all lifecycle work is delegated to the operator.
 | `0.2.x` | `2.0.0-dev.2` | `1.22.x` | `1.30` – `1.34` |
 | `0.1.x` | `2.0.0-dev.1` | `1.22.x` | `1.30` – `1.34` |
 
-Each chart also names the OpenEverest it is built for, in the `openeverest.io/contract-version`
-annotation of its `Chart.yaml`, which `make generate` writes. Installing it on an OpenEverest
-that does not serve that version fails; see [Installation](#installation).
-
 ## Capabilities
 
 What you can do to a running instance through the `Instance` API. Upgrading the
@@ -110,18 +106,6 @@ helm install provider-percona-server-mongodb \
   missing or incomplete object the `Instance` names, such as its user Secret, is never a
   reason to reject it: `kubectl` prints a warning, and the `Instance` reports it once
   created.
-- The install fails, before anything is applied, when the OpenEverest in the cluster does not
-  serve the OpenEverest the chart is built for, and the error names the OpenEverest it needs.
-  To install anyway, set `compatibility.acknowledge.coreVersion` to the OpenEverest version the
-  cluster runs, which the error also names. It holds on that release and on later ones that keep
-  its contract, such as its patch releases, and expires with the first OpenEverest release that
-  changes the contract, which is checked again.
-- Argo CD renders the chart without reading the cluster, so that check passes there, and
-  OpenEverest refuses the `Provider`, its `BackupClass` and the presets when they are applied.
-  The chart sets no annotation for any tool itself: `openeverest.annotations` adds annotations
-  to those objects. With `argocd.argoproj.io/sync-wave: "-1"`, for example, Argo CD applies them
-  before the provider's `Deployment` and the bundled operator, so when OpenEverest refuses them
-  the sync stops before anything runs.
 
 Upgrade and uninstall:
 
@@ -481,16 +465,15 @@ local k3d setup, running against a cluster you already have, and every `dev/.env
 
 ```bash
 make dev-up             # local cluster + Tilt dev environment (see dev/README.md)
-make generate           # RBAC, provider spec, Helm chart sync, OpenEverest stamp
+make generate           # RBAC, provider spec, Helm chart sync
 make run                # run the provider locally against the cluster
 make test-unit
 make test-integration   # chainsaw suites under test/integration/
 make dev-down
 ```
 
-`make help` lists every target. `make verify` fails when generated files are stale or the
-chart is not stamped with the OpenEverest the provider is built against — run `make generate`
-and commit the result.
+`make help` lists every target. `make verify` fails when generated files are stale — run
+`make generate` and commit the result.
 
 The provider contract (`Validate` / `Sync` / `Status` / `Cleanup`), RBAC markers, watches,
 code generation, and the backup/restore interfaces are documented once for all providers in
@@ -504,7 +487,7 @@ code generation, and the backup/restore interfaces are documented once for all p
 | `internal/provider/` | `ProviderInterface` implementation, backup interfaces, RBAC markers |
 | `internal/common/` | Component name constants |
 | `definition/` | Provider identity, component types, versions, topologies, backup classes |
-| `charts/provider-percona-server-mongodb/` | Helm chart (`generated/`, the `Chart.yaml` stamp, `templates/_openeverest_contract.tpl` and `templates/openeverest-compat-check.yaml` are produced by `make generate`) |
+| `charts/provider-percona-server-mongodb/` | Helm chart (`generated/` is produced by `make generate`) |
 | `config/rbac/role.yaml` | Generated `ClusterRole` — do not edit |
 | `test/integration/` | Chainsaw suites: `core`, `backup`, `monitoring` |
 | `test/e2e/` | Playwright end-to-end tests against the Everest UI |

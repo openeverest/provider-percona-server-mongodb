@@ -9,7 +9,7 @@ require (
 	github.com/cert-manager/cert-manager v1.21.0
 	github.com/hashicorp/go-version v1.9.0
 	github.com/openeverest/monitoring-pmm/api v0.0.0-20261110082751-22ff528eb0dc
-	github.com/openeverest/openeverest/v2 v2.0.0-dev.2.0.20261125185706-a1ddf4732eeb
+	github.com/openeverest/openeverest/v2 v2.0.0-alpha.1
 	github.com/percona/percona-backup-mongodb v1.8.1-0.20260617122520-9641a911c853
 	github.com/percona/percona-server-mongodb-operator v1.23.1
 	github.com/stretchr/testify v1.12.1
