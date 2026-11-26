@@ -116,12 +116,16 @@ helm install provider-percona-server-mongodb \
   cluster runs, which the error also names. It holds on that release and on later ones that keep
   its contract, such as its patch releases, and expires with the first OpenEverest release that
   changes the contract, which is checked again.
-- Argo CD renders the chart without reading the cluster, so that check passes there, and
-  OpenEverest refuses the `Provider`, its `BackupClass` and the presets when they are applied.
-  The chart sets no annotation for any tool itself: `openeverest.annotations` adds annotations
-  to those objects. With `argocd.argoproj.io/sync-wave: "-1"`, for example, Argo CD applies them
-  before the provider's `Deployment` and the bundled operator, so when OpenEverest refuses them
-  the sync stops before anything runs.
+- The install fails that way under Helm and Flux, which read the cluster when they render the
+  chart. Argo CD renders it without reading the cluster, as does `helm template` for
+  pre-rendered manifests, so nothing fails there. Instead, the provider holds a new build until
+  the installed OpenEverest supports it: its pods run but are not ready, and a Warning Event on
+  its `Provider` names the OpenEverest it waits for. Under the default `RollingUpdate` strategy
+  the previous build keeps serving, and the new one starts by itself once OpenEverest is
+  upgraded.
+- The chart sets no annotation for any tool itself: `openeverest.annotations` adds annotations
+  to the `Provider`, its `BackupClass` and the presets, such as an Argo CD sync wave
+  (`argocd.argoproj.io/sync-wave: "-1"`).
 
 Upgrade and uninstall:
 
