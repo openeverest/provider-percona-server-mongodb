@@ -239,6 +239,18 @@ spec:
             TLS configures encryption in transit, between clients and the instance
             and between its members.
           properties:
+            additionalNames:
+              description: |-
+                AdditionalNames are DNS names the certificates would be valid for
+                besides the instance's in-cluster names, such as an external name
+                clients connect to. Not supported yet: the Percona Operator for
+                MongoDB can't add names to the certificates it requests
+                (https://perconadev.atlassian.net/browse/K8SPSMDB-1228), so it is
+                rejected. Meanwhile, issue a certificate with the names and set
+                certificateSecretName.
+              items:
+                type: string
+              type: array
             certificateSecretName:
               description: |-
                 CertificateSecretName names a Secret in the instance namespace with
@@ -256,10 +268,20 @@ spec:
               description: |-
                 Issuer is the cert-manager issuer that signs the instance's
                 certificates, instead of a self-signed CA created for the instance.
+                The issuer must write its CA certificate to ca.crt, as the CA and
+                Vault issuers do.
               properties:
+                group:
+                  default: cert-manager.io
+                  description: |-
+                    Group is the API group of an external issuer, such as
+                    awspca.cert-manager.io.
+                  type: string
                 kind:
                   default: Issuer
-                  description: Kind of the issuer.
+                  description: |-
+                    Kind of the issuer: Issuer or ClusterIssuer, or the kind of an
+                    external issuer of group, such as AWSPCAClusterIssuer.
                   type: string
                 name:
                   description: Name of the issuer.

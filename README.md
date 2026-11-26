@@ -56,6 +56,10 @@ manages pods directly — all lifecycle work is delegated to the operator.
 | `0.2.x` | `2.0.0-dev.2` | `1.22.x` | `1.30` – `1.34` |
 | `0.1.x` | `2.0.0-dev.1` | `1.22.x` | `1.30` – `1.34` |
 
+Each chart also names the OpenEverest it is built for, in the `openeverest.io/contract-version`
+annotation of its `Chart.yaml`, which `make generate` writes. Installing it on an OpenEverest
+that does not serve that version fails; see [Installation](#installation).
+
 ## Capabilities
 
 What you can do to a running instance through the `Instance` API. Upgrading the
@@ -106,6 +110,18 @@ helm install provider-percona-server-mongodb \
   missing or incomplete object the `Instance` names, such as its user Secret, is never a
   reason to reject it: `kubectl` prints a warning, and the `Instance` reports it once
   created.
+- The install fails, before anything is applied, when the OpenEverest in the cluster does not
+  serve the OpenEverest the chart is built for, and the error names the OpenEverest it needs.
+  To install anyway, set `compatibility.acknowledge.coreVersion` to the OpenEverest version the
+  cluster runs, which the error also names. It holds on that release and on later ones that keep
+  its contract, such as its patch releases, and expires with the first OpenEverest release that
+  changes the contract, which is checked again.
+- Argo CD renders the chart without reading the cluster, so that check passes there, and
+  OpenEverest refuses the `Provider`, its `BackupClass` and the presets when they are applied.
+  The chart sets no annotation for any tool itself: `openeverest.annotations` adds annotations
+  to those objects. With `argocd.argoproj.io/sync-wave: "-1"`, for example, Argo CD applies them
+  before the provider's `Deployment` and the bundled operator, so when OpenEverest refuses them
+  the sync stops before anything runs.
 
 Upgrade and uninstall:
 
@@ -302,7 +318,9 @@ spec:
       internalCertificateSecretName: my-tls-internal  # optional; members only
       issuer:                          # cert-manager
         name: corp-ca
-        kind: ClusterIssuer            # Issuer (default) | ClusterIssuer
+        kind: ClusterIssuer            # Issuer (default) | ClusterIssuer | an external issuer's kind
+        group: cert-manager.io         # default; an external issuer's group, e.g. awspca.cert-manager.io
+      # additionalNames: [mongo.example.com]  # not supported yet, see below
 ```
 
 - **`preferTLS`** encrypts traffic between members and lets clients choose; **`requireTLS`**
@@ -317,18 +335,64 @@ spec:
      secret works, and renewals roll out automatically; the operator never replaces the
      secrets with its own;
   2. a cert-manager `issuer` — a `ClusterIssuer` requires cert-manager in the
-     `cert-manager` namespace;
+     `cert-manager` namespace. An external issuer (AWS Private CA, Google CAS, …) takes its
+     own `kind` and `group`, e.g. `AWSPCAClusterIssuer` of `awspca.cert-manager.io`; with a
+     group other than `cert-manager.io` the kind can't be `Issuer` or `ClusterIssuer`. The
+     issuer must write its CA certificate to `ca.crt`;
   3. otherwise the operator issues them: through cert-manager with a CA of its own when
      cert-manager is installed (renewed automatically), or else from a CA it generates once,
      valid without expiry. Such an instance keeps its certificates if cert-manager is
      installed later: the operator's migration to cert-manager does not complete.
 
   The certificate source can't be changed after creation.
+- **`additionalNames`** (DNS names clients connect to, such as `mongo.example.com`) are
+  rejected for now: the operator can't add names to the certificates it requests
+  ([K8SPSMDB-1228](https://perconadev.atlassian.net/browse/K8SPSMDB-1228)). Until it can,
+  issue a certificate carrying them and set `certificateSecretName`.
 - **Clients** authenticate with their password and need only the CA to verify the instance:
   the connection secret (`<instance>-conn`) carries it as `ca.crt`, and its `uri` sets `tls`
   to match the mode. TLS clients don't need a client certificate; on instances created
   before this was supported, accepting them waits for the
   `tls-clients-without-certificates` maintenance approval (a rolling restart).
+
+#### Bring your own CA
+
+To have your company CA sign the certificates, give cert-manager the CA as a
+`ClusterIssuer` and point the instance at it:
+
+```sh
+kubectl -n cert-manager create secret tls company-ca --cert=ca.crt --key=ca.key
+```
+
+```yaml
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: company-ca
+spec:
+  ca:
+    secretName: company-ca
+---
+apiVersion: core.openeverest.io/v1alpha1
+kind: Instance
+metadata:
+  name: my-mongodb
+spec:
+  providerRef:
+    name: percona-server-mongodb
+  parameters:
+    tls:
+      mode: requireTLS
+      issuer:
+        name: company-ca
+        kind: ClusterIssuer
+  # components: ...
+```
+
+Clients that trust the company CA verify the instance without extra configuration; the
+connection secret's `ca.crt` is the company CA as well. To connect with an external name
+such as `mongo.company.com`, issue a certificate with a cert-manager `Certificate` that lists
+it next to the in-cluster names above, and set `certificateSecretName` to its secret.
 
 ### Pod scheduling
 
@@ -417,15 +481,16 @@ local k3d setup, running against a cluster you already have, and every `dev/.env
 
 ```bash
 make dev-up             # local cluster + Tilt dev environment (see dev/README.md)
-make generate           # RBAC, provider spec, Helm chart sync
+make generate           # RBAC, provider spec, Helm chart sync, OpenEverest stamp
 make run                # run the provider locally against the cluster
 make test-unit
 make test-integration   # chainsaw suites under test/integration/
 make dev-down
 ```
 
-`make help` lists every target. `make verify` fails when generated files are stale — run
-`make generate` and commit the result.
+`make help` lists every target. `make verify` fails when generated files are stale or the
+chart is not stamped with the OpenEverest the provider is built against — run `make generate`
+and commit the result.
 
 The provider contract (`Validate` / `Sync` / `Status` / `Cleanup`), RBAC markers, watches,
 code generation, and the backup/restore interfaces are documented once for all providers in
@@ -439,7 +504,7 @@ code generation, and the backup/restore interfaces are documented once for all p
 | `internal/provider/` | `ProviderInterface` implementation, backup interfaces, RBAC markers |
 | `internal/common/` | Component name constants |
 | `definition/` | Provider identity, component types, versions, topologies, backup classes |
-| `charts/provider-percona-server-mongodb/` | Helm chart (`generated/` is produced by `make generate`) |
+| `charts/provider-percona-server-mongodb/` | Helm chart (`generated/`, the `Chart.yaml` stamp, `templates/_openeverest_contract.tpl` and `templates/openeverest-compat-check.yaml` are produced by `make generate`) |
 | `config/rbac/role.yaml` | Generated `ClusterRole` — do not edit |
 | `test/integration/` | Chainsaw suites: `core`, `backup`, `monitoring` |
 | `test/e2e/` | Playwright end-to-end tests against the Everest UI |

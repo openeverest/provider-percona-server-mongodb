@@ -27,6 +27,7 @@ import (
 
 	backupv1alpha1 "github.com/openeverest/openeverest/v2/api/backup/v1alpha1"
 	corev1alpha1 "github.com/openeverest/openeverest/v2/api/core/v1alpha1"
+	"github.com/openeverest/openeverest/v2/contract/definitions"
 	"github.com/openeverest/openeverest/v2/provider-runtime/controller"
 
 	"github.com/openeverest/provider-percona-server-mongodb/internal/common"
@@ -409,7 +410,7 @@ func validateUserSecretSchema(c *controller.Context, name string) (*corev1.Secre
 		return nil, nil, fmt.Errorf("get provider spec: %w", err)
 	}
 
-	if err := controller.ValidateSecretSchema(secret, providerSpec); err != nil {
+	if err := definitions.ValidateSecretSchema(secret, providerSpec); err != nil {
 		return nil, field.ErrorList{field.Invalid(path, name, err.Error())}, nil
 	}
 

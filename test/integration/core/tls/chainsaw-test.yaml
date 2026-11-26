@@ -6,7 +6,9 @@ metadata:
 spec:
   description: |
     TLS configuration: an instance requiring TLS with its own certificates,
-    switching to preferred TLS, and refusing to turn TLS off once running.
+    switching to preferred TLS, and refusing to turn TLS off once running; an
+    external cert-manager issuer, and additionalNames rejected until the
+    operator supports them.
   catch:
     - script:
         content: kubectl -n $NAMESPACE get instance,psmdb -o yaml
@@ -62,16 +64,41 @@ spec:
         - assert:
             file: 30-assert.yaml
 
+    - name: external-issuer
+      try:
+        - apply:
+            file: 40-external-issuer.yaml
+        - assert:
+            file: 40-assert.yaml
+
+    # Waits for operator support: K8SPSMDB-1228.
+    - name: additional-names-rejected
+      try:
+        - script:
+            content: kubectl apply --dry-run=server -n $NAMESPACE -f 41-additional-names.yaml
+            check:
+              ($error != null): true
+              (contains($stderr, 'spec.parameters.tls.additionalNames')): true
+              (contains($stderr, 'K8SPSMDB-1228')): true
+
     - name: delete-cluster
       try:
         - script:
             content: |
-              kubectl -n $NAMESPACE delete in/psmdb-tls psmdb/psmdb-tls --wait=false && sleep 5
+              kubectl -n $NAMESPACE delete in/psmdb-tls in/psmdb-tls-issuer psmdb/psmdb-tls psmdb/psmdb-tls-issuer --wait=false && sleep 5
               # The PSMDB operator is scaled to 0, so nothing processes the psmdb finalizers.
-              kubectl -n $NAMESPACE patch psmdb/psmdb-tls -p '{"metadata":{"finalizers":null}}' --type merge
+              for p in psmdb-tls psmdb-tls-issuer; do
+                kubectl -n $NAMESPACE patch psmdb/$p -p '{"metadata":{"finalizers":null}}' --type merge
+              done
         - wait:
             apiVersion: core.openeverest.io/v1alpha1
             kind: Instance
             name: psmdb-tls
+            for:
+              deletion: {}
+        - wait:
+            apiVersion: core.openeverest.io/v1alpha1
+            kind: Instance
+            name: psmdb-tls-issuer
             for:
               deletion: {}

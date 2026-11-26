@@ -1,0 +1,39 @@
+# TLS with your own CA: cert-manager signs the instance's certificates with
+# the company CA, kept in the cert-manager namespace as the Secret
+# company-ca (tls.crt, tls.key).
+#   kubectl -n cert-manager create secret tls company-ca --cert=ca.crt --key=ca.key
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: company-ca
+spec:
+  ca:
+    secretName: company-ca
+---
+apiVersion: core.openeverest.io/v1alpha1
+kind: Instance
+metadata:
+  name: psmdb-tls
+  namespace: default
+spec:
+  providerRef:
+    name: percona-server-mongodb
+  parameters:
+    tls:
+      mode: requireTLS
+      issuer:
+        name: company-ca
+        kind: ClusterIssuer
+        # An external issuer takes its own kind and group, e.g.:
+        # kind: AWSPCAClusterIssuer
+        # group: awspca.cert-manager.io
+  components:
+    engine:
+      type: mongod
+      replicas: 3
+      resources:
+        limits:
+          cpu: "1"
+          memory: 2G
+      storage:
+        size: 10Gi
