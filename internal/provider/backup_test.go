@@ -1394,3 +1394,58 @@ func TestBuildExternalBackupSource(t *testing.T) {
 		})
 	}
 }
+
+// TestMirrorCarriesBackupType verifies that a Backup CR mirrored from a
+// scheduled PerconaServerMongoDBBackup (one carrying the backup-ancestor
+// label) reports the same backup type the operator assigned the scheduled
+// backup, instead of leaving spec.parameters empty.
+func TestMirrorCarriesBackupType(t *testing.T) {
+	const ns, cluster, storage, task = "db", "my-mongo", "s3", "daily"
+
+	scheme := runtime.NewScheme()
+	require.NoError(t, corev1alpha1.AddToScheme(scheme))
+	require.NoError(t, backupv1alpha1.AddToScheme(scheme))
+	require.NoError(t, psmdbv1.SchemeBuilder.AddToScheme(scheme))
+
+	instance := &corev1alpha1.Instance{
+		ObjectMeta: metav1.ObjectMeta{Name: cluster, Namespace: ns},
+		Spec: corev1alpha1.InstanceSpec{
+			ProviderRef: commonv1alpha1.ObjectRef{Name: "percona-server-mongodb"},
+			Backup:      &corev1alpha1.InstanceBackupSpec{ClassRef: commonv1alpha1.ObjectRef{Name: backupClassName}},
+		},
+	}
+	level := 5
+	vsc := "my-vsc"
+	ub := &psmdbv1.PerconaServerMongoDBBackup{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "cron-my-mongo-20260101000000",
+			Namespace: ns,
+			Labels:    map[string]string{psmdbBackupAncestorLabel: task},
+		},
+		Spec: psmdbv1.PerconaServerMongoDBBackupSpec{
+			ClusterName:         cluster,
+			StorageName:         storage,
+			Type:                defs.BackupType("physical"),
+			Compression:         compress.CompressionType("zstd"),
+			CompressionLevel:    &level,
+			VolumeSnapshotClass: &vsc,
+		},
+	}
+
+	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(instance).Build()
+
+	p := &PSMDBProvider{BaseProvider: controller.BaseProvider{ProviderName: "percona-server-mongodb"}}
+	got, err := p.Mirror(context.Background(), fakeClient, ub)
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	require.NotNil(t, got.Spec.Parameters)
+
+	var params perconabackupmongodb.PerconaBackupParameters
+	require.NoError(t, json.Unmarshal(got.Spec.Parameters.Raw, &params))
+	assert.Equal(t, "physical", params.Type)
+	assert.Equal(t, "zstd", params.CompressionType)
+	require.NotNil(t, params.CompressionLevel)
+	assert.Equal(t, int32(5), *params.CompressionLevel)
+	assert.Equal(t, "my-vsc", params.VolumeSnapshotClass)
+	assert.Equal(t, task, got.Spec.ScheduleName)
+}

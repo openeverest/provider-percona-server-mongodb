@@ -472,6 +472,32 @@ func applyBackupParamsToBackup(dst *psmdbv1.PerconaServerMongoDBBackupSpec, para
 	}
 }
 
+// backupParamsFromOperatorBackup is applyBackupParamsToBackup's inverse: it
+// renders a scheduled PerconaServerMongoDBBackup's operator-assigned Type,
+// Compression, CompressionLevel and VolumeSnapshotClass (set by the PSMDB
+// operator from the originating BackupTaskSpec, see percona-server-mongodb-
+// operator's backup.BackupFromTask) as the Backup CR's spec.parameters
+// payload, so a mirrored scheduled backup reports the same backup type
+// (logical/physical/external) an on-demand Backup would.
+func backupParamsFromOperatorBackup(spec psmdbv1.PerconaServerMongoDBBackupSpec) (*runtime.RawExtension, error) {
+	params := perconabackupmongodb.PerconaBackupParameters{
+		Type:            string(spec.Type),
+		CompressionType: string(spec.Compression),
+	}
+	if spec.CompressionLevel != nil {
+		level := int32(*spec.CompressionLevel)
+		params.CompressionLevel = &level
+	}
+	if spec.VolumeSnapshotClass != nil {
+		params.VolumeSnapshotClass = *spec.VolumeSnapshotClass
+	}
+	raw, err := json.Marshal(params)
+	if err != nil {
+		return nil, fmt.Errorf("marshal backup parameters: %w", err)
+	}
+	return &runtime.RawExtension{Raw: raw}, nil
+}
+
 // pitrStorage returns the single storage entry with PITR enabled, or nil when
 // no storage has PITR enabled. PSMDB only supports a single PITR stream per
 // cluster, so configuring more than one PITR-enabled storage is rejected as a
@@ -598,6 +624,10 @@ func (p *PSMDBProvider) Mirror(ctx context.Context, c client.Client, obj client.
 	if instance.Spec.Backup == nil || instance.Spec.Backup.ClassRef.Name == "" {
 		return nil, nil
 	}
+	params, err := backupParamsFromOperatorBackup(ub.Spec)
+	if err != nil {
+		return nil, fmt.Errorf("build backup parameters for %q: %w", ub.Name, err)
+	}
 	return &backupv1alpha1.Backup{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      ub.Name,
@@ -611,6 +641,7 @@ func (p *PSMDBProvider) Mirror(ctx context.Context, c client.Client, obj client.
 			ClassRef:     commonv1alpha1.ObjectRef{Name: instance.Spec.Backup.ClassRef.Name},
 			StorageRef:   commonv1alpha1.ObjectRef{Name: ub.Spec.StorageName},
 			ScheduleName: taskName,
+			Parameters:   params,
 		},
 	}, nil
 }
