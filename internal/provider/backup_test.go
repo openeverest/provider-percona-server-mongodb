@@ -824,10 +824,15 @@ func TestSyncBackupSucceedsOnReadyRegardlessOfRequestedType(t *testing.T) {
 		},
 	}
 	// As the real operator would report it: status.type mirrors spec.type.
+	completedAt := &metav1.Time{Time: time.Date(2026, 9, 1, 6, 0, 0, 0, time.UTC)}
 	existingOpBackup := &psmdbv1.PerconaServerMongoDBBackup{
 		ObjectMeta: metav1.ObjectMeta{Name: "b1", Namespace: ns},
 		Spec:       psmdbv1.PerconaServerMongoDBBackupSpec{ClusterName: cluster, StorageName: storage, Type: "physical"},
-		Status:     psmdbv1.PerconaServerMongoDBBackupStatus{State: psmdbv1.BackupStateReady, Type: "physical"},
+		Status: psmdbv1.PerconaServerMongoDBBackupStatus{
+			State:       psmdbv1.BackupStateReady,
+			Type:        "physical",
+			CompletedAt: completedAt,
+		},
 	}
 
 	shipped := backupclasses.Shipped()
@@ -841,7 +846,7 @@ func TestSyncBackupSucceedsOnReadyRegardlessOfRequestedType(t *testing.T) {
 	got, err := (&PSMDBProvider{}).SyncBackup(c, backup)
 	require.NoError(t, err)
 	assert.Equal(t, backupv1alpha1.BackupStateSucceeded, got.State)
-	require.NotNil(t, got.CompletedAt)
+	assertTimeEqual(t, completedAt, got.CompletedAt)
 }
 
 // TestSyncBackupDoesNotRecreatePrunedScheduledBackup verifies a finished
