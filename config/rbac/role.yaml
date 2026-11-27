@@ -99,6 +99,13 @@ rules:
   - update
   - watch
 - apiGroups:
+  - backup.openeverest.io
+  resources:
+  - backups/finalizers
+  - restores/finalizers
+  verbs:
+  - update
+- apiGroups:
   - coordination.k8s.io
   resources:
   - leases
