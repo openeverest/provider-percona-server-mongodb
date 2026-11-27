@@ -16,6 +16,7 @@ package provider
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"path"
@@ -24,12 +25,17 @@ import (
 	"time"
 
 	"github.com/AlekSi/pointer"
+	"github.com/percona/percona-backup-mongodb/pbm/compress"
+	"github.com/percona/percona-backup-mongodb/pbm/defs"
 	psmdbv1 "github.com/percona/percona-server-mongodb-operator/pkg/apis/psmdb/v1"
+	"github.com/percona/percona-server-mongodb-operator/pkg/util/numstr"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/validation/field"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -41,6 +47,8 @@ import (
 	"github.com/openeverest/openeverest/v2/provider-runtime/controller"
 
 	"github.com/openeverest/provider-percona-server-mongodb/definition/backupclasses"
+	perconabackupmongodb "github.com/openeverest/provider-percona-server-mongodb/definition/backupclasses/percona-backup-mongodb"
+	"github.com/openeverest/provider-percona-server-mongodb/definition/components"
 	"github.com/openeverest/provider-percona-server-mongodb/internal/common"
 )
 
@@ -96,6 +104,14 @@ func buildBackupSpec(c *controller.Context) (psmdbv1.BackupSpec, error) {
 	if err != nil {
 		return psmdbv1.BackupSpec{}, fmt.Errorf("get provider spec: %w", err)
 	}
+	backupAgent := c.Instance().Spec.Components[common.ComponentBackupAgent]
+	agentParams, err := decodeBackupAgentParameters(spec, backupAgent.Parameters)
+	if err != nil {
+		return psmdbv1.BackupSpec{}, &controller.BackupConfigError{
+			Reason:  "BackupAgentParametersInvalid",
+			Message: err.Error(),
+		}
+	}
 	bs := psmdbv1.BackupSpec{
 		Image: backupAgentImage(spec, c.Instance()),
 		Configuration: psmdbv1.BackupConfig{
@@ -103,12 +119,15 @@ func buildBackupSpec(c *controller.Context) (psmdbv1.BackupSpec, error) {
 				Timeouts: &psmdbv1.BackupTimeouts{Starting: pointer.ToUint32(defaultBackupStartingTimeout)},
 			},
 		},
-		Resources: corev1.ResourceRequirements{
-			Limits: corev1.ResourceList{
-				corev1.ResourceMemory: resource.MustParse("1G"),
-				corev1.ResourceCPU:    resource.MustParse("300m"),
-			},
-		},
+		Resources: backupAgentResources(backupAgent.Resources),
+	}
+	// These are PBM's "advanced" backup/restore settings for this Instance:
+	// they apply to every backup and restore this Instance runs, not to a
+	// single run, so they are configured once on the backupAgent component
+	// rather than per schedule or per Backup/Restore CR.
+	applyBackupAgentParamsToBackupOptions(bs.Configuration.BackupOptions, agentParams)
+	if restoreOptions := buildRestoreOptionsFromBackupAgentParams(agentParams); restoreOptions != nil {
+		bs.Configuration.RestoreOptions = restoreOptions
 	}
 
 	backupCfg := c.Instance().Spec.Backup
@@ -166,6 +185,293 @@ func buildBackupSpec(c *controller.Context) (psmdbv1.BackupSpec, error) {
 	return bs, nil
 }
 
+// backupAgentResources returns the backup-agent sidecar's resources. The
+// defaults (1G memory, 300m CPU) are the minimum PBM needs to run reliably;
+// the Instance's backupAgent component can override CPU and/or memory
+// (limits and requests) individually, matching mongodResources' merge style.
+func backupAgentResources(resources *corev1.ResourceRequirements) corev1.ResourceRequirements {
+	out := corev1.ResourceRequirements{
+		Limits: corev1.ResourceList{
+			corev1.ResourceMemory: resource.MustParse("1G"),
+			corev1.ResourceCPU:    resource.MustParse("300m"),
+		},
+	}
+	if resources == nil {
+		return out
+	}
+	if resources.Limits != nil {
+		if !resources.Limits.Cpu().IsZero() {
+			out.Limits[corev1.ResourceCPU] = *resources.Limits.Cpu()
+		}
+		if !resources.Limits.Memory().IsZero() {
+			out.Limits[corev1.ResourceMemory] = *resources.Limits.Memory()
+		}
+	}
+	if resources.Requests != nil {
+		out.Requests = corev1.ResourceList{}
+		if !resources.Requests.Cpu().IsZero() {
+			out.Requests[corev1.ResourceCPU] = *resources.Requests.Cpu()
+		}
+		if !resources.Requests.Memory().IsZero() {
+			out.Requests[corev1.ResourceMemory] = *resources.Requests.Memory()
+		}
+	}
+	return out
+}
+
+// =============================================================================
+// BACKUP CLASS PARAMETERS — decoding and applying PerconaBackupParameters,
+// PerconaPITRParameters and PerconaRestoreParameters
+// =============================================================================
+
+// decodeBackupParameters unmarshals a Backup.spec.parameters or
+// InstanceBackupSchedule.parameters payload into PerconaBackupParameters. A
+// nil/empty payload decodes to the zero value, leaving engine defaults
+// (type=logical, engine-default compression) in place.
+func decodeBackupParameters(raw *runtime.RawExtension) (perconabackupmongodb.PerconaBackupParameters, error) {
+	var params perconabackupmongodb.PerconaBackupParameters
+	if raw == nil || raw.Raw == nil {
+		return params, nil
+	}
+	if err := json.Unmarshal(raw.Raw, &params); err != nil {
+		return params, fmt.Errorf("unmarshal backup parameters: %w", err)
+	}
+	return params, nil
+}
+
+// parseBackupParameters decodes Backup.spec.parameters and validates it
+// against the resolved BackupClass's parametersSchema (the same schema the
+// generated BackupClass manifest carries, e.g. the type/compressionType
+// enums and the compressionLevel range), so a value the class does not
+// support is rejected instead of silently falling back to engine defaults.
+func parseBackupParameters(c *controller.Context, backup *backupv1alpha1.Backup) (perconabackupmongodb.PerconaBackupParameters, controller.BackupExecutionStatus, error) {
+	var params perconabackupmongodb.PerconaBackupParameters
+	raw := backup.Spec.Parameters
+	if raw == nil || raw.Raw == nil {
+		return params, controller.BackupExecutionStatus{}, nil
+	}
+
+	bc, err := c.BackupClass(backup.Spec.ClassRef.Name)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			return params, controller.BackupExecutionStatus{
+				State:   backupv1alpha1.BackupStatePending,
+				Message: fmt.Sprintf("Waiting for BackupClass %q to exist", backup.Spec.ClassRef.Name),
+			}, nil
+		}
+		return params, controller.BackupExecutionStatus{}, fmt.Errorf("get BackupClass %q: %w", backup.Spec.ClassRef.Name, err)
+	}
+
+	if err := bc.Spec.ParametersSchema.Validate(raw); err != nil {
+		return params, controller.BackupExecutionStatus{
+			State:   backupv1alpha1.BackupStateFailed,
+			Message: fmt.Sprintf("Invalid parameters for BackupClass %q: %v", bc.Name, err),
+		}, nil
+	}
+
+	if err := json.Unmarshal(raw.Raw, &params); err != nil {
+		return params, controller.BackupExecutionStatus{}, fmt.Errorf("unmarshal backup parameters: %w", err)
+	}
+	return params, controller.BackupExecutionStatus{}, nil
+}
+
+// decodeRestoreParameters unmarshals a Restore.spec.parameters payload into
+// PerconaRestoreParameters.
+func decodeRestoreParameters(raw *runtime.RawExtension) (perconabackupmongodb.PerconaRestoreParameters, error) {
+	var params perconabackupmongodb.PerconaRestoreParameters
+	if raw == nil || raw.Raw == nil {
+		return params, nil
+	}
+	if err := json.Unmarshal(raw.Raw, &params); err != nil {
+		return params, fmt.Errorf("unmarshal restore parameters: %w", err)
+	}
+	return params, nil
+}
+
+// decodePITRParameters unmarshals an InstanceBackupStoragePITR.parameters
+// payload into PerconaPITRParameters.
+func decodePITRParameters(raw *runtime.RawExtension) (perconabackupmongodb.PerconaPITRParameters, error) {
+	var params perconabackupmongodb.PerconaPITRParameters
+	if raw == nil || raw.Raw == nil {
+		return params, nil
+	}
+	if err := json.Unmarshal(raw.Raw, &params); err != nil {
+		return params, fmt.Errorf("unmarshal PITR parameters: %w", err)
+	}
+	return params, nil
+}
+
+// decodeBackupAgentParameters validates the backupAgent component's
+// .parameters payload (spec.components.backupAgent.parameters) against the
+// schema the provider publishes for it (Provider.spec.components.backupAgent
+// .parametersSchema, generated from components.BackupParameters -- e.g. the
+// Minimum=1 constraints on numParallelCollections and friends), then
+// unmarshals it into components.BackupParameters. These are "advanced" PBM
+// settings for this Instance — such as NumParallelCollections — that apply
+// to every backup or restore this Instance runs, as opposed to the
+// per-schedule/per-run parameters in PerconaBackupParameters/PerconaRestoreParameters.
+// A missing schema (e.g. in tests that build a bare Provider) skips
+// validation rather than rejecting every payload.
+func decodeBackupAgentParameters(spec *corev1alpha1.ProviderSpec, raw *runtime.RawExtension) (components.BackupParameters, error) {
+	var params components.BackupParameters
+	if raw == nil || raw.Raw == nil {
+		return params, nil
+	}
+	if schema := spec.Components[common.ComponentBackupAgent].ParametersSchema; schema != nil {
+		if err := schema.Validate(raw); err != nil {
+			return params, fmt.Errorf("validate backupAgent parameters: %w", err)
+		}
+	}
+	if err := json.Unmarshal(raw.Raw, &params); err != nil {
+		return params, fmt.Errorf("unmarshal backupAgent parameters: %w", err)
+	}
+	return params, nil
+}
+
+// applyBackupAgentParamsToBackupOptions copies this Instance's "advanced"
+// backup settings from components.BackupParameters onto dst (PBM's
+// backup.* settings, applied via psmdbv1.BackupOptions). dst must be
+// non-nil. Unset fields leave PBM's own defaults in place.
+func applyBackupAgentParamsToBackupOptions(dst *psmdbv1.BackupOptions, params components.BackupParameters) {
+	if params.NumParallelCollections != nil {
+		dst.NumParallelCollections = int(*params.NumParallelCollections)
+	}
+	if params.BackupOplogSpanMin != nil {
+		dst.OplogSpanMin = *params.BackupOplogSpanMin
+	}
+	if params.Priority != nil {
+		dst.Priority = params.Priority
+	}
+}
+
+// buildRestoreOptionsFromBackupAgentParams returns this Instance's
+// "advanced" restore settings from components.BackupParameters as PBM's
+// restore.* settings, or nil when none of them are set (leaving
+// Configuration.RestoreOptions unset so PSMDB applies its own defaults).
+func buildRestoreOptionsFromBackupAgentParams(params components.BackupParameters) *psmdbv1.RestoreOptions {
+	if params.RestoreNumParallelCollections == nil &&
+		params.RestoreBatchSize == nil &&
+		params.RestoreNumInsertionWorkers == nil &&
+		params.RestoreNumDownloadWorkers == nil &&
+		params.RestoreMaxDownloadBufferMB == nil &&
+		params.RestoreDownloadChunkMB == nil {
+		return nil
+	}
+	out := &psmdbv1.RestoreOptions{}
+	if params.RestoreNumParallelCollections != nil {
+		out.NumParallelCollections = int(*params.RestoreNumParallelCollections)
+	}
+	if params.RestoreBatchSize != nil {
+		out.BatchSize = int(*params.RestoreBatchSize)
+	}
+	if params.RestoreNumInsertionWorkers != nil {
+		out.NumInsertionWorkers = int(*params.RestoreNumInsertionWorkers)
+	}
+	if params.RestoreNumDownloadWorkers != nil {
+		out.NumDownloadWorkers = int(*params.RestoreNumDownloadWorkers)
+	}
+	if params.RestoreMaxDownloadBufferMB != nil {
+		out.MaxDownloadBufferMb = int(*params.RestoreMaxDownloadBufferMB)
+	}
+	if params.RestoreDownloadChunkMB != nil {
+		out.DownloadChunkMb = int(*params.RestoreDownloadChunkMB)
+	}
+	return out
+}
+
+// validateBackupScheduleParameters checks each storage's schedule
+// .parameters against the BackupClass's ParametersSchema (the same schema
+// Backup.spec.parameters is validated against in parseBackupParameters), and
+// each storage's PITR .parameters against the BackupClass's
+// ProviderManaged.PITRParametersSchema. Without this, an invalid value (e.g.
+// a schedule's parameters.type of "foo") is not rejected until the operator
+// CR itself fails PSMDB's own CRD enum validation, leaving the Instance
+// stuck with a confusing BackupConfigured=False/ReconcileError instead of a
+// clean admission-time rejection naming the offending field.
+func validateBackupScheduleParameters(c *controller.Context) (field.ErrorList, error) {
+	backupCfg := c.Instance().Spec.Backup
+	if backupCfg == nil {
+		return nil, nil
+	}
+
+	bc, err := c.BackupClassForInstance()
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			// Missing BackupClass is surfaced elsewhere; nothing to validate against.
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get BackupClass for Instance: %w", err)
+	}
+	if bc == nil {
+		return nil, nil
+	}
+
+	storagesPath := field.NewPath("spec", "backup", "storages")
+	var errs field.ErrorList
+	for i, st := range backupCfg.Storages {
+		storagePath := storagesPath.Index(i)
+		for j, s := range st.Schedules {
+			if s.Parameters == nil || s.Parameters.Raw == nil {
+				continue
+			}
+			if err := bc.Spec.ParametersSchema.Validate(s.Parameters); err != nil {
+				errs = append(errs, field.Invalid(
+					storagePath.Child("schedules").Index(j).Child("parameters"), "", err.Error(),
+				))
+			}
+		}
+		if st.PITR == nil || st.PITR.Parameters == nil || st.PITR.Parameters.Raw == nil {
+			continue
+		}
+		if bc.Spec.ProviderManaged == nil || bc.Spec.ProviderManaged.PITRParametersSchema == nil {
+			continue
+		}
+		if err := bc.Spec.ProviderManaged.PITRParametersSchema.Validate(st.PITR.Parameters); err != nil {
+			errs = append(errs, field.Invalid(storagePath.Child("pitr", "parameters"), "", err.Error()))
+		}
+	}
+	return errs, nil
+}
+
+// applyBackupParamsToTask copies the user-chosen type, compression and (for
+// external/snapshot backups) VolumeSnapshotClass onto a scheduled backup
+// task. Unset fields leave the operator's own defaults in place.
+func applyBackupParamsToTask(dst *psmdbv1.BackupTaskSpec, params perconabackupmongodb.PerconaBackupParameters) {
+	if params.Type != "" {
+		dst.Type = defs.BackupType(params.Type)
+	}
+	if params.CompressionType != "" {
+		dst.CompressionType = compress.CompressionType(params.CompressionType)
+	}
+	if params.CompressionLevel != nil {
+		level := int(*params.CompressionLevel)
+		dst.CompressionLevel = &level
+	}
+	if params.VolumeSnapshotClass != "" {
+		vsc := params.VolumeSnapshotClass
+		dst.VolumeSnapshotClass = &vsc
+	}
+}
+
+// applyBackupParamsToBackup is applyBackupParamsToTask's counterpart for an
+// on-demand PerconaServerMongoDBBackup.
+func applyBackupParamsToBackup(dst *psmdbv1.PerconaServerMongoDBBackupSpec, params perconabackupmongodb.PerconaBackupParameters) {
+	if params.Type != "" {
+		dst.Type = defs.BackupType(params.Type)
+	}
+	if params.CompressionType != "" {
+		dst.Compression = compress.CompressionType(params.CompressionType)
+	}
+	if params.CompressionLevel != nil {
+		level := int(*params.CompressionLevel)
+		dst.CompressionLevel = &level
+	}
+	if params.VolumeSnapshotClass != "" {
+		vsc := params.VolumeSnapshotClass
+		dst.VolumeSnapshotClass = &vsc
+	}
+}
+
 // pitrStorage returns the single storage entry with PITR enabled, or nil when
 // no storage has PITR enabled. PSMDB only supports a single PITR stream per
 // cluster, so configuring more than one PITR-enabled storage is rejected as a
@@ -190,15 +496,35 @@ func pitrStorage(storages []corev1alpha1.InstanceBackupStorage) (*corev1alpha1.I
 // into the engine's cluster-global PITR spec. PSMDB supports a single PITR
 // stream, so PITR is enabled when exactly one storage has it enabled.
 //
-// Per-storage custom PITR parameters (oplog span, compression) are not yet
-// supported by this provider: the BackupClass declares no pitrParametersSchema,
-// so the runtime rejects any pitr.parameters payload at admission time.
+// The PITR-enabled storage's .pitr.parameters (oplog span, oplog-only mode,
+// compression), validated against the BackupClass's pitrParametersSchema, are
+// applied onto the cluster-global spec; unset fields leave PBM's defaults.
 func buildPSMDBPITRSpec(storages []corev1alpha1.InstanceBackupStorage) (psmdbv1.PITRSpec, error) {
 	storage, err := pitrStorage(storages)
 	if err != nil {
 		return psmdbv1.PITRSpec{}, err
 	}
-	return psmdbv1.PITRSpec{Enabled: storage != nil}, nil
+	if storage == nil {
+		return psmdbv1.PITRSpec{}, nil
+	}
+
+	params, err := decodePITRParameters(storage.PITR.Parameters)
+	if err != nil {
+		return psmdbv1.PITRSpec{}, fmt.Errorf("storage %q: %w", storage.StorageRef.Name, err)
+	}
+
+	spec := psmdbv1.PITRSpec{Enabled: true, OplogOnly: params.OplogOnly}
+	if params.OplogSpanMin != "" {
+		spec.OplogSpanMin = numstr.NumberString(params.OplogSpanMin)
+	}
+	if params.CompressionType != "" {
+		spec.CompressionType = compress.CompressionType(params.CompressionType)
+	}
+	if params.CompressionLevel != nil {
+		level := int(*params.CompressionLevel)
+		spec.CompressionLevel = &level
+	}
+	return spec, nil
 }
 
 // =============================================================================
@@ -210,7 +536,9 @@ func buildPSMDBPITRSpec(storages []corev1alpha1.InstanceBackupStorage) (psmdbv1.
 // parent storage entry. Disabled schedules are still recorded (the operator
 // honors the Enabled flag) so that toggling a schedule off does not lose its
 // definition. An unset Retention means "keep all". The PSMDB operator only
-// supports count-based retention, so time-based retention is rejected.
+// supports count-based retention, so time-based retention is rejected. Each
+// schedule's .parameters (type, compression, volumeSnapshotClass) are applied
+// onto the task; unset fields leave the operator's defaults.
 func buildPSMDBTasks(storages []corev1alpha1.InstanceBackupStorage) ([]psmdbv1.BackupTaskSpec, error) {
 	var out []psmdbv1.BackupTaskSpec
 	for _, st := range storages {
@@ -221,6 +549,11 @@ func buildPSMDBTasks(storages []corev1alpha1.InstanceBackupStorage) ([]psmdbv1.B
 				Schedule:    s.Cron,
 				StorageName: st.StorageRef.Name,
 			}
+			params, err := decodeBackupParameters(s.Parameters)
+			if err != nil {
+				return nil, fmt.Errorf("schedule %q: %w", s.Name, err)
+			}
+			applyBackupParamsToTask(&task, params)
 			if s.Retention != nil {
 				if s.Retention.Type != corev1alpha1.BackupScheduleRetentionTypeCount {
 					return nil, fmt.Errorf("schedule %q: %s retention is not supported by PSMDB, use count", s.Name, s.Retention.Type)
@@ -397,7 +730,17 @@ func psmdbStorage(c *controller.Context, bs *backupv1alpha1.BackupStorage, prefi
 // SyncBackup creates or updates a PerconaServerMongoDBBackup that references
 // the operator-registered storage matching backup.spec.storageRef.name, then
 // maps operator status into the BackupExecutionStatus the runtime expects.
+// backup.spec.parameters (type, compression, volumeSnapshotClass) are applied
+// onto the operator backup; unset fields leave the operator's defaults.
 func (p *PSMDBProvider) SyncBackup(c *controller.Context, backup *backupv1alpha1.Backup) (controller.BackupExecutionStatus, error) {
+	params, exec, err := parseBackupParameters(c, backup)
+	if err != nil {
+		return controller.BackupExecutionStatus{}, err
+	}
+	if exec.State != "" {
+		return exec, nil
+	}
+
 	psmdb := &psmdbv1.PerconaServerMongoDB{}
 	if err := c.Get(psmdb, c.Name()); err != nil {
 		if apierrors.IsNotFound(err) {
@@ -445,13 +788,14 @@ func (p *PSMDBProvider) SyncBackup(c *controller.Context, backup *backupv1alpha1
 	if _, err := controllerutil.CreateOrUpdate(c.Context(), c.Client(), psmdbBackup, func() error {
 		psmdbBackup.Spec.ClusterName = c.Name()
 		psmdbBackup.Spec.StorageName = backup.Spec.StorageRef.Name
+		applyBackupParamsToBackup(&psmdbBackup.Spec, params)
 		controllerutil.AddFinalizer(psmdbBackup, psmdbDeleteBackupFinalizer)
 		return controllerutil.SetControllerReference(backup, psmdbBackup, c.Client().Scheme())
 	}); err != nil {
 		return controller.BackupExecutionStatus{}, fmt.Errorf("create or update PSMDB backup: %w", err)
 	}
 
-	exec := controller.BackupExecutionStatus{
+	exec = controller.BackupExecutionStatus{
 		OperatorBackupRef: &commonv1alpha1.TypedObjectRef{
 			Group: psmdbv1.SchemeGroupVersion.Group,
 			Kind:  "PerconaServerMongoDBBackup",
@@ -503,6 +847,11 @@ func (p *PSMDBProvider) SyncRestore(c *controller.Context, restore *backupv1alph
 	}
 	if sourceBackup == nil {
 		return exec, nil
+	}
+
+	restoreParams, err := decodeRestoreParameters(restore.Spec.Parameters)
+	if err != nil {
+		return controller.RestoreExecutionStatus{}, fmt.Errorf("decode restore parameters: %w", err)
 	}
 
 	operatorBackupName := sourceBackup.Name
@@ -604,6 +953,7 @@ func (p *PSMDBProvider) SyncRestore(c *controller.Context, restore *backupv1alph
 			psmdbRestore.Spec.BackupSource = nil
 		}
 		psmdbRestore.Spec.PITR = desiredPITR
+		applyRestoreParams(&psmdbRestore.Spec, restoreParams)
 		return controllerutil.SetControllerReference(restore, psmdbRestore, c.Client().Scheme())
 	}); err != nil {
 		return controller.RestoreExecutionStatus{}, fmt.Errorf("create or update PSMDB restore: %w", err)
@@ -630,6 +980,23 @@ func (p *PSMDBProvider) SyncRestore(c *controller.Context, restore *backupv1alph
 		out.State = backupv1alpha1.RestoreStatePending
 	}
 	return out, nil
+}
+
+// applyRestoreParams copies the user-chosen selective-restore options and
+// replset remapping onto the operator restore. Unset fields leave the
+// operator's defaults (restore everything, no remapping) in place.
+func applyRestoreParams(dst *psmdbv1.PerconaServerMongoDBRestoreSpec, params perconabackupmongodb.PerconaRestoreParameters) {
+	if params.Selective != nil {
+		dst.Selective = &psmdbv1.SelectiveRestoreOpts{
+			WithUsersAndRoles: params.Selective.WithUsersAndRoles,
+			Namespaces:        params.Selective.Namespaces,
+			NamespaceFrom:     params.Selective.NamespaceFrom,
+			NamespaceTo:       params.Selective.NamespaceTo,
+		}
+	}
+	if len(params.ReplsetRemapping) > 0 {
+		dst.RSMap = params.ReplsetRemapping
+	}
 }
 
 // buildExternalBackupSource builds the PSMDB restore BackupSource for an

@@ -1,0 +1,99 @@
+# Instance exercising the BackupClass parameters (backup, PITR) and the
+# configurable backup agent resources. Assumes a BackupStorage "my-storage".
+
+apiVersion: core.openeverest.io/v1alpha1
+kind: Instance
+metadata:
+  name: psmdb-params
+  namespace: my-special-place
+spec:
+  providerRef:
+    name: percona-server-mongodb
+  backup:
+    enabled: true
+    classRef:
+      name: percona-backup-mongodb
+    storages:
+      - storageRef:
+          name: bs-msp-1
+        schedules:
+          - name: nightly
+            enabled: true
+            cron: "0 2 * * *"
+            retention:
+              type: count
+              count: 5
+            parameters:
+              # "logical" so it works without CSI snapshots; "external" also
+              # needs volumeSnapshotClass.
+              type: logical
+              compressionType: zstd
+              compressionLevel: 5
+        pitr:
+          enabled: true
+          parameters:
+            # A quoted decimal string here (pattern ^[0-9]+(\.[0-9]+)?$). The
+            # provider writes it to the PerconaServerMongoDB CR as a number.
+            oplogSpanMin: "15"
+            oplogOnly: false
+            compressionType: lz4
+            compressionLevel: 3
+  components:
+    engine:
+      type: mongod
+      replicas: 3
+      resources:
+        limits:
+          cpu: "1"
+          memory: 2G
+        requests:
+          cpu: 500m
+          memory: 1G
+      storage:
+        size: 5Gi
+    backupAgent:
+      type: backup
+      resources:
+        limits:
+          cpu: 500m
+          memory: 750M
+      parameters:
+        # "Advanced" PBM settings for this Instance: they apply to every
+        # backup and restore this database runs (not just this
+        # schedule/this on-demand backup. PBM only honors them for logical
+        # backups/restores (the "nightly" schedule above uses type: logical);
+        # they are silently ignored for physical/external ones.
+        numParallelCollections: 8
+        restoreNumParallelCollections: 8
+        # Distinct from storages[].pitr.parameters.oplogSpanMin above: this
+        # one only paces the oplog slicer during a logical backup run, not
+        # how much oplog PITR keeps. Falls back to the PITR span if unset.
+        backupOplogSpanMin: 15
+        priority:
+          "*": 1
+        restoreBatchSize: 500
+        restoreNumInsertionWorkers: 10
+        restoreNumDownloadWorkers: 4
+        restoreMaxDownloadBufferMb: 256
+        restoreDownloadChunkMb: 32
+---
+# On-demand backup with parameters.
+apiVersion: backup.openeverest.io/v1alpha1
+kind: Backup
+metadata:
+  name: psmdb-params-backup
+  namespace: my-special-place
+spec:
+  origin:
+    type: Instance
+    instanceRef:
+      name: psmdb-params
+  classRef:
+    name: percona-backup-mongodb
+  storageRef:
+    name: bs-msp-1
+  parameters:
+    type: logical
+    compressionType: gzip
+    compressionLevel: 4
+

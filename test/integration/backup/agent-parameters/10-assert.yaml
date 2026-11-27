@@ -1,0 +1,54 @@
+apiVersion: core.openeverest.io/v1alpha1
+kind: Instance
+metadata:
+  name: ap-psmdb-cluster
+spec:
+  providerRef:
+    name: percona-server-mongodb
+  components:
+    backupAgent:
+      type: backup
+      parameters:
+        numParallelCollections: 8
+        restoreNumParallelCollections: 6
+        backupOplogSpanMin: 15
+        priority:
+          "*": 1
+          "rs0/host:27017": 2.5
+        restoreBatchSize: 500
+        restoreNumInsertionWorkers: 10
+        restoreNumDownloadWorkers: 4
+        restoreMaxDownloadBufferMb: 256
+        restoreDownloadChunkMb: 32
+---
+# The provider writes these onto the PerconaServerMongoDB regardless of
+# spec.backup being unset/disabled: they are the backupAgent component's own
+# "advanced" PBM settings, not the per-schedule/per-run backup parameters.
+apiVersion: psmdb.percona.com/v1
+kind: PerconaServerMongoDB
+metadata:
+  name: ap-psmdb-cluster
+spec:
+  backup:
+    enabled: false
+    resources:
+      limits:
+        cpu: 500m
+        memory: 750M
+    configuration:
+      backupOptions:
+        numParallelCollections: 8
+        oplogSpanMin: 15
+        priority:
+          "*": 1
+          "rs0/host:27017": 2.5
+        timeouts:
+          startingStatus: 120
+      restoreOptions:
+        numParallelCollections: 6
+        batchSize: 500
+        numInsertionWorkers: 10
+        numDownloadWorkers: 4
+        maxDownloadBufferMb: 256
+        downloadChunkMb: 32
+

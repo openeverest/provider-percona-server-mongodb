@@ -11,3 +11,7 @@ spec:
     name: percona-backup-mongodb
   storageRef:
     name: test-storage-s3
+  parameters:
+    type: physical
+    compressionType: snappy
+    compressionLevel: 4

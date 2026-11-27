@@ -126,6 +126,9 @@ local_resource(
     'provider-generate',
     'make -C {0} generate'.format(provider_dir),
     deps=['{0}/definition'.format(provider_dir)],
+    # `make generate` writes zz_generated.* into definition/; watching them
+    # would retrigger this resource forever.
+    ignore=['{0}/definition/**/zz_generated.*'.format(provider_dir)],
     labels=['provider'],
 )
 

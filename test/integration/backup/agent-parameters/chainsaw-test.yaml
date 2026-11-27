@@ -1,0 +1,53 @@
+---
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: backup-agent-parameters
+spec:
+  description: |
+    Verify that spec.components.backupAgent.parameters (PBM's "advanced"
+    backup/restore settings for this Instance: numParallelCollections,
+    backupOplogSpanMin, priority, and the restore.* tuning knobs) are applied
+    onto the PerconaServerMongoDB's spec.backup.configuration, independent of
+    whether backups are enabled on the Instance.
+  catch:
+    - script:
+        content: kubectl -n $NAMESPACE get instance,psmdb -o yaml
+    - podLogs:
+        namespace: provider-system
+        selector: app.kubernetes.io/name=provider-percona-server-mongodb
+        tail: 100
+  steps:
+    - name: provider-operator-installed
+      try:
+        - assert:
+            file: 00-assert.yaml
+
+    - name: create-cluster-with-agent-parameters
+      try:
+        - apply:
+            file: 10-create-cluster.yaml
+        - assert:
+            file: 10-assert.yaml
+
+    - name: delete-cluster
+      try:
+        - script:
+            content: |
+              kubectl -n $NAMESPACE delete in/ap-psmdb-cluster psmdb/ap-psmdb-cluster --wait=false && sleep 5
+              kubectl -n $NAMESPACE delete secret/everest-secrets-ap-psmdb-cluster --ignore-not-found
+              # The PSMDB operator is scaled to 0, so nothing processes the psmdb finalizers.
+              kubectl -n $NAMESPACE patch psmdb/ap-psmdb-cluster -p '{"metadata":{"finalizers":null}}' --type merge
+        - wait:
+            apiVersion: core.openeverest.io/v1alpha1
+            kind: Instance
+            name: ap-psmdb-cluster
+            for:
+              deletion: {}
+        - wait:
+            apiVersion: psmdb.percona.com/v1
+            kind: PerconaServerMongoDB
+            name: ap-psmdb-cluster
+            for:
+              deletion: {}
+

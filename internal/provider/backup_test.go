@@ -16,14 +16,21 @@ package provider
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
+	"github.com/AlekSi/pointer"
+	"github.com/percona/percona-backup-mongodb/pbm/compress"
+	"github.com/percona/percona-backup-mongodb/pbm/defs"
 	psmdbv1 "github.com/percona/percona-server-mongodb-operator/pkg/apis/psmdb/v1"
+	"github.com/percona/percona-server-mongodb-operator/pkg/util/numstr"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -36,6 +43,9 @@ import (
 	"github.com/openeverest/openeverest/v2/backupstorageclasses/s3"
 	"github.com/openeverest/openeverest/v2/provider-runtime/controller"
 
+	"github.com/openeverest/provider-percona-server-mongodb/definition/backupclasses"
+	perconabackupmongodb "github.com/openeverest/provider-percona-server-mongodb/definition/backupclasses/percona-backup-mongodb"
+	"github.com/openeverest/provider-percona-server-mongodb/definition/components"
 	"github.com/openeverest/provider-percona-server-mongodb/internal/common"
 )
 
@@ -154,6 +164,10 @@ func pitrStorageEntry(name string) corev1alpha1.InstanceBackupStorage {
 }
 
 func TestBuildPSMDBPITRSpec(t *testing.T) {
+	rawParams := func(p perconabackupmongodb.PerconaPITRParameters) *runtime.RawExtension {
+		return &runtime.RawExtension{Raw: mustMarshal(t, p)}
+	}
+
 	tests := []struct {
 		name     string
 		storages []corev1alpha1.InstanceBackupStorage
@@ -189,6 +203,36 @@ func TestBuildPSMDBPITRSpec(t *testing.T) {
 			},
 			wantErr: "at most one PITR-enabled storage",
 		},
+		{
+			name: "PITR parameters are applied onto the cluster-global spec",
+			storages: []corev1alpha1.InstanceBackupStorage{{
+				StorageRef: commonv1alpha1.ObjectRef{Name: "s1"},
+				PITR: &corev1alpha1.InstanceBackupStoragePITR{
+					Enabled: true,
+					Parameters: rawParams(perconabackupmongodb.PerconaPITRParameters{
+						OplogSpanMin:     "10",
+						OplogOnly:        true,
+						CompressionType:  "zstd",
+						CompressionLevel: pointer.ToInt32(5),
+					}),
+				},
+			}},
+			want: psmdbv1.PITRSpec{
+				Enabled:          true,
+				OplogSpanMin:     numstr.NumberString("10"),
+				OplogOnly:        true,
+				CompressionType:  compress.CompressionType("zstd"),
+				CompressionLevel: pointer.ToInt(5),
+			},
+		},
+		{
+			name: "invalid PITR parameters payload is rejected",
+			storages: []corev1alpha1.InstanceBackupStorage{{
+				StorageRef: commonv1alpha1.ObjectRef{Name: "s1"},
+				PITR:       &corev1alpha1.InstanceBackupStoragePITR{Enabled: true, Parameters: &runtime.RawExtension{Raw: []byte(`{"oplogSpanMin":`)}},
+			}},
+			wantErr: `storage "s1"`,
+		},
 	}
 
 	for _, tc := range tests {
@@ -203,6 +247,15 @@ func TestBuildPSMDBPITRSpec(t *testing.T) {
 			assert.Equal(t, tc.want, got)
 		})
 	}
+}
+
+// mustMarshal marshals v to JSON, failing the test on error. Used to build
+// *runtime.RawExtension payloads for parameter-decoding tests.
+func mustMarshal(t *testing.T, v any) []byte {
+	t.Helper()
+	b, err := json.Marshal(v)
+	require.NoError(t, err)
+	return b
 }
 
 func TestBuildPSMDBTasksRetention(t *testing.T) {
@@ -254,6 +307,155 @@ func TestBuildPSMDBTasksRetention(t *testing.T) {
 			require.NoError(t, err)
 			require.Len(t, got, 1)
 			assert.Equal(t, tc.want, got[0].Retention)
+		})
+	}
+}
+
+func TestBuildPSMDBTasksParameters(t *testing.T) {
+	rawParams := func(p perconabackupmongodb.PerconaBackupParameters) *runtime.RawExtension {
+		return &runtime.RawExtension{Raw: mustMarshal(t, p)}
+	}
+
+	tests := []struct {
+		name       string
+		parameters *runtime.RawExtension
+		want       psmdbv1.BackupTaskSpec
+		wantErr    string
+	}{
+		{
+			name: "unset parameters leave the operator's defaults",
+			want: psmdbv1.BackupTaskSpec{Name: "daily", Enabled: true, Schedule: "0 2 * * *", StorageName: "s3"},
+		},
+		{
+			name: "type, compression and volumeSnapshotClass are applied",
+			parameters: rawParams(perconabackupmongodb.PerconaBackupParameters{
+				Type:                "physical",
+				CompressionType:     "zstd",
+				CompressionLevel:    pointer.ToInt32(9),
+				VolumeSnapshotClass: "csi-snapclass",
+			}),
+			want: psmdbv1.BackupTaskSpec{
+				Name: "daily", Enabled: true, Schedule: "0 2 * * *", StorageName: "s3",
+				Type:                defs.BackupType("physical"),
+				CompressionType:     compress.CompressionType("zstd"),
+				CompressionLevel:    pointer.ToInt(9),
+				VolumeSnapshotClass: pointer.ToString("csi-snapclass"),
+			},
+		},
+		{
+			name:       "invalid parameters payload is rejected",
+			parameters: &runtime.RawExtension{Raw: []byte(`{"type":`)},
+			wantErr:    `schedule "daily"`,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			storages := []corev1alpha1.InstanceBackupStorage{{
+				StorageRef: commonv1alpha1.ObjectRef{Name: "s3"},
+				Schedules: []corev1alpha1.InstanceBackupSchedule{
+					{Name: "daily", Enabled: true, Cron: "0 2 * * *", Parameters: tc.parameters},
+				},
+			}}
+
+			got, err := buildPSMDBTasks(storages)
+			if tc.wantErr != "" {
+				require.ErrorContains(t, err, tc.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			require.Len(t, got, 1)
+			assert.Equal(t, tc.want, got[0])
+		})
+	}
+}
+
+func TestBackupAgentResources(t *testing.T) {
+	defaultResources := corev1.ResourceRequirements{
+		Limits: corev1.ResourceList{
+			corev1.ResourceMemory: resource.MustParse("1G"),
+			corev1.ResourceCPU:    resource.MustParse("300m"),
+		},
+	}
+
+	tests := []struct {
+		name      string
+		resources *corev1.ResourceRequirements
+		want      corev1.ResourceRequirements
+	}{
+		{
+			name: "nil resources use the default",
+			want: defaultResources,
+		},
+		{
+			name:      "limits override the default per-field",
+			resources: &corev1.ResourceRequirements{Limits: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("1")}},
+			want: corev1.ResourceRequirements{
+				Limits: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("1"),
+					corev1.ResourceMemory: resource.MustParse("1G"),
+				},
+			},
+		},
+		{
+			name: "requests are carried over when set",
+			resources: &corev1.ResourceRequirements{
+				Requests: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("512M")},
+			},
+			want: corev1.ResourceRequirements{
+				Limits:   defaultResources.Limits,
+				Requests: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("512M")},
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, backupAgentResources(tc.resources))
+		})
+	}
+}
+
+func TestApplyRestoreParams(t *testing.T) {
+	tests := []struct {
+		name   string
+		params perconabackupmongodb.PerconaRestoreParameters
+		want   psmdbv1.PerconaServerMongoDBRestoreSpec
+	}{
+		{
+			name: "empty parameters leave the spec untouched",
+		},
+		{
+			name: "selective restore options are copied",
+			params: perconabackupmongodb.PerconaRestoreParameters{
+				Selective: &perconabackupmongodb.PerconaRestoreSelective{
+					WithUsersAndRoles: true,
+					Namespaces:        []string{"db.coll"},
+					NamespaceFrom:     "old.coll",
+					NamespaceTo:       "new.coll",
+				},
+			},
+			want: psmdbv1.PerconaServerMongoDBRestoreSpec{
+				Selective: &psmdbv1.SelectiveRestoreOpts{
+					WithUsersAndRoles: true,
+					Namespaces:        []string{"db.coll"},
+					NamespaceFrom:     "old.coll",
+					NamespaceTo:       "new.coll",
+				},
+			},
+		},
+		{
+			name:   "replset remapping is copied",
+			params: perconabackupmongodb.PerconaRestoreParameters{ReplsetRemapping: map[string]string{"rs0": "rs1"}},
+			want:   psmdbv1.PerconaServerMongoDBRestoreSpec{RSMap: map[string]string{"rs0": "rs1"}},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var got psmdbv1.PerconaServerMongoDBRestoreSpec
+			applyRestoreParams(&got, tc.params)
+			assert.Equal(t, tc.want, got)
 		})
 	}
 }
@@ -460,6 +662,186 @@ func TestSyncBackupWaitsForClusterRollout(t *testing.T) {
 			}
 		})
 	}
+}
+
+// readySyncBackupCluster returns a PerconaServerMongoDB that has rolled out
+// (ObservedGeneration == Generation, AppStateReady) and has storage
+// registered, so SyncBackup proceeds straight to requesting the operator
+// backup instead of reporting a Pending rollout wait.
+func readySyncBackupCluster(ns, cluster, storage string) *psmdbv1.PerconaServerMongoDB {
+	return &psmdbv1.PerconaServerMongoDB{
+		ObjectMeta: metav1.ObjectMeta{Name: cluster, Namespace: ns, Generation: 1},
+		Spec: psmdbv1.PerconaServerMongoDBSpec{Backup: psmdbv1.BackupSpec{
+			Enabled:  true,
+			Storages: map[string]psmdbv1.BackupStorageSpec{storage: {Type: psmdbv1.BackupStorageS3}},
+		}},
+		Status: psmdbv1.PerconaServerMongoDBStatus{ObservedGeneration: 1, State: psmdbv1.AppStateReady},
+	}
+}
+
+// TestSyncBackupParameterValidation covers the gap reported against v0.6.0:
+// spec.parameters.type was neither validated against the BackupClass's
+// parametersSchema nor applied onto the operator backup, so e.g. a
+// requested "physical" backup silently ran as "logical". It validates
+// against the actual shipped BackupClass (definition/backupclasses), not a
+// hand-rolled copy of its enums, so a schema change cannot silently drift
+// out of sync with this test, as happened to a hardcoded "external" gap in
+// an earlier version of this fix.
+func TestSyncBackupParameterValidation(t *testing.T) {
+	const ns, cluster, storage = "db", "my-mongo", "s3"
+
+	rawParams := func(raw string) *runtime.RawExtension {
+		return &runtime.RawExtension{Raw: []byte(raw)}
+	}
+
+	tests := []struct {
+		name          string
+		parameters    *runtime.RawExtension
+		classRef      string
+		wantState     backupv1alpha1.BackupState
+		wantMsg       string
+		wantRequested bool
+		wantType      defs.BackupType
+	}{
+		{
+			name:          "no parameters: operator defaults apply",
+			wantState:     backupv1alpha1.BackupStatePending,
+			wantRequested: true,
+		},
+		{
+			name:          "type physical is applied onto the operator backup",
+			parameters:    rawParams(`{"type":"physical"}`),
+			wantState:     backupv1alpha1.BackupStatePending,
+			wantRequested: true,
+			wantType:      defs.BackupType("physical"),
+		},
+		{
+			name:          "type external is accepted by the class schema",
+			parameters:    rawParams(`{"type":"external"}`),
+			wantState:     backupv1alpha1.BackupStatePending,
+			wantRequested: true,
+			wantType:      defs.BackupType("external"),
+		},
+		{
+			name:       "an unsupported type is rejected instead of silently defaulting",
+			parameters: rawParams(`{"type":"foo"}`),
+			wantState:  backupv1alpha1.BackupStateFailed,
+			wantMsg:    `Invalid parameters for BackupClass "percona-backup-mongodb"`,
+		},
+		{
+			name:       "a compressionLevel out of the class's declared range is rejected",
+			parameters: rawParams(`{"compressionLevel":99}`),
+			wantState:  backupv1alpha1.BackupStateFailed,
+			wantMsg:    `Invalid parameters for BackupClass "percona-backup-mongodb"`,
+		},
+		{
+			name:       "an unknown parameter is rejected",
+			parameters: rawParams(`{"unknownField":true}`),
+			wantState:  backupv1alpha1.BackupStateFailed,
+			wantMsg:    `Invalid parameters for BackupClass "percona-backup-mongodb"`,
+		},
+		{
+			name:       "a BackupClass that does not exist yet reports pending",
+			parameters: rawParams(`{"type":"physical"}`),
+			classRef:   "does-not-exist",
+			wantState:  backupv1alpha1.BackupStatePending,
+			wantMsg:    `Waiting for BackupClass "does-not-exist"`,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			scheme := runtime.NewScheme()
+			require.NoError(t, corev1alpha1.AddToScheme(scheme))
+			require.NoError(t, backupv1alpha1.AddToScheme(scheme))
+			require.NoError(t, psmdbv1.SchemeBuilder.AddToScheme(scheme))
+
+			classRef := tc.classRef
+			if classRef == "" {
+				classRef = backupClassName
+			}
+			instance := &corev1alpha1.Instance{ObjectMeta: metav1.ObjectMeta{Name: cluster, Namespace: ns}}
+			backup := &backupv1alpha1.Backup{
+				ObjectMeta: metav1.ObjectMeta{Name: "b1", Namespace: ns},
+				Spec: backupv1alpha1.BackupSpec{
+					StorageRef: commonv1alpha1.ObjectRef{Name: storage},
+					ClassRef:   commonv1alpha1.ObjectRef{Name: classRef},
+					Parameters: tc.parameters,
+				},
+			}
+			shipped := backupclasses.Shipped()
+			require.Len(t, shipped, 1)
+			bc := shipped[0].DeepCopy()
+
+			objects := []client.Object{instance, backup, readySyncBackupCluster(ns, cluster, storage), bc}
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(objects...).Build()
+			c := controller.NewContext(context.Background(), fakeClient, instance, "percona-server-mongodb")
+
+			got, err := (&PSMDBProvider{}).SyncBackup(c, backup)
+			require.NoError(t, err)
+			assert.Equal(t, tc.wantState, got.State)
+			if tc.wantMsg != "" {
+				assert.Contains(t, got.Message, tc.wantMsg)
+			}
+
+			opBackup := &psmdbv1.PerconaServerMongoDBBackup{}
+			err = fakeClient.Get(context.Background(), client.ObjectKey{Namespace: ns, Name: "b1"}, opBackup)
+			if !tc.wantRequested {
+				assert.True(t, apierrors.IsNotFound(err), "operator backup must not be requested, got %v", err)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tc.wantType, opBackup.Spec.Type)
+		})
+	}
+}
+
+// TestSyncBackupSucceedsOnReadyRegardlessOfRequestedType documents why
+// SyncBackup does not re-check the requested type against the operator
+// backup once it is Ready: the PSMDB operator sets status.type directly
+// from spec.type (pkg/controller/perconaservermongodbbackup/backup.go,
+// managedBackups.Status: "status.Type = cr.Spec.Type") rather than
+// deriving it from what PBM actually ran. Since SyncBackup itself writes
+// spec.type from the requested parameters, status.type can never disagree
+// with what was requested once the operator reports Ready, so a Ready
+// backup is always reported Succeeded -- there is no "run it and then
+// discover it was the wrong type" scenario to guard against post-hoc.
+func TestSyncBackupSucceedsOnReadyRegardlessOfRequestedType(t *testing.T) {
+	const ns, cluster, storage = "db", "my-mongo", "s3"
+
+	scheme := runtime.NewScheme()
+	require.NoError(t, corev1alpha1.AddToScheme(scheme))
+	require.NoError(t, backupv1alpha1.AddToScheme(scheme))
+	require.NoError(t, psmdbv1.SchemeBuilder.AddToScheme(scheme))
+
+	instance := &corev1alpha1.Instance{ObjectMeta: metav1.ObjectMeta{Name: cluster, Namespace: ns}}
+	backup := &backupv1alpha1.Backup{
+		ObjectMeta: metav1.ObjectMeta{Name: "b1", Namespace: ns},
+		Spec: backupv1alpha1.BackupSpec{
+			StorageRef: commonv1alpha1.ObjectRef{Name: storage},
+			ClassRef:   commonv1alpha1.ObjectRef{Name: backupClassName},
+			Parameters: &runtime.RawExtension{Raw: []byte(`{"type":"physical"}`)},
+		},
+	}
+	// As the real operator would report it: status.type mirrors spec.type.
+	existingOpBackup := &psmdbv1.PerconaServerMongoDBBackup{
+		ObjectMeta: metav1.ObjectMeta{Name: "b1", Namespace: ns},
+		Spec:       psmdbv1.PerconaServerMongoDBBackupSpec{ClusterName: cluster, StorageName: storage, Type: "physical"},
+		Status:     psmdbv1.PerconaServerMongoDBBackupStatus{State: psmdbv1.BackupStateReady, Type: "physical"},
+	}
+
+	shipped := backupclasses.Shipped()
+	require.Len(t, shipped, 1)
+	bc := shipped[0].DeepCopy()
+
+	objects := []client.Object{instance, backup, readySyncBackupCluster(ns, cluster, storage), bc, existingOpBackup}
+	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(objects...).Build()
+	c := controller.NewContext(context.Background(), fakeClient, instance, "percona-server-mongodb")
+
+	got, err := (&PSMDBProvider{}).SyncBackup(c, backup)
+	require.NoError(t, err)
+	assert.Equal(t, backupv1alpha1.BackupStateSucceeded, got.State)
+	require.NotNil(t, got.CompletedAt)
 }
 
 const (
@@ -754,6 +1136,183 @@ func TestBuildBackupSpecReportsConfigOfStoragesNotRendered(t *testing.T) {
 	var configErr *controller.BackupConfigError
 	require.ErrorAs(t, err, &configErr)
 	assert.Equal(t, "PITRConfigInvalid", configErr.Reason)
+}
+
+func TestBuildBackupSpecNumParallelCollections(t *testing.T) {
+	rawParams := func(p components.BackupParameters) *runtime.RawExtension {
+		return &runtime.RawExtension{Raw: mustMarshal(t, p)}
+	}
+
+	tests := map[string]struct {
+		parameters         *runtime.RawExtension
+		wantBackupOptions  int
+		wantRestoreOptions *int
+		wantErr            string
+	}{
+		"unset parameters leave the operator's defaults": {},
+		"numParallelCollections is applied for backups": {
+			parameters:        rawParams(components.BackupParameters{NumParallelCollections: pointer.ToInt32(8)}),
+			wantBackupOptions: 8,
+		},
+		"restoreNumParallelCollections configures restoreOptions": {
+			parameters:         rawParams(components.BackupParameters{RestoreNumParallelCollections: pointer.ToInt32(6)}),
+			wantRestoreOptions: pointer.ToInt(6),
+		},
+		"both are applied independently": {
+			parameters: rawParams(components.BackupParameters{
+				NumParallelCollections:        pointer.ToInt32(8),
+				RestoreNumParallelCollections: pointer.ToInt32(6),
+			}),
+			wantBackupOptions:  8,
+			wantRestoreOptions: pointer.ToInt(6),
+		},
+		"invalid parameters payload is rejected": {
+			parameters: &runtime.RawExtension{Raw: []byte(`{"numParallelCollections":`)},
+			wantErr:    "unmarshal backupAgent parameters",
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			instance := testBackupInstance()
+			instance.Spec.Components = map[string]corev1alpha1.ComponentSpec{
+				common.ComponentBackupAgent: {Parameters: tc.parameters},
+			}
+			c := backupTestContext(t, instance)
+
+			got, err := buildBackupSpec(c)
+			if tc.wantErr != "" {
+				var configErr *controller.BackupConfigError
+				require.ErrorAs(t, err, &configErr)
+				assert.Equal(t, "BackupAgentParametersInvalid", configErr.Reason)
+				assert.Contains(t, configErr.Message, tc.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			require.NotNil(t, got.Configuration.BackupOptions)
+			assert.Equal(t, tc.wantBackupOptions, got.Configuration.BackupOptions.NumParallelCollections)
+			if tc.wantRestoreOptions == nil {
+				assert.Nil(t, got.Configuration.RestoreOptions)
+			} else {
+				require.NotNil(t, got.Configuration.RestoreOptions)
+				assert.Equal(t, *tc.wantRestoreOptions, got.Configuration.RestoreOptions.NumParallelCollections)
+			}
+		})
+	}
+}
+
+// TestBuildBackupSpecValidatesBackupAgentParametersSchema covers the
+// backupAgent component's "advanced" parameters (components.BackupParameters,
+// e.g. numParallelCollections), the other RawExtension payload this provider
+// reads besides Backup.spec.parameters. It carries the same kind of
+// kubebuilder constraints (Minimum=1) as PerconaBackupParameters, published
+// on Provider.spec.components.backupAgent.parametersSchema (see
+// charts/.../generated/provider-spec.yaml) -- this test builds a Provider
+// with that schema directly (there is no embedded Go accessor for it, unlike
+// backupclasses.Shipped() for BackupClasses) to confirm buildBackupSpec
+// actually validates against it instead of accepting any value PBM might
+// reject at runtime.
+func TestBuildBackupSpecValidatesBackupAgentParametersSchema(t *testing.T) {
+	schema := &commonv1alpha1.ParametersSchema{
+		OpenAPIV3Schema: &apiextensionsv1.JSONSchemaProps{
+			Type: "object",
+			Properties: map[string]apiextensionsv1.JSONSchemaProps{
+				"numParallelCollections": {Type: "integer", Minimum: pointer.ToFloat64(1)},
+			},
+		},
+	}
+	rawParams := func(raw string) *runtime.RawExtension {
+		return &runtime.RawExtension{Raw: []byte(raw)}
+	}
+
+	tests := map[string]struct {
+		parameters *runtime.RawExtension
+		wantErr    string
+		wantValue  int
+	}{
+		"a value within the schema's range is accepted": {
+			parameters: rawParams(`{"numParallelCollections":4}`),
+			wantValue:  4,
+		},
+		"a value below the schema's declared minimum is rejected": {
+			parameters: rawParams(`{"numParallelCollections":-1}`),
+			wantErr:    "validate backupAgent parameters",
+		},
+		"an unknown field is rejected": {
+			parameters: rawParams(`{"bogus":true}`),
+			wantErr:    "validate backupAgent parameters",
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			scheme := runtime.NewScheme()
+			require.NoError(t, corev1.AddToScheme(scheme))
+			require.NoError(t, corev1alpha1.AddToScheme(scheme))
+			require.NoError(t, backupv1alpha1.AddToScheme(scheme))
+			require.NoError(t, psmdbv1.SchemeBuilder.AddToScheme(scheme))
+
+			instance := testBackupInstance()
+			instance.Spec.Components = map[string]corev1alpha1.ComponentSpec{
+				common.ComponentBackupAgent: {Parameters: tc.parameters},
+			}
+			provider := &corev1alpha1.Provider{
+				ObjectMeta: metav1.ObjectMeta{Name: "percona-server-mongodb"},
+				Spec: corev1alpha1.ProviderSpec{
+					Components: map[string]corev1alpha1.Component{
+						common.ComponentBackupAgent: {Type: "backup", ParametersSchema: schema},
+					},
+				},
+			}
+			cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(instance, provider).Build()
+			c := controller.NewContext(context.Background(), cl, instance, "percona-server-mongodb")
+
+			got, err := buildBackupSpec(c)
+			if tc.wantErr != "" {
+				var configErr *controller.BackupConfigError
+				require.ErrorAs(t, err, &configErr)
+				assert.Equal(t, "BackupAgentParametersInvalid", configErr.Reason)
+				assert.Contains(t, configErr.Message, tc.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			require.NotNil(t, got.Configuration.BackupOptions)
+			assert.Equal(t, tc.wantValue, got.Configuration.BackupOptions.NumParallelCollections)
+		})
+	}
+}
+
+func TestBuildBackupSpecAdvancedBackupAgentOptions(t *testing.T) {
+	rawParams := func(p components.BackupParameters) *runtime.RawExtension {
+		return &runtime.RawExtension{Raw: mustMarshal(t, p)}
+	}
+
+	instance := testBackupInstance()
+	instance.Spec.Components = map[string]corev1alpha1.ComponentSpec{
+		common.ComponentBackupAgent: {Parameters: rawParams(components.BackupParameters{
+			BackupOplogSpanMin:         pointer.ToFloat64(15),
+			Priority:                   map[string]float64{"*": 1, "rs0/host:27017": 2.5},
+			RestoreBatchSize:           pointer.ToInt32(500),
+			RestoreNumInsertionWorkers: pointer.ToInt32(10),
+			RestoreNumDownloadWorkers:  pointer.ToInt32(4),
+			RestoreMaxDownloadBufferMB: pointer.ToInt32(256),
+			RestoreDownloadChunkMB:     pointer.ToInt32(32),
+		})},
+	}
+	c := backupTestContext(t, instance)
+
+	got, err := buildBackupSpec(c)
+	require.NoError(t, err)
+	require.NotNil(t, got.Configuration.BackupOptions)
+	assert.Equal(t, 15.0, got.Configuration.BackupOptions.OplogSpanMin)
+	assert.Equal(t, map[string]float64{"*": 1, "rs0/host:27017": 2.5}, got.Configuration.BackupOptions.Priority)
+
+	require.NotNil(t, got.Configuration.RestoreOptions)
+	assert.Equal(t, 500, got.Configuration.RestoreOptions.BatchSize)
+	assert.Equal(t, 10, got.Configuration.RestoreOptions.NumInsertionWorkers)
+	assert.Equal(t, 4, got.Configuration.RestoreOptions.NumDownloadWorkers)
+	assert.Equal(t, 256, got.Configuration.RestoreOptions.MaxDownloadBufferMb)
+	assert.Equal(t, 32, got.Configuration.RestoreOptions.DownloadChunkMb)
 }
 
 func TestBuildExternalBackupSource(t *testing.T) {

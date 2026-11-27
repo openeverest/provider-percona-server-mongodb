@@ -12,6 +12,9 @@ metadata:
 spec:
   storageName: test-storage-s3
   clusterName: src-psmdb-cluster
+  type: physical
+  compressionType: snappy
+  compressionLevel: 4
 status:
   state: ready
   completed: 2025-01-01T01:02:03Z

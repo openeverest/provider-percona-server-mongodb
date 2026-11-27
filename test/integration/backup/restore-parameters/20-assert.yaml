@@ -1,0 +1,22 @@
+apiVersion: backup.openeverest.io/v1alpha1
+kind: Backup
+metadata:
+  name: rp-backup
+spec:
+  origin:
+    type: Instance
+    instanceRef:
+      name: rp-psmdb-cluster
+  classRef:
+    name: percona-backup-mongodb
+  storageRef:
+    name: rp-storage-s3
+---
+apiVersion: psmdb.percona.com/v1
+kind: PerconaServerMongoDBBackup
+metadata:
+  name: rp-backup
+spec:
+  storageName: rp-storage-s3
+  clusterName: rp-psmdb-cluster
+

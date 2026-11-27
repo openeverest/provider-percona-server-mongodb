@@ -1,0 +1,136 @@
+# UI rendering hints for this BackupClass.
+# Inlined verbatim under spec.uiSchema in the generated manifest; treated as
+# opaque by the runtime. The shape groups fields by the modal that renders them.
+
+backup:
+  label: "Backup Configuration"
+  componentsOrder:
+    - type
+    - volumeSnapshotClass
+    - compressionType
+    - compressionLevel
+  components:
+    type:
+      uiType: select
+      path: type
+      validation:
+        required: true
+      fieldParams:
+        defaultValue: logical
+        label: "Backup Type"
+        options:
+          - label: "Logical"
+            value: logical
+          - label: "Physical"
+            value: physical
+          - label: "External (volume snapshot)"
+            value: external
+    volumeSnapshotClass:
+      uiType: text
+      path: volumeSnapshotClass
+      fieldParams:
+        label: "Volume Snapshot Class"
+        helperText: "Only used by external backups."
+    compressionType:
+      uiType: select
+      path: compressionType
+      fieldParams:
+        defaultValue: snappy
+        label: "Compression"
+        options:
+          - label: "None"
+            value: none
+          - label: "Gzip"
+            value: gzip
+          - label: "Snappy"
+            value: snappy
+          - label: "LZ4"
+            value: lz4
+          - label: "Zstandard"
+            value: zstd
+    compressionLevel:
+      uiType: number
+      path: compressionLevel
+      validation:
+        int: true
+        min: 0
+        max: 22
+      fieldParams:
+        label: "Compression Level"
+        helperText: "Algorithm-specific level. Leave empty for the PBM default."
+
+pitr:
+  label: "PITR Configuration"
+  componentsOrder:
+    - oplogSpanMin
+    - oplogOnly
+    - compressionType
+    - compressionLevel
+  components:
+    oplogSpanMin:
+      uiType: text
+      path: oplogSpanMin
+      validation:
+        regex:
+          pattern: '^[0-9]+(\.[0-9]+)?$'
+          message: "Enter a number, for example 10 or 2.5"
+      fieldParams:
+        label: "Oplog Span (minutes)"
+        helperText: "Size of the oplog slices PBM buffers before uploading them. Leave empty for the PBM default."
+    oplogOnly:
+      uiType: toggle
+      path: oplogOnly
+      fieldParams:
+        label: "Oplog only"
+        helperText: "Stream only the oplog, without periodic base snapshots. Needs an existing full backup."
+    compressionType:
+      uiType: select
+      path: compressionType
+      fieldParams:
+        defaultValue: snappy
+        label: "Oplog Compression"
+        options:
+          - label: "None"
+            value: none
+          - label: "Gzip"
+            value: gzip
+          - label: "Snappy"
+            value: snappy
+          - label: "LZ4"
+            value: lz4
+          - label: "Zstandard"
+            value: zstd
+    compressionLevel:
+      uiType: number
+      path: compressionLevel
+      validation:
+        int: true
+        min: 0
+        max: 22
+      fieldParams:
+        label: "Oplog Compression Level"
+
+restore:
+  label: "Restore Configuration"
+  componentsOrder:
+    - withUsersAndRoles
+    - nsFrom
+    - nsTo
+  components:
+    withUsersAndRoles:
+      uiType: toggle
+      path: selective.withUsersAndRoles
+      fieldParams:
+        label: "Restore users and roles"
+    nsFrom:
+      uiType: text
+      path: selective.nsFrom
+      fieldParams:
+        label: "Rename namespace from"
+        helperText: "Source namespace (database.collection). Set together with the target."
+    nsTo:
+      uiType: text
+      path: selective.nsTo
+      fieldParams:
+        label: "Rename namespace to"
+        helperText: "Target namespace (database.collection)."

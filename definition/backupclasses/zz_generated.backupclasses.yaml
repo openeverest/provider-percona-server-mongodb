@@ -59,8 +59,10 @@ spec:
     openAPIV3Schema:
       description: |-
         PerconaBackupParameters describes the parameters accepted by Backup CRs
-        that target this class (spec.parameters). Mirrors the fields surfaced by
-        ui.yaml's `backup` section.
+        and InstanceBackupSchedule entries that target this class
+        (Backup.spec.parameters / InstanceBackupSchedule.parameters). Mirrors the
+        fields surfaced by ui.yaml's `backup` section. Applied by the provider in
+        buildPSMDBTasks (scheduled backups) and SyncBackup (on-demand backups).
       properties:
         compressionLevel:
           description: CompressionLevel is the algorithm-specific compression level.
@@ -78,16 +80,60 @@ spec:
             - zstd
           type: string
         type:
-          description: Type selects between logical and physical PBM backups.
+          description: |-
+            Type selects between logical, physical and external (volume-snapshot)
+            PBM backups.
           enum:
             - logical
             - physical
+            - external
+          type: string
+        volumeSnapshotClass:
+          description: |-
+            VolumeSnapshotClass names the VolumeSnapshotClass used to take the
+            snapshot. Only meaningful when Type is "external"; ignored otherwise.
           type: string
       type: object
   providerManaged:
     limits:
       maxPITREnabledStorages: 1
       maxStorages: 1
+    pitrParametersSchema:
+      openAPIV3Schema:
+        description: |-
+          PerconaPITRParameters describes the per-storage point-in-time recovery
+          tuning accepted via InstanceBackupStoragePITR.parameters, validated against
+          this BackupClass's .spec.providerManaged.pitrParametersSchema. Applied by
+          the provider in buildPSMDBPITRSpec.
+        properties:
+          compressionLevel:
+            description: CompressionLevel is the algorithm-specific compression level.
+            format: int32
+            maximum: 22
+            minimum: 0
+            type: integer
+          compressionType:
+            description: CompressionType selects the PBM compression algorithm for oplog chunks.
+            enum:
+              - none
+              - gzip
+              - snappy
+              - lz4
+              - zstd
+            type: string
+          oplogOnly:
+            description: |-
+              OplogOnly restricts PITR to streaming the oplog without periodic base
+              snapshots. Requires an existing full backup to be meaningful.
+            type: boolean
+          oplogSpanMin:
+            description: |-
+              OplogSpanMin is the size, in minutes, of the oplog slices PBM buffers
+              before uploading them to storage. Accepts a decimal number (e.g. "10"
+              or "2.5"). Unset uses the PBM default.
+            pattern: ^[0-9]+(\.[0-9]+)?$
+            type: string
+        type: object
     providerRef:
       name: percona-server-mongodb
     supportsPITR: true
@@ -95,8 +141,176 @@ spec:
     openAPIV3Schema:
       description: |-
         PerconaRestoreParameters describes the parameters accepted by Restore CRs
-        that target this class (spec.parameters). PSMDB does not currently expose
-        restore-time options through OpenEverest; the struct is intentionally
-        empty and ships an empty schema until requirements crystallize.
+        that target this class (spec.parameters). Applied by the provider in
+        SyncRestore.
+      properties:
+        replsetRemapping:
+          additionalProperties:
+            type: string
+          description: |-
+            ReplsetRemapping maps source replica set names to the target cluster's
+            replica set names, for restoring into a cluster whose replset names
+            differ from the source (e.g. a renamed or re-sharded cluster). Keys
+            are source replset names, values are target replset names.
+          type: object
+        selective:
+          description: |-
+            Selective restricts the restore to selected namespaces, optionally
+            remapping them to different names, and controls whether users and
+            roles are restored along with the data.
+          properties:
+            namespaces:
+              description: |-
+                Namespaces lists the "database.collection" namespaces to restore. When
+                empty, every namespace in the backup is restored.
+              items:
+                type: string
+              type: array
+            nsFrom:
+              description: |-
+                NamespaceFrom is the source namespace to rename during restore. Must
+                be set together with NamespaceTo.
+              type: string
+            nsTo:
+              description: NamespaceTo is the namespace the source namespace is renamed to.
+              type: string
+            withUsersAndRoles:
+              description: WithUsersAndRoles restores users and roles along with the selected data.
+              type: boolean
+          type: object
+          x-kubernetes-validations:
+            - message: nsFrom and nsTo must be set together
+              rule: (!has(self.nsFrom) && !has(self.nsTo)) || (has(self.nsFrom) && has(self.nsTo))
       type: object
   supportsImport: true
+  uiSchema:
+    backup:
+      components:
+        compressionLevel:
+          fieldParams:
+            helperText: Algorithm-specific level. Leave empty for the PBM default.
+            label: Compression Level
+          path: compressionLevel
+          uiType: number
+          validation:
+            int: true
+            max: 22
+            min: 0
+        compressionType:
+          fieldParams:
+            defaultValue: snappy
+            label: Compression
+            options:
+              - label: None
+                value: none
+              - label: Gzip
+                value: gzip
+              - label: Snappy
+                value: snappy
+              - label: LZ4
+                value: lz4
+              - label: Zstandard
+                value: zstd
+          path: compressionType
+          uiType: select
+        type:
+          fieldParams:
+            defaultValue: logical
+            label: Backup Type
+            options:
+              - label: Logical
+                value: logical
+              - label: Physical
+                value: physical
+              - label: External (volume snapshot)
+                value: external
+          path: type
+          uiType: select
+          validation:
+            required: true
+        volumeSnapshotClass:
+          fieldParams:
+            helperText: Only used by external backups.
+            label: Volume Snapshot Class
+          path: volumeSnapshotClass
+          uiType: text
+      componentsOrder:
+        - type
+        - volumeSnapshotClass
+        - compressionType
+        - compressionLevel
+      label: Backup Configuration
+    pitr:
+      components:
+        compressionLevel:
+          fieldParams:
+            label: Oplog Compression Level
+          path: compressionLevel
+          uiType: number
+          validation:
+            int: true
+            max: 22
+            min: 0
+        compressionType:
+          fieldParams:
+            defaultValue: snappy
+            label: Oplog Compression
+            options:
+              - label: None
+                value: none
+              - label: Gzip
+                value: gzip
+              - label: Snappy
+                value: snappy
+              - label: LZ4
+                value: lz4
+              - label: Zstandard
+                value: zstd
+          path: compressionType
+          uiType: select
+        oplogOnly:
+          fieldParams:
+            helperText: Stream only the oplog, without periodic base snapshots. Needs an existing full backup.
+            label: Oplog only
+          path: oplogOnly
+          uiType: toggle
+        oplogSpanMin:
+          fieldParams:
+            helperText: Size of the oplog slices PBM buffers before uploading them. Leave empty for the PBM default.
+            label: Oplog Span (minutes)
+          path: oplogSpanMin
+          uiType: text
+          validation:
+            regex:
+              message: Enter a number, for example 10 or 2.5
+              pattern: ^[0-9]+(\.[0-9]+)?$
+      componentsOrder:
+        - oplogSpanMin
+        - oplogOnly
+        - compressionType
+        - compressionLevel
+      label: PITR Configuration
+    restore:
+      components:
+        nsFrom:
+          fieldParams:
+            helperText: Source namespace (database.collection). Set together with the target.
+            label: Rename namespace from
+          path: selective.nsFrom
+          uiType: text
+        nsTo:
+          fieldParams:
+            helperText: Target namespace (database.collection).
+            label: Rename namespace to
+          path: selective.nsTo
+          uiType: text
+        withUsersAndRoles:
+          fieldParams:
+            label: Restore users and roles
+          path: selective.withUsersAndRoles
+          uiType: toggle
+      componentsOrder:
+        - withUsersAndRoles
+        - nsFrom
+        - nsTo
+      label: Restore Configuration
