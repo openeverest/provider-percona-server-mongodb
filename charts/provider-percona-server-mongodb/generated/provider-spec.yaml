@@ -519,18 +519,23 @@ spec:
                 helperText: Added to the Service clients connect to, e.g. to configure a cloud load balancer.
                 label: Service annotations
               itemTemplate:
-                fieldParams:
+                components:
                   key:
-                    placeholder: service.beta.kubernetes.io/aws-load-balancer-type
+                    fieldParams:
+                      placeholder: service.beta.kubernetes.io/aws-load-balancer-type
+                    path: key
+                    uiType: text
+                    validation:
+                      regex:
+                        message: An optional DNS prefix and '/', then up to 63 letters, digits, '-', '_' or '.', starting and ending with a letter or digit
+                        pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?[A-Za-z0-9]([-A-Za-z0-9_.]{0,61}[A-Za-z0-9])?$
                   value:
-                    placeholder: nlb
-                uiType: widget
-                validation:
-                  key:
-                    regex:
-                      message: An optional DNS prefix and '/', then up to 63 letters, digits, '-', '_' or '.', starting and ending with a letter or digit
-                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?[A-Za-z0-9]([-A-Za-z0-9_.]{0,61}[A-Za-z0-9])?$
-                widgetType: keyValue
+                    fieldParams:
+                      placeholder: nlb
+                    path: value
+                    uiType: text
+                groupType: line
+                uiType: group
               path: spec.components.engine.service.annotations
               uiType: map
           componentsOrder:
@@ -1205,18 +1210,23 @@ spec:
                 helperText: Added to the Service clients connect to, e.g. to configure a cloud load balancer.
                 label: Service annotations
               itemTemplate:
-                fieldParams:
+                components:
                   key:
-                    placeholder: service.beta.kubernetes.io/aws-load-balancer-type
+                    fieldParams:
+                      placeholder: service.beta.kubernetes.io/aws-load-balancer-type
+                    path: key
+                    uiType: text
+                    validation:
+                      regex:
+                        message: An optional DNS prefix and '/', then up to 63 letters, digits, '-', '_' or '.', starting and ending with a letter or digit
+                        pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?[A-Za-z0-9]([-A-Za-z0-9_.]{0,61}[A-Za-z0-9])?$
                   value:
-                    placeholder: nlb
-                uiType: widget
-                validation:
-                  key:
-                    regex:
-                      message: An optional DNS prefix and '/', then up to 63 letters, digits, '-', '_' or '.', starting and ending with a letter or digit
-                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?[A-Za-z0-9]([-A-Za-z0-9_.]{0,61}[A-Za-z0-9])?$
-                widgetType: keyValue
+                    fieldParams:
+                      placeholder: nlb
+                    path: value
+                    uiType: text
+                groupType: line
+                uiType: group
               path: spec.components.proxy.service.annotations
               uiType: map
           componentsOrder:
