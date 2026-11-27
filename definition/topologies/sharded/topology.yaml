@@ -346,11 +346,31 @@ ui:
                 value: "LoadBalancer"
               - label: "NodePort"
                 value: "NodePort"
-            # TODO: Support Service annotation and LoadBalancer source ranges configuration
+            # TODO: Support LoadBalancer source ranges configuration, which needs a list field
             # https://github.com/openeverest/openeverest/issues/1959
-            # https://github.com/openeverest/openeverest/issues/2398
           validation:
             required: true
+        routersServiceAnnotations:
+          # Shown by OpenEverest UIs that know uiType: map; older ones skip the field.
+          uiType: map
+          path: spec.components.proxy.service.annotations
+          fieldParams:
+            label: "Service annotations"
+            addButtonLabel: "Add annotation"
+            helperText: "Added to the Service clients connect to, e.g. to configure a cloud load balancer."
+          itemTemplate:
+            uiType: widget
+            widgetType: keyValue
+            fieldParams:
+              key:
+                placeholder: "service.beta.kubernetes.io/aws-load-balancer-type"
+              value:
+                placeholder: "nlb"
+            validation:
+              key:
+                regex:
+                  pattern: '^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?[A-Za-z0-9]([-A-Za-z0-9_.]{0,61}[A-Za-z0-9])?$'
+                  message: "An optional DNS prefix and '/', then up to 63 letters, digits, '-', '_' or '.', starting and ending with a letter or digit"
         routersResources:
           uiType: group
           groupType: line
@@ -394,6 +414,7 @@ ui:
       componentsOrder:
         - numberOfRouters
         - routersExposure
+        - routersServiceAnnotations
         - routersResources
         - routersConfiguration
     tls:
