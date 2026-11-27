@@ -824,10 +824,15 @@ func TestSyncBackupSucceedsOnReadyRegardlessOfRequestedType(t *testing.T) {
 		},
 	}
 	// As the real operator would report it: status.type mirrors spec.type.
+	completedAt := &metav1.Time{Time: time.Date(2026, 9, 1, 6, 0, 0, 0, time.UTC)}
 	existingOpBackup := &psmdbv1.PerconaServerMongoDBBackup{
 		ObjectMeta: metav1.ObjectMeta{Name: "b1", Namespace: ns},
 		Spec:       psmdbv1.PerconaServerMongoDBBackupSpec{ClusterName: cluster, StorageName: storage, Type: "physical"},
-		Status:     psmdbv1.PerconaServerMongoDBBackupStatus{State: psmdbv1.BackupStateReady, Type: "physical"},
+		Status: psmdbv1.PerconaServerMongoDBBackupStatus{
+			State:       psmdbv1.BackupStateReady,
+			Type:        "physical",
+			CompletedAt: completedAt,
+		},
 	}
 
 	shipped := backupclasses.Shipped()
@@ -841,7 +846,55 @@ func TestSyncBackupSucceedsOnReadyRegardlessOfRequestedType(t *testing.T) {
 	got, err := (&PSMDBProvider{}).SyncBackup(c, backup)
 	require.NoError(t, err)
 	assert.Equal(t, backupv1alpha1.BackupStateSucceeded, got.State)
-	require.NotNil(t, got.CompletedAt)
+	assertTimeEqual(t, completedAt, got.CompletedAt)
+}
+
+// TestSyncBackupDoesNotRecreatePrunedScheduledBackup verifies a finished
+// Backup whose operator backup has been deleted (e.g. pruned by PSMDB's own
+// retention) is not recreated, and the Backup CR itself is removed.
+func TestSyncBackupDoesNotRecreatePrunedScheduledBackup(t *testing.T) {
+	const ns, cluster, storage = "db", "my-mongo", "s3"
+
+	scheme := runtime.NewScheme()
+	require.NoError(t, corev1alpha1.AddToScheme(scheme))
+	require.NoError(t, backupv1alpha1.AddToScheme(scheme))
+	require.NoError(t, psmdbv1.SchemeBuilder.AddToScheme(scheme))
+
+	instance := &corev1alpha1.Instance{ObjectMeta: metav1.ObjectMeta{Name: cluster, Namespace: ns}}
+	completedAt := &metav1.Time{Time: time.Date(2026, 11, 24, 4, 42, 0, 0, time.UTC)}
+	backup := &backupv1alpha1.Backup{
+		ObjectMeta: metav1.ObjectMeta{Name: "cron-rs3-20261124044000-tnn2r", Namespace: ns},
+		Spec: backupv1alpha1.BackupSpec{
+			StorageRef:   commonv1alpha1.ObjectRef{Name: storage},
+			ScheduleName: "every2",
+		},
+		Status: backupv1alpha1.BackupStatus{
+			State: backupv1alpha1.BackupStateSucceeded,
+			OperatorBackupRef: &commonv1alpha1.TypedObjectRef{
+				Group: psmdbv1.SchemeGroupVersion.Group,
+				Kind:  "PerconaServerMongoDBBackup",
+				Name:  "cron-rs3-20261124044000-tnn2r",
+			},
+			CompletedAt: completedAt,
+		},
+	}
+	// No operator backup exists: it was already pruned.
+	objects := []client.Object{instance, backup, readySyncBackupCluster(ns, cluster, storage)}
+	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(objects...).Build()
+	c := controller.NewContext(context.Background(), fakeClient, instance, "percona-server-mongodb")
+
+	got, err := (&PSMDBProvider{}).SyncBackup(c, backup)
+	require.NoError(t, err)
+	assert.Equal(t, backupv1alpha1.BackupStateSucceeded, got.State)
+	assert.Equal(t, completedAt, got.CompletedAt)
+
+	// The operator backup must not have been recreated.
+	err = fakeClient.Get(context.Background(), client.ObjectKey{Namespace: ns, Name: backup.Name}, &psmdbv1.PerconaServerMongoDBBackup{})
+	assert.True(t, apierrors.IsNotFound(err), "operator backup must not be recreated, got %v", err)
+
+	// The orphaned Backup CR must be removed.
+	err = fakeClient.Get(context.Background(), client.ObjectKey{Namespace: ns, Name: backup.Name}, &backupv1alpha1.Backup{})
+	assert.True(t, apierrors.IsNotFound(err), "pruned Backup CR must be deleted, got %v", err)
 }
 
 const (

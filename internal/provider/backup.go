@@ -732,6 +732,9 @@ func psmdbStorage(c *controller.Context, bs *backupv1alpha1.BackupStorage, prefi
 // maps operator status into the BackupExecutionStatus the runtime expects.
 // backup.spec.parameters (type, compression, volumeSnapshotClass) are applied
 // onto the operator backup; unset fields leave the operator's defaults.
+//
+// A finished Backup whose operator backup has disappeared is never
+// recreated; the Backup CR is deleted instead.
 func (p *PSMDBProvider) SyncBackup(c *controller.Context, backup *backupv1alpha1.Backup) (controller.BackupExecutionStatus, error) {
 	params, exec, err := parseBackupParameters(c, backup)
 	if err != nil {
@@ -772,6 +775,21 @@ func (p *PSMDBProvider) SyncBackup(c *controller.Context, backup *backupv1alpha1
 	if err := c.Get(psmdbBackup, backup.Name); err != nil {
 		if !apierrors.IsNotFound(err) {
 			return controller.BackupExecutionStatus{}, fmt.Errorf("get PSMDB backup: %w", err)
+		}
+		// Already finished and now gone: do not recreate it, delete the
+		// Backup CR instead of reporting it as if it never ran.
+		if backup.Status.OperatorBackupRef != nil &&
+			(backup.Status.State == backupv1alpha1.BackupStateSucceeded || backup.Status.State == backupv1alpha1.BackupStateFailed) {
+			if derr := c.Delete(backup); derr != nil {
+				return controller.BackupExecutionStatus{}, fmt.Errorf("delete pruned Backup: %w", derr)
+			}
+			return controller.BackupExecutionStatus{
+				OperatorBackupRef: backup.Status.OperatorBackupRef,
+				State:             backup.Status.State,
+				Message:           backup.Status.Message,
+				StartedAt:         backup.Status.StartedAt,
+				CompletedAt:       backup.Status.CompletedAt,
+			}, nil
 		}
 		// Enabling backups adds the backup-agent container, which the operator
 		// rolls out with SmartUpdate. SmartUpdate waits for running backups, and
